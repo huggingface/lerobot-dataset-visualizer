@@ -1,0 +1,2 @@
+public/urdf/**/*.dae filter=lfs diff=lfs merge=lfs -text
+public/urdf/**/*.stl filter=lfs diff=lfs merge=lfs -text
