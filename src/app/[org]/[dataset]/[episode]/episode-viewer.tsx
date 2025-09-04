@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { postParentMessageWithParams } from "@/utils/postParentMessage";
-import { OptimizedVideosPlayer } from "@/components/optimized-videos-player";
+import { SimpleVideosPlayer } from "@/components/simple-videos-player";
 import DataRecharts from "@/components/data-recharts";
 import PlaybackBar from "@/components/playback-bar";
 import { TimeProvider, useTime } from "@/context/time-context";
@@ -223,7 +223,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
 
         {/* Videos */}
         {videosInfo.length && (
-          <OptimizedVideosPlayer
+          <SimpleVideosPlayer
             videosInfo={videosInfo}
             onVideosReady={() => setVideosReady(true)}
           />
