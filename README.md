@@ -51,7 +51,3 @@ You can start editing the page by modifying `src/app/page.tsx` or other files in
 ## Contributing
 
 Contributions, bug reports, and feature requests are welcome! Please open an issue or submit a pull request.
-
-## License
-
-This project is licensed under the MIT License.
