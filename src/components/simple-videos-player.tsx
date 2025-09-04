@@ -63,6 +63,10 @@ export const SimpleVideosPlayer = ({
             
             if (video.currentTime >= segmentEnd - 0.05) {
               video.currentTime = segmentStart;
+              // Also update the global time to reset to start
+              if (index === firstVisibleIdx) {
+                setCurrentTime(0);
+              }
             }
           };
           
@@ -80,7 +84,21 @@ export const SimpleVideosPlayer = ({
             video.removeEventListener('loadeddata', handleLoadedData);
           };
         } else {
+          // For non-segmented videos, handle end of video
+          const handleEnded = () => {
+            video.currentTime = 0;
+            if (index === firstVisibleIdx) {
+              setCurrentTime(0);
+            }
+          };
+          
+          video.addEventListener('ended', handleEnded);
           video.addEventListener('canplaythrough', checkReady, { once: true });
+          
+          // Store cleanup
+          (video as any)._segmentHandlers = () => {
+            video.removeEventListener('ended', handleEnded);
+          };
         }
       }
     });
@@ -92,7 +110,7 @@ export const SimpleVideosPlayer = ({
         }
       });
     };
-  }, [videosInfo, onVideosReady, setIsPlaying]);
+  }, [videosInfo, onVideosReady, setIsPlaying, firstVisibleIdx, setCurrentTime]);
 
   // Handle play/pause
   useEffect(() => {
@@ -233,9 +251,7 @@ export const SimpleVideosPlayer = ({
                 className={`w-full object-contain ${
                   isEnlarged ? "max-h-[90vh] max-w-[90vw]" : ""
                 }`}
-                controls
                 muted
-                loop
                 preload="auto"
                 onPlay={(e) => handlePlay(e.currentTarget, info)}
                 onTimeUpdate={isFirstVisible ? handleTimeUpdate : undefined}
