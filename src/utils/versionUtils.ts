@@ -42,26 +42,68 @@ async function checkVersionExists(repoId: string, version: string): Promise<bool
 }
 
 /**
+ * Checks if a dataset has v3.0 chunked structure
+ */
+async function checkV3ChunkedStructure(repoId: string): Promise<boolean> {
+  try {
+    const testUrl = `${DATASET_URL}/${repoId}/resolve/v3.0/meta/episodes/chunk-000/file-000.parquet`;
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(testUrl, { 
+      method: "HEAD",
+      cache: "no-store",
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    return response.ok;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
  * Determines the best available version for a dataset.
  * Prefers v3.0, falls back to v2.1, then v2.0, or throws an error if none exist.
  */
 export async function getDatasetVersion(repoId: string): Promise<string> {
-  // Check for v3.0 first
-  if (await checkVersionExists(repoId, "v3.0")) {
-    return "v3.0";
+  console.log(`[VERSION DEBUG] Checking versions for ${repoId}`);
+  
+  // Check for v3.0 first - must have both info.json AND chunked episode structure
+  const hasV3Info = await checkVersionExists(repoId, "v3.0");
+  console.log(`[VERSION DEBUG] v3.0 info.json exists: ${hasV3Info}`);
+  
+  if (hasV3Info) {
+    const hasV3Structure = await checkV3ChunkedStructure(repoId);
+    console.log(`[VERSION DEBUG] v3.0 chunked structure exists: ${hasV3Structure}`);
+    
+    if (hasV3Structure) {
+      console.log(`[VERSION DEBUG] Using v3.0 for ${repoId}`);
+      return "v3.0";
+    }
   }
   
   // Check for v2.1
-  if (await checkVersionExists(repoId, "v2.1")) {
+  const hasV21 = await checkVersionExists(repoId, "v2.1");
+  console.log(`[VERSION DEBUG] v2.1 exists: ${hasV21}`);
+  if (hasV21) {
+    console.log(`[VERSION DEBUG] Using v2.1 for ${repoId}`);
     return "v2.1";
   }
   
   // Fall back to v2.0
-  if (await checkVersionExists(repoId, "v2.0")) {
+  const hasV20 = await checkVersionExists(repoId, "v2.0");
+  console.log(`[VERSION DEBUG] v2.0 exists: ${hasV20}`);
+  if (hasV20) {
+    console.log(`[VERSION DEBUG] Using v2.0 for ${repoId}`);
     return "v2.0";
   }
   
   // If none of the supported versions exist, throw an error
+  console.log(`[VERSION DEBUG] No compatible versions found for ${repoId}`);
   throw new Error(
     `Dataset ${repoId} is not compatible with this visualizer. ` +
     "This tool only works with dataset versions 3.0, 2.1, or 2.0. " +

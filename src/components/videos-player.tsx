@@ -7,6 +7,10 @@ import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
 type VideoInfo = {
   filename: string;
   url: string;
+  isSegmented?: boolean;
+  segmentStart?: number;
+  segmentEnd?: number;
+  segmentDuration?: number;
 };
 
 type VideoPlayerProps = {
@@ -142,27 +146,87 @@ export const VideosPlayer = ({
     }
   }, [hiddenVideos, showHiddenMenu, enlargedVideo]);
 
-  // Sync video times
+  // Sync video times (with segment awareness)
   useEffect(() => {
-    videoRefs.current.forEach((video) => {
+    videoRefs.current.forEach((video, index) => {
       if (video && Math.abs(video.currentTime - currentTime) > 0.2) {
-        video.currentTime = currentTime;
+        const videoInfo = videosInfo[index];
+        
+        if (videoInfo?.isSegmented) {
+          // For segmented videos, map the global time to segment time
+          const segmentStart = videoInfo.segmentStart || 0;
+          const segmentDuration = videoInfo.segmentDuration || 0;
+          
+          if (segmentDuration > 0) {
+            // Map currentTime (0 to segmentDuration) to video time (segmentStart to segmentEnd)
+            const segmentTime = segmentStart + currentTime;
+            video.currentTime = segmentTime;
+          }
+        } else {
+          // For non-segmented videos, use direct time mapping
+          video.currentTime = currentTime;
+        }
       }
     });
-  }, [currentTime]);
+  }, [currentTime, videosInfo]);
 
   // Handle time update
   const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.target as HTMLVideoElement;
     if (video && video.duration) {
-      setCurrentTime(video.currentTime);
+      // Find the video info for this video element
+      const videoIndex = videoRefs.current.findIndex(ref => ref === video);
+      const videoInfo = videosInfo[videoIndex];
+      
+      if (videoInfo?.isSegmented) {
+        // For segmented videos, map the video time back to global time (0 to segmentDuration)
+        const segmentStart = videoInfo.segmentStart || 0;
+        const globalTime = Math.max(0, video.currentTime - segmentStart);
+        setCurrentTime(globalTime);
+      } else {
+        // For non-segmented videos, use direct time mapping
+        setCurrentTime(video.currentTime);
+      }
     }
   };
 
-  // Handle video ready
+  // Handle video ready and setup segmentation
   useEffect(() => {
     let videosReadyCount = 0;
-    const onCanPlayThrough = () => {
+    const onCanPlayThrough = (videoIndex: number) => {
+      const video = videoRefs.current[videoIndex];
+      const videoInfo = videosInfo[videoIndex];
+      
+      // Setup video segmentation for v3.0 chunked videos
+      if (video && videoInfo?.isSegmented) {
+        const segmentStart = videoInfo.segmentStart || 0;
+        const segmentEnd = videoInfo.segmentEnd || video.duration || 0;
+        
+        console.log(`[VIDEO DEBUG] Setting up segmentation for ${videoInfo.filename}: ${segmentStart}s to ${segmentEnd}s`);
+        
+        // Set initial time to segment start if not already set
+        if (video.currentTime < segmentStart || video.currentTime > segmentEnd) {
+          video.currentTime = segmentStart;
+        }
+        
+        // Add event listener to handle segment boundaries
+        const handleTimeUpdate = () => {
+          if (video.currentTime > segmentEnd) {
+            video.currentTime = segmentStart;
+            if (!video.loop) {
+              video.pause();
+            }
+          }
+        };
+        
+        video.addEventListener('timeupdate', handleTimeUpdate);
+        
+        // Store cleanup function
+        (video as any)._segmentCleanup = () => {
+          video.removeEventListener('timeupdate', handleTimeUpdate);
+        };
+      }
+      
       videosReadyCount += 1;
       if (videosReadyCount === videosInfo.length) {
         if (typeof onVideosReady === "function") {
@@ -172,13 +236,15 @@ export const VideosPlayer = ({
       }
     };
 
-    videoRefs.current.forEach((video) => {
+    videoRefs.current.forEach((video, index) => {
       if (video) {
         // If already ready, call the handler immediately
         if (video.readyState >= 4) {
-          onCanPlayThrough();
+          onCanPlayThrough(index);
         } else {
-          video.addEventListener("canplaythrough", onCanPlayThrough);
+          const readyHandler = () => onCanPlayThrough(index);
+          video.addEventListener("canplaythrough", readyHandler);
+          (video as any)._readyHandler = readyHandler;
         }
       }
     });
@@ -186,11 +252,18 @@ export const VideosPlayer = ({
     return () => {
       videoRefs.current.forEach((video) => {
         if (video) {
-          video.removeEventListener("canplaythrough", onCanPlayThrough);
+          // Remove ready handler
+          if ((video as any)._readyHandler) {
+            video.removeEventListener("canplaythrough", (video as any)._readyHandler);
+          }
+          // Remove segment handler
+          if ((video as any)._segmentCleanup) {
+            (video as any)._segmentCleanup();
+          }
         }
       });
     };
-  }, []);
+  }, [videosInfo, onVideosReady, setIsPlaying]);
 
   return (
     <>
@@ -323,6 +396,7 @@ export const VideosPlayer = ({
                 }}
                 muted
                 loop
+                preload="auto"
                 className={`w-full object-contain ${isEnlarged ? "max-h-[90vh] max-w-[90vw]" : ""}`}
                 onTimeUpdate={
                   idx === firstVisibleIdx ? handleTimeUpdate : undefined
