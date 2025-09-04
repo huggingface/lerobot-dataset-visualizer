@@ -42,6 +42,66 @@ export async function getEpisodeData(
   }
 }
 
+// Get video info for adjacent episodes (for preloading)
+export async function getAdjacentEpisodesVideoInfo(
+  org: string,
+  dataset: string,
+  currentEpisodeId: number,
+  radius: number = 2,
+) {
+  const repoId = `${org}/${dataset}`;
+  try {
+    const version = await getDatasetVersion(repoId);
+    const jsonUrl = buildVersionedUrl(repoId, version, "meta/info.json");
+    const info = await fetchJson<DatasetMetadata>(jsonUrl);
+    
+    const totalEpisodes = info.total_episodes;
+    const adjacentVideos: Array<{episodeId: number; videosInfo: any[]}> = [];
+    
+    // Calculate adjacent episode IDs
+    for (let offset = -radius; offset <= radius; offset++) {
+      if (offset === 0) continue; // Skip current episode
+      
+      const episodeId = currentEpisodeId + offset;
+      if (episodeId >= 0 && episodeId < totalEpisodes) {
+        try {
+          let videosInfo: any[] = [];
+          
+          if (version === "v3.0") {
+            const episodeMetadata = await loadEpisodeMetadataV3Simple(repoId, version, episodeId);
+            videosInfo = extractVideoInfoV3WithSegmentation(repoId, version, info, episodeMetadata);
+          } else {
+            // For v2.x, use simpler video info extraction
+            const episode_chunk = Math.floor(0 / 1000);
+            videosInfo = Object.entries(info.features)
+              .filter(([key, value]) => value.dtype === "video")
+              .map(([key, _]) => {
+                const videoPath = formatStringWithVars(info.video_path, {
+                  video_key: key,
+                  episode_chunk: episode_chunk.toString().padStart(3, "0"),
+                  episode_index: episodeId.toString().padStart(6, "0"),
+                });
+                return {
+                  filename: key,
+                  url: buildVersionedUrl(repoId, version, videoPath),
+                };
+              });
+          }
+          
+          adjacentVideos.push({ episodeId, videosInfo });
+        } catch (err) {
+          console.warn(`Failed to get video info for episode ${episodeId}:`, err);
+        }
+      }
+    }
+    
+    return adjacentVideos;
+  } catch (err) {
+    console.error("Error getting adjacent episodes video info:", err);
+    return [];
+  }
+}
+
 // Legacy v2.x data loading
 async function getEpisodeDataV2(
   repoId: string,
