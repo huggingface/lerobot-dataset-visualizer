@@ -214,14 +214,6 @@ function EpisodeViewerInner({ data }: { data: any }) {
             onChartsReady={() => setChartsReady(true)}
           />
 
-          {ignoredColumns.length > 0 && (
-            <p className="mt-2 text-orange-700">
-              Columns{" "}
-              <span className="font-mono">{ignoredColumns.join(", ")}</span> are
-              NOT shown since the visualizer currently does not support 2D or 3D
-              data.
-            </p>
-          )}
         </div>
 
         <PlaybackBar />
