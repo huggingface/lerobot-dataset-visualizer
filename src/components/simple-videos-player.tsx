@@ -121,7 +121,7 @@ export const SimpleVideosPlayer = ({
         if (isPlaying) {
           video.play().catch(e => {
             if (e.name !== 'AbortError') {
-              console.error("Error playing video:", e);
+              console.error("Error playing video");
             }
           });
         } else {

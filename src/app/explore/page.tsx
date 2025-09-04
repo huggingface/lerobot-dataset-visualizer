@@ -35,7 +35,7 @@ export default async function ExplorePage({
     const startIdx = (currentPage - 1) * perPage;
     const endIdx = startIdx + perPage;
     datasets = allDatasets.slice(startIdx, endIdx);
-  } catch (e) {
+  } catch {
     return <div className="p-8 text-red-600">Failed to load datasets.</div>;
   }
 
@@ -60,7 +60,7 @@ export default async function ExplorePage({
           const jsonUrl = buildVersionedUrl(repoId, version, "meta/info.json");
           const info = await fetchJson<DatasetMetadata>(jsonUrl);
           const videoEntry = Object.entries(info.features).find(
-            ([key, value]) => value.dtype === "video",
+            ([, value]) => value.dtype === "video",
           );
           let videoUrl: string | null = null;
           if (videoEntry) {
@@ -77,7 +77,7 @@ export default async function ExplorePage({
               if (headRes.ok) {
                 videoUrl = url;
               }
-            } catch (e) {
+            } catch {
               // If fetch fails, videoUrl remains null
             }
           }

@@ -46,7 +46,6 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
     videosInfo,
     chartDataGroups,
     episodes,
-    ignoredColumns,
   } = data;
 
   const [videosReady, setVideosReady] = useState(!videosInfo.length);
@@ -75,11 +74,10 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
     
     const preloadAdjacent = async () => {
       try {
-        const adjacentInfo = await getAdjacentEpisodesVideoInfo(org, dataset, episodeId, 2);
-        // The OptimizedVideosPlayer will handle preloading these URLs automatically
-        console.log(`Preloading videos for ${adjacentInfo.length} adjacent episodes`);
-      } catch (err) {
-        console.warn("Failed to preload adjacent episodes:", err);
+        await getAdjacentEpisodesVideoInfo(org, dataset, episodeId, 2);
+        // Preload adjacent episodes for smoother navigation
+      } catch {
+        // Skip preloading on error
       }
     };
     
