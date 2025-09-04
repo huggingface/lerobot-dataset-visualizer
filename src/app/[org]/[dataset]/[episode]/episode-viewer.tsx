@@ -3,19 +3,24 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { postParentMessageWithParams } from "@/utils/postParentMessage";
-import VideosPlayer from "@/components/videos-player";
+import { OptimizedVideosPlayer } from "@/components/optimized-videos-player";
 import DataRecharts from "@/components/data-recharts";
 import PlaybackBar from "@/components/playback-bar";
 import { TimeProvider, useTime } from "@/context/time-context";
 import Sidebar from "@/components/side-nav";
 import Loading from "@/components/loading-component";
+import { getAdjacentEpisodesVideoInfo } from "./fetch-data";
 
 export default function EpisodeViewer({
   data,
   error,
+  org,
+  dataset,
 }: {
   data?: any;
   error?: string;
+  org?: string;
+  dataset?: string;
 }) {
   if (error) {
     return (
@@ -29,12 +34,12 @@ export default function EpisodeViewer({
   }
   return (
     <TimeProvider duration={data.duration}>
-      <EpisodeViewerInner data={data} />
+      <EpisodeViewerInner data={data} org={org} dataset={dataset} />
     </TimeProvider>
   );
 }
 
-function EpisodeViewerInner({ data }: { data: any }) {
+function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; dataset?: string; }) {
   const {
     datasetInfo,
     episodeId,
@@ -63,6 +68,23 @@ function EpisodeViewerInner({ data }: { data: any }) {
     (currentPage - 1) * pageSize,
     currentPage * pageSize,
   );
+  
+  // Preload adjacent episodes' videos
+  useEffect(() => {
+    if (!org || !dataset) return;
+    
+    const preloadAdjacent = async () => {
+      try {
+        const adjacentInfo = await getAdjacentEpisodesVideoInfo(org, dataset, episodeId, 2);
+        // The OptimizedVideosPlayer will handle preloading these URLs automatically
+        console.log(`Preloading videos for ${adjacentInfo.length} adjacent episodes`);
+      } catch (err) {
+        console.warn("Failed to preload adjacent episodes:", err);
+      }
+    };
+    
+    preloadAdjacent();
+  }, [org, dataset, episodeId]);
 
   // Initialize based on URL time parameter
   useEffect(() => {
@@ -201,7 +223,7 @@ function EpisodeViewerInner({ data }: { data: any }) {
 
         {/* Videos */}
         {videosInfo.length && (
-          <VideosPlayer
+          <OptimizedVideosPlayer
             videosInfo={videosInfo}
             onVideosReady={() => setVideosReady(true)}
           />
