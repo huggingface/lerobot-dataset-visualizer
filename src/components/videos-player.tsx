@@ -89,7 +89,7 @@ export const VideosPlayer = ({
     videoRefs.current.forEach((video) => {
       if (video) {
         if (isPlaying) {
-          video.play().catch((e) => console.error("Error playing video:", e));
+          video.play().catch(() => console.error("Error playing video"));
         } else {
           video.pause();
         }
@@ -202,7 +202,6 @@ export const VideosPlayer = ({
         const segmentStart = videoInfo.segmentStart || 0;
         const segmentEnd = videoInfo.segmentEnd || video.duration || 0;
         
-        console.log(`[VIDEO DEBUG] Setting up segmentation for ${videoInfo.filename}: ${segmentStart}s to ${segmentEnd}s`);
         
         // Set initial time to segment start if not already set
         if (video.currentTime < segmentStart || video.currentTime > segmentEnd) {
