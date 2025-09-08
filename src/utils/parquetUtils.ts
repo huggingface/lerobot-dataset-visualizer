@@ -1,4 +1,4 @@
-import { parquetRead } from "hyparquet";
+import { parquetRead, parquetReadObjects } from "hyparquet";
 
 export interface DatasetMetadata {
   codebase_version: string;
@@ -44,6 +44,11 @@ export function formatStringWithVars(
 // Fetch and parse the Parquet file
 export async function fetchParquetFile(url: string): Promise<ArrayBuffer> {
   const res = await fetch(url);
+  
+  if (!res.ok) {
+    throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
+  }
+  
   return res.arrayBuffer();
 }
 
@@ -64,6 +69,17 @@ export async function readParquetColumn(
     } catch (error) {
       reject(error);
     }
+  });
+}
+
+// Read parquet file and return objects with column names as keys
+export async function readParquetAsObjects(
+  fileBuffer: ArrayBuffer,
+  columns: string[] = [],
+): Promise<Record<string, any>[]> {
+  return parquetReadObjects({
+    file: fileBuffer,
+    columns: columns.length > 0 ? columns : undefined,
   });
 }
 
