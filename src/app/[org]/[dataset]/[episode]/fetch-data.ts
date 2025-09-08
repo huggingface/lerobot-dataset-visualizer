@@ -4,6 +4,7 @@ import {
   fetchParquetFile,
   formatStringWithVars,
   readParquetColumn,
+  readParquetAsObjects,
 } from "@/utils/parquetUtils";
 import { pick } from "@/utils/pick";
 import { getDatasetVersion, buildVersionedUrl } from "@/utils/versionUtils";
@@ -366,6 +367,10 @@ async function getEpisodeDataV3(
   // Load episode data for charts
   const { chartDataGroups, ignoredColumns } = await loadEpisodeDataV3(repoId, version, info, episodeMetadata);
 
+  // Calculate duration from episode length and FPS if available
+  const duration = episodeMetadata.length ? episodeMetadata.length / info.fps : 
+                   (episodeMetadata.video_to_timestamp - episodeMetadata.video_from_timestamp);
+  
   return {
     datasetInfo,
     episodeId,
@@ -373,7 +378,7 @@ async function getEpisodeDataV3(
     chartDataGroups,
     episodes,
     ignoredColumns,
-    duration: episodeMetadata.video_to_timestamp - episodeMetadata.video_from_timestamp,
+    duration,
   };
 }
 
@@ -728,22 +733,40 @@ function extractVideoInfoV3WithSegmentation(
     .filter(([, value]) => value.dtype === "video");
 
   const videosInfo = videoFeatures.map(([videoKey]) => {
-    // Use chunk and file indices from metadata
-    const chunkIndex = episodeMetadata.video_chunk_index || 0;
-    const fileIndex = episodeMetadata.video_file_index || 0;
+    // Check if we have per-camera metadata in the episode row
+    const cameraSpecificKeys = Object.keys(episodeMetadata).filter(key => 
+      key.startsWith(`videos/${videoKey}/`)
+    );
+    
+    let chunkIndex, fileIndex, segmentStart, segmentEnd;
+    
+    if (cameraSpecificKeys.length > 0) {
+      // Use camera-specific metadata
+      const chunkValue = episodeMetadata[`videos/${videoKey}/chunk_index`];
+      const fileValue = episodeMetadata[`videos/${videoKey}/file_index`];
+      chunkIndex = typeof chunkValue === 'bigint' ? Number(chunkValue) : (chunkValue || 0);
+      fileIndex = typeof fileValue === 'bigint' ? Number(fileValue) : (fileValue || 0);
+      segmentStart = episodeMetadata[`videos/${videoKey}/from_timestamp`] || 0;
+      segmentEnd = episodeMetadata[`videos/${videoKey}/to_timestamp`] || 30;
+    } else {
+      // Fallback to generic video metadata
+      chunkIndex = episodeMetadata.video_chunk_index || 0;
+      fileIndex = episodeMetadata.video_file_index || 0;
+      segmentStart = episodeMetadata.video_from_timestamp || 0;
+      segmentEnd = episodeMetadata.video_to_timestamp || 30;
+    }
     
     const videoPath = `videos/${videoKey}/chunk-${chunkIndex.toString().padStart(3, "0")}/file-${fileIndex.toString().padStart(3, "0")}.mp4`;
     const fullUrl = buildVersionedUrl(repoId, version, videoPath);
-    
     
     return {
       filename: videoKey,
       url: fullUrl,
       // Enable segmentation with timestamps from metadata
       isSegmented: true,
-      segmentStart: episodeMetadata.video_from_timestamp || 0,
-      segmentEnd: episodeMetadata.video_to_timestamp || 30,
-      segmentDuration: (episodeMetadata.video_to_timestamp || 30) - (episodeMetadata.video_from_timestamp || 0),
+      segmentStart: segmentStart,
+      segmentEnd: segmentEnd,
+      segmentDuration: segmentEnd - segmentStart,
     };
   });
 
@@ -764,7 +787,7 @@ async function loadEpisodeMetadataV3Simple(
 
   try {
     const arrayBuffer = await fetchParquetFile(episodesMetadataUrl);
-    const episodesData = await readParquetColumn(arrayBuffer, []);
+    const episodesData = await readParquetAsObjects(arrayBuffer, []);
     
     if (episodesData.length === 0) {
       throw new Error("No episode metadata found");
@@ -801,28 +824,72 @@ async function loadEpisodeMetadataV3Simple(
 
 // Simple parser for episode row - focuses on key fields for episodes
 function parseEpisodeRowSimple(row: any): any {
-  
-  // Based on the debug output we saw, the row has numeric string keys
-  // We'll need to map these to meaningful field names
-  // This is a best-guess mapping - may need adjustment based on actual data
-  
+  // v3.0 uses named keys in the episode metadata
   if (row && typeof row === 'object') {
-    // Try to extract key fields we need for video segmentation
-    // Based on your example: episode_index, video timestamps, etc.
-    const episodeData = {
-      episode_index: row['0'] || 0, // First column likely episode index
-      data_chunk_index: row['1'] || 0, // Data chunk index
-      data_file_index: row['2'] || 0, // Data file index
-      dataset_from_index: row['3'] || 0, // Dataset start index
-      dataset_to_index: row['4'] || 0, // Dataset end index
-      video_chunk_index: row['5'] || 0, // Video chunk index
-      video_file_index: row['6'] || 0, // Video file index
-      video_from_timestamp: row['7'] || 0, // Video from timestamp 
-      video_to_timestamp: row['8'] || 30, // Video to timestamp
-      length: row['9'] || 30, // Episode length
-    };
-    
-    return episodeData;
+    // Check if this is v3.0 format with named keys
+    if ('episode_index' in row) {
+      // v3.0 format - use named keys
+      // Convert BigInt values to numbers
+      const toBigIntSafe = (value: any) => {
+        if (typeof value === 'bigint') return Number(value);
+        if (typeof value === 'number') return value;
+        return parseInt(value) || 0;
+      };
+      
+      const episodeData = {
+        episode_index: toBigIntSafe(row['episode_index']),
+        data_chunk_index: toBigIntSafe(row['data/chunk_index']),
+        data_file_index: toBigIntSafe(row['data/file_index']),
+        dataset_from_index: toBigIntSafe(row['dataset_from_index']),
+        dataset_to_index: toBigIntSafe(row['dataset_to_index']),
+        length: toBigIntSafe(row['length']),
+      };
+      
+      // Handle video metadata - look for video-specific keys
+      const videoKeys = Object.keys(row).filter(key => key.includes('videos/') && key.includes('/chunk_index'));
+      if (videoKeys.length > 0) {
+        // Use the first video stream for basic info
+        const firstVideoKey = videoKeys[0];
+        const videoBaseName = firstVideoKey.replace('/chunk_index', '');
+        
+        episodeData.video_chunk_index = toBigIntSafe(row[`${videoBaseName}/chunk_index`]);
+        episodeData.video_file_index = toBigIntSafe(row[`${videoBaseName}/file_index`]);
+        episodeData.video_from_timestamp = row[`${videoBaseName}/from_timestamp`] || 0;
+        episodeData.video_to_timestamp = row[`${videoBaseName}/to_timestamp`] || 0;
+      } else {
+        // Fallback video values
+        episodeData.video_chunk_index = 0;
+        episodeData.video_file_index = 0;
+        episodeData.video_from_timestamp = 0;
+        episodeData.video_to_timestamp = 30;
+      }
+      
+      // Store the raw row data to preserve per-camera metadata
+      // This allows extractVideoInfoV3WithSegmentation to access camera-specific timestamps
+      Object.keys(row).forEach(key => {
+        if (key.startsWith('videos/')) {
+          episodeData[key] = row[key];
+        }
+      });
+      
+      return episodeData;
+    } else {
+      // Fallback to numeric keys for compatibility
+      const episodeData = {
+        episode_index: row['0'] || 0,
+        data_chunk_index: row['1'] || 0,
+        data_file_index: row['2'] || 0,
+        dataset_from_index: row['3'] || 0,
+        dataset_to_index: row['4'] || 0,
+        video_chunk_index: row['5'] || 0,
+        video_file_index: row['6'] || 0,
+        video_from_timestamp: row['7'] || 0,
+        video_to_timestamp: row['8'] || 30,
+        length: row['9'] || 30,
+      };
+      
+      return episodeData;
+    }
   }
   
   // Fallback if parsing fails
