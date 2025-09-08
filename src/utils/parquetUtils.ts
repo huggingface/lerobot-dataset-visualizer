@@ -1,4 +1,4 @@
-import { parquetRead } from "hyparquet";
+import { parquetRead, parquetReadObjects } from "hyparquet";
 
 export interface DatasetMetadata {
   codebase_version: string;
@@ -43,8 +43,46 @@ export function formatStringWithVars(
 
 // Fetch and parse the Parquet file
 export async function fetchParquetFile(url: string): Promise<ArrayBuffer> {
-  const res = await fetch(url);
-  return res.arrayBuffer();
+  console.log(`[DEBUG] Fetching parquet file: ${url}`);
+  
+  try {
+    const res = await fetch(url);
+    
+    if (!res.ok) {
+      throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
+    }
+    
+    const arrayBuffer = await res.arrayBuffer();
+    console.log(`[DEBUG] Fetched ${arrayBuffer.byteLength} bytes from ${url}`);
+    
+    // Check if this looks like a parquet file
+    const view = new DataView(arrayBuffer);
+    if (arrayBuffer.byteLength < 8) {
+      throw new Error(`File too small to be a parquet file: ${arrayBuffer.byteLength} bytes`);
+    }
+    
+    // Check magic bytes at start and end
+    const startMagic = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
+    const endMagic = String.fromCharCode(
+      view.getUint8(arrayBuffer.byteLength - 4),
+      view.getUint8(arrayBuffer.byteLength - 3),
+      view.getUint8(arrayBuffer.byteLength - 2),
+      view.getUint8(arrayBuffer.byteLength - 1)
+    );
+    
+    console.log(`[DEBUG] File magic bytes - Start: '${startMagic}', End: '${endMagic}'`);
+    
+    if (endMagic !== 'PAR1') {
+      console.error(`[ERROR] Invalid parquet file from ${url}`);
+      console.error(`[ERROR] Expected end magic 'PAR1', got '${endMagic}'`);
+      console.error(`[ERROR] First 100 chars of response: ${new TextDecoder().decode(arrayBuffer.slice(0, 100)).replace(/\n/g, '\\n')}`);
+    }
+    
+    return arrayBuffer;
+  } catch (error) {
+    console.error(`[ERROR] Failed to fetch parquet file from ${url}:`, error);
+    throw error;
+  }
 }
 
 // Read specific columns from the Parquet file
@@ -65,6 +103,25 @@ export async function readParquetColumn(
       reject(error);
     }
   });
+}
+
+// Read parquet file and return objects with column names as keys
+export async function readParquetAsObjects(
+  fileBuffer: ArrayBuffer,
+  columns: string[] = [],
+): Promise<Record<string, any>[]> {
+  try {
+    console.log(`[DEBUG] Reading parquet as objects`);
+    const result = await parquetReadObjects({
+      file: fileBuffer,
+      columns: columns.length > 0 ? columns : undefined,
+    });
+    console.log(`[DEBUG] Successfully read ${result.length} rows as objects`);
+    return result;
+  } catch (error) {
+    console.error(`[ERROR] Failed to read parquet as objects:`, error);
+    throw error;
+  }
 }
 
 // Convert a 2D array to a CSV string
