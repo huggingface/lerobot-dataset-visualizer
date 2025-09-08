@@ -42,24 +42,61 @@ async function checkVersionExists(repoId: string, version: string): Promise<bool
 }
 
 /**
+ * Checks if a dataset has v3.0 chunked structure
+ */
+async function checkV3ChunkedStructure(repoId: string): Promise<boolean> {
+  try {
+    const testUrl = `${DATASET_URL}/${repoId}/resolve/v3.0/meta/episodes/chunk-000/file-000.parquet`;
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(testUrl, { 
+      method: "HEAD",
+      cache: "no-store",
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    return response.ok;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
  * Determines the best available version for a dataset.
- * Prefers v2.1, falls back to v2.0, or throws an error if neither exists.
+ * Prefers v3.0, falls back to v2.1, then v2.0, or throws an error if none exist.
  */
 export async function getDatasetVersion(repoId: string): Promise<string> {
-  // Check for v2.1 first
-  if (await checkVersionExists(repoId, "v2.1")) {
+  // Check for v3.0 first - must have both info.json AND chunked episode structure
+  const hasV3Info = await checkVersionExists(repoId, "v3.0");
+  
+  if (hasV3Info) {
+    const hasV3Structure = await checkV3ChunkedStructure(repoId);
+    
+    if (hasV3Structure) {
+      return "v3.0";
+    }
+  }
+  
+  // Check for v2.1
+  const hasV21 = await checkVersionExists(repoId, "v2.1");
+  if (hasV21) {
     return "v2.1";
   }
   
   // Fall back to v2.0
-  if (await checkVersionExists(repoId, "v2.0")) {
+  const hasV20 = await checkVersionExists(repoId, "v2.0");
+  if (hasV20) {
     return "v2.0";
   }
   
-  // If neither v2.1 nor v2.0 exists, throw an error
+  // If none of the supported versions exist, throw an error
   throw new Error(
     `Dataset ${repoId} is not compatible with this visualizer. ` +
-    "This tool only works with dataset version 2.x (v2.1 or v2.0). " +
+    "This tool only works with dataset versions 3.0, 2.1, or 2.0. " +
     "Please use a compatible dataset version."
   );
 }
@@ -71,15 +108,3 @@ export function buildVersionedUrl(repoId: string, version: string, path: string)
   return `${DATASET_URL}/${repoId}/resolve/${version}/${path}`;
 }
 
-/**
- * Debug function to test version checking manually
- */
-export async function testVersionCheck(repoId: string): Promise<void> {
-  console.log(`Testing version check for: ${repoId}`);
-  try {
-    const version = await getDatasetVersion(repoId);
-    console.log(`Success! Best version found: ${version}`);
-  } catch (error) {
-    console.error(`Failed:`, error);
-  }
-}
