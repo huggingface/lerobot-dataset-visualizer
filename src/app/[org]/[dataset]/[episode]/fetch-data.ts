@@ -779,30 +779,18 @@ async function loadEpisodeMetadataV3Simple(
   version: string,
   episodeId: number,
 ): Promise<any> {
-  console.log(`[DEBUG] Loading episode metadata for ${repoId}, episode ${episodeId}`);
-  
   const episodesMetadataUrl = buildVersionedUrl(
     repoId,
     version,
     "meta/episodes/chunk-000/file-000.parquet"
   );
-  
-  console.log(`[DEBUG] Episode metadata URL: ${episodesMetadataUrl}`);
 
   try {
     const arrayBuffer = await fetchParquetFile(episodesMetadataUrl);
     const episodesData = await readParquetAsObjects(arrayBuffer, []);
     
-    console.log(`[DEBUG] Loaded ${episodesData.length} episodes from metadata`);
-    
     if (episodesData.length === 0) {
       throw new Error("No episode metadata found");
-    }
-    
-    // Debug first episode to understand structure
-    if (episodesData.length > 0) {
-      console.log(`[DEBUG] First episode raw data:`, episodesData[0]);
-      console.log(`[DEBUG] First episode keys:`, Object.keys(episodesData[0]));
     }
     
     // Find the row for the requested episode
@@ -836,13 +824,10 @@ async function loadEpisodeMetadataV3Simple(
 
 // Simple parser for episode row - focuses on key fields for episodes
 function parseEpisodeRowSimple(row: any): any {
-  console.log(`[DEBUG] Episode row parsing - available keys:`, Object.keys(row));
-  
   // v3.0 uses named keys in the episode metadata
   if (row && typeof row === 'object') {
     // Check if this is v3.0 format with named keys
     if ('episode_index' in row) {
-      console.log(`[DEBUG] Detected v3.0 format with named keys`);
       // v3.0 format - use named keys
       // Convert BigInt values to numbers
       const toBigIntSafe = (value: any) => {
