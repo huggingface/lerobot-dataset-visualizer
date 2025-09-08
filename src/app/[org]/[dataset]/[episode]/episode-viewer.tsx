@@ -3,19 +3,24 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { postParentMessageWithParams } from "@/utils/postParentMessage";
-import VideosPlayer from "@/components/videos-player";
+import { SimpleVideosPlayer } from "@/components/simple-videos-player";
 import DataRecharts from "@/components/data-recharts";
 import PlaybackBar from "@/components/playback-bar";
 import { TimeProvider, useTime } from "@/context/time-context";
 import Sidebar from "@/components/side-nav";
 import Loading from "@/components/loading-component";
+import { getAdjacentEpisodesVideoInfo } from "./fetch-data";
 
 export default function EpisodeViewer({
   data,
   error,
+  org,
+  dataset,
 }: {
   data?: any;
   error?: string;
+  org?: string;
+  dataset?: string;
 }) {
   if (error) {
     return (
@@ -29,19 +34,18 @@ export default function EpisodeViewer({
   }
   return (
     <TimeProvider duration={data.duration}>
-      <EpisodeViewerInner data={data} />
+      <EpisodeViewerInner data={data} org={org} dataset={dataset} />
     </TimeProvider>
   );
 }
 
-function EpisodeViewerInner({ data }: { data: any }) {
+function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; dataset?: string; }) {
   const {
     datasetInfo,
     episodeId,
     videosInfo,
     chartDataGroups,
     episodes,
-    ignoredColumns,
   } = data;
 
   const [videosReady, setVideosReady] = useState(!videosInfo.length);
@@ -63,6 +67,22 @@ function EpisodeViewerInner({ data }: { data: any }) {
     (currentPage - 1) * pageSize,
     currentPage * pageSize,
   );
+  
+  // Preload adjacent episodes' videos
+  useEffect(() => {
+    if (!org || !dataset) return;
+    
+    const preloadAdjacent = async () => {
+      try {
+        await getAdjacentEpisodesVideoInfo(org, dataset, episodeId, 2);
+        // Preload adjacent episodes for smoother navigation
+      } catch {
+        // Skip preloading on error
+      }
+    };
+    
+    preloadAdjacent();
+  }, [org, dataset, episodeId]);
 
   // Initialize based on URL time parameter
   useEffect(() => {
@@ -201,7 +221,7 @@ function EpisodeViewerInner({ data }: { data: any }) {
 
         {/* Videos */}
         {videosInfo.length && (
-          <VideosPlayer
+          <SimpleVideosPlayer
             videosInfo={videosInfo}
             onVideosReady={() => setVideosReady(true)}
           />
@@ -214,14 +234,6 @@ function EpisodeViewerInner({ data }: { data: any }) {
             onChartsReady={() => setChartsReady(true)}
           />
 
-          {ignoredColumns.length > 0 && (
-            <p className="mt-2 text-orange-700">
-              Columns{" "}
-              <span className="font-mono">{ignoredColumns.join(", ")}</span> are
-              NOT shown since the visualizer currently does not support 2D or 3D
-              data.
-            </p>
-          )}
         </div>
 
         <PlaybackBar />

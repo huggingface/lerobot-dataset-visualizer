@@ -52,12 +52,18 @@ export async function readParquetColumn(
   fileBuffer: ArrayBuffer,
   columns: string[],
 ): Promise<any[]> {
-  return new Promise((resolve) => {
-    parquetRead({
-      file: fileBuffer,
-      columns,
-      onComplete: (data: any[]) => resolve(data),
-    });
+  return new Promise((resolve, reject) => {
+    try {
+      parquetRead({
+        file: fileBuffer,
+        columns: columns.length > 0 ? columns : undefined, // Let hyparquet read all columns if empty array
+        onComplete: (data: any[]) => {
+          resolve(data);
+        }
+      });
+    } catch (error) {
+      reject(error);
+    }
   });
 }
 
