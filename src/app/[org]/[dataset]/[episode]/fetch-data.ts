@@ -451,7 +451,31 @@ function processEpisodeDataForCharts(
   };
   
   // Columns to exclude from charts
-  const excludedColumns = ['index', 'task_index', 'episode_index', 'frame_index'];
+  const excludedColumns = ['index', 'task_index', 'episode_index', 'frame_index', 'next.done'];
+
+  // Create columns structure similar to V2.1 for proper hierarchical naming
+  const columns = Object.entries(info.features)
+    .filter(([key, value]) => 
+      ["float32", "int32"].includes(value.dtype) && 
+      value.shape.length === 1 && 
+      !excludedColumns.includes(key)
+    )
+    .map(([key, feature]) => {
+      let column_names = feature.names;
+      while (typeof column_names === "object") {
+        if (Array.isArray(column_names)) break;
+        column_names = Object.values(column_names ?? {})[0];
+      }
+      return {
+        key,
+        value: Array.isArray(column_names)
+          ? column_names.map((name) => `${key}${SERIES_NAME_DELIMITER}${name}`)
+          : Array.from(
+              { length: feature.shape[0] || 1 },
+              (_, i) => `${key}${SERIES_NAME_DELIMITER}${i}`,
+            ),
+      };
+    });
 
   // First, extract all series from the first data row to understand the structure
   if (episodeData.length > 0) {
@@ -467,10 +491,14 @@ function processEpisodeDataForCharts(
       // Skip excluded columns
       if (excludedColumns.includes(featureName)) return;
       
-      if (Array.isArray(value) && value.length > 0) {
-        // For array values like observation.state and action, create a key for each element
-        value.forEach((_, idx) => {
-          allKeys.push(`${featureName}[${idx}]`);
+      // Find the matching column definition to get proper names
+      const columnDef = columns.find(col => col.key === featureName);
+      if (columnDef && Array.isArray(value) && value.length > 0) {
+        // Use the proper hierarchical naming from column definition
+        columnDef.value.forEach((seriesName, idx) => {
+          if (idx < value.length) {
+            allKeys.push(seriesName);
+          }
         });
       } else if (typeof value === 'number' && !isNaN(value)) {
         // For scalar numeric values
@@ -483,10 +511,10 @@ function processEpisodeDataForCharts(
     
     seriesNames = ["timestamp", ...allKeys];
   } else {
-    // Fallback to feature-based approach
+    // Fallback to column-based approach like V2.1
     seriesNames = [
       "timestamp",
-      ...columnNames.map(({ key }) => key),
+      ...columns.map(({ value }) => value).flat(),
     ];
   }
 
@@ -502,9 +530,7 @@ function processEpisodeDataForCharts(
     }
     obj["timestamp"] = (index / Math.max(episodeData.length - 1, 1)) * videoDuration;
     
-    // For v3.0, data might have numeric string keys, so we need to map them
-    
-    // Add all data columns
+    // Add all data columns using hierarchical naming
     if (row && typeof row === 'object') {
       Object.entries(row).forEach(([key, value]) => {
         if (key === 'timestamp') {
@@ -518,11 +544,16 @@ function processEpisodeDataForCharts(
         // Skip excluded columns
         if (excludedColumns.includes(featureName)) return;
         
-        if (Array.isArray(value)) {
-          // For array values like observation.state and action
+        // Find the matching column definition to get proper series names
+        const columnDef = columns.find(col => col.key === featureName);
+        
+        if (Array.isArray(value) && columnDef) {
+          // For array values like observation.state and action, use proper hierarchical naming
           value.forEach((val, idx) => {
-            const elementKey = `${featureName}[${idx}]`;
-            obj[elementKey] = typeof val === 'number' ? val : Number(val);
+            if (idx < columnDef.value.length) {
+              const seriesName = columnDef.value[idx];
+              obj[seriesName] = typeof val === 'number' ? val : Number(val);
+            }
           });
         } else if (typeof value === 'number' && !isNaN(value)) {
           obj[featureName] = value;
@@ -549,46 +580,15 @@ function processEpisodeDataForCharts(
     ...excludedColumns // Also include the manually excluded columns
   ];
 
-  // Group processing logic (adapted for v3.0 numeric keys)
+  // Group processing logic (using SERIES_NAME_DELIMITER like v2.1)
   const numericKeys = seriesNames.filter((k) => k !== "timestamp");
-  
-  // Group keys by prefix (for hierarchical structure like v2)
   const suffixGroupsMap: Record<string, string[]> = {};
   
-  // First, let's check if we have keys with dots (hierarchical structure)
-  const hasHierarchicalKeys = numericKeys.some(key => key.includes('.') && !key.includes('['));
-  
-  if (hasHierarchicalKeys) {
-    // Group by suffix after the dot (like v2 does)
-    for (const key of numericKeys) {
-      const cleanKey = key.replace(/\[\d+\]$/, ''); // Remove array indices
-      const parts = cleanKey.split('.');
-      
-      if (parts.length >= 2) {
-        // For keys like "observation.state" or "action.main_shoulder_pan"
-        const suffix = parts.slice(1).join('.'); // Everything after first dot
-        if (!suffixGroupsMap[suffix]) {
-          suffixGroupsMap[suffix] = [];
-        }
-        suffixGroupsMap[suffix].push(key);
-      } else {
-        // Keys without dots go in their own group
-        if (!suffixGroupsMap[key]) {
-          suffixGroupsMap[key] = [];
-        }
-        suffixGroupsMap[key].push(key);
-      }
-    }
-  } else {
-    // For v3 data without hierarchical keys, group by base name (removing array indices)
-    for (const key of numericKeys) {
-      const baseKey = key.replace(/\[\d+\]$/, '');
-      
-      if (!suffixGroupsMap[baseKey]) {
-        suffixGroupsMap[baseKey] = [];
-      }
-      suffixGroupsMap[baseKey].push(key);
-    }
+  for (const key of numericKeys) {
+    const parts = key.split(SERIES_NAME_DELIMITER);
+    const suffix = parts[1] || parts[0]; // fallback to key if no delimiter
+    if (!suffixGroupsMap[suffix]) suffixGroupsMap[suffix] = [];
+    suffixGroupsMap[suffix].push(key);
   }
   const suffixGroups = Object.values(suffixGroupsMap);
   
@@ -655,60 +655,34 @@ function processEpisodeDataForCharts(
       return [merged];
     });
 
-  // Utility function to group row keys by suffix
+  // Utility function to group row keys by suffix (same as V2.1)
   function groupRowBySuffix(row: Record<string, number>): Record<string, any> {
     const result: Record<string, any> = {};
-    
-    // Check if we have hierarchical keys
-    const hasHierarchicalKeys = Object.keys(row).some(key => key.includes('.') && !key.includes('[') && key !== 'timestamp');
-    
-    if (hasHierarchicalKeys) {
-      // Group by prefix for hierarchical display
-      const prefixGroups: Record<string, Record<string, number>> = {};
-      
-      for (const [key, value] of Object.entries(row)) {
-        if (key === "timestamp") {
-          result["timestamp"] = value;
-          continue;
-        }
-        
-        const cleanKey = key.replace(/\[\d+\]$/, ''); // Remove array indices
-        const parts = cleanKey.split('.');
-        
-        if (parts.length >= 2) {
-          const prefix = parts[0];
-          const suffix = parts.slice(1).join('.');
-          
-          if (!prefixGroups[suffix]) {
-            prefixGroups[suffix] = {};
-          }
-          
-          // Store with the prefix as key
-          prefixGroups[suffix][prefix] = value;
-        } else {
-          // Non-hierarchical keys go directly to result
-          result[key] = value;
-        }
+    const suffixGroups: Record<string, Record<string, number>> = {};
+    for (const [key, value] of Object.entries(row)) {
+      if (key === "timestamp") {
+        result["timestamp"] = value;
+        continue;
       }
-      
-      // Add grouped data to result
-      for (const [suffix, group] of Object.entries(prefixGroups)) {
-        const keys = Object.keys(group);
-        if (keys.length === 1) {
-          // Single value, use full name
-          result[`${keys[0]}.${suffix}`] = group[keys[0]];
-        } else {
-          // Multiple values, create nested structure
-          result[suffix] = group;
-        }
-      }
-    } else {
-      // For non-hierarchical data, just pass through
-      for (const [key, value] of Object.entries(row)) {
+      const parts = key.split(SERIES_NAME_DELIMITER);
+      if (parts.length === 2) {
+        const [prefix, suffix] = parts;
+        if (!suffixGroups[suffix]) suffixGroups[suffix] = {};
+        suffixGroups[suffix][prefix] = value;
+      } else {
         result[key] = value;
       }
     }
-    
+    for (const [suffix, group] of Object.entries(suffixGroups)) {
+      const keys = Object.keys(group);
+      if (keys.length === 1) {
+        // Use the full original name as the key
+        const fullName = `${keys[0]}${SERIES_NAME_DELIMITER}${suffix}`;
+        result[fullName] = group[keys[0]];
+      } else {
+        result[suffix] = group;
+      }
+    }
     return result;
   }
 

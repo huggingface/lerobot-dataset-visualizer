@@ -19,6 +19,9 @@ type DataGraphProps = {
 
 import React, { useMemo } from "react";
 
+// Use the same delimiter as the data processing
+const SERIES_NAME_DELIMITER = " | ";
+
 export const DataRecharts = React.memo(
   ({ data, onChartsReady }: DataGraphProps) => {
     // Shared hoveredTime for all graphs
@@ -47,7 +50,6 @@ export const DataRecharts = React.memo(
   },
 );
 
-const NESTED_KEY_DELIMITER = ",";
 
 const SingleDataGraph = React.memo(
   ({
@@ -66,13 +68,13 @@ const SingleDataGraph = React.memo(
         // Special case: if this is a group value that is a primitive, assign to prefix.key
         if (typeof value === "number") {
           if (prefix) {
-            result[`${prefix}${NESTED_KEY_DELIMITER}${key}`] = value;
+            result[`${prefix}${SERIES_NAME_DELIMITER}${key}`] = value;
           } else {
             result[key] = value;
           }
         } else if (value !== null && typeof value === "object" && !Array.isArray(value)) {
           // If it's an object, recurse
-          Object.assign(result, flattenRow(value, prefix ? `${prefix}${NESTED_KEY_DELIMITER}${key}` : key));
+          Object.assign(result, flattenRow(value, prefix ? `${prefix}${SERIES_NAME_DELIMITER}${key}` : key));
         }
       }
       // Always keep timestamp at top level if present
@@ -99,7 +101,7 @@ const SingleDataGraph = React.memo(
     const groups: Record<string, string[]> = {};
     const singles: string[] = [];
     dataKeys.forEach((key) => {
-      const parts = key.split(NESTED_KEY_DELIMITER);
+      const parts = key.split(SERIES_NAME_DELIMITER);
       if (parts.length > 1) {
         const group = parts[0];
         if (!groups[group]) groups[group] = [];
@@ -148,7 +150,7 @@ const SingleDataGraph = React.memo(
       const groups: Record<string, string[]> = {};
       const singles: string[] = [];
       dataKeys.forEach((key) => {
-        const parts = key.split(NESTED_KEY_DELIMITER);
+        const parts = key.split(SERIES_NAME_DELIMITER);
         if (parts.length > 1) {
           const group = parts[0];
           if (!groups[group]) groups[group] = [];
@@ -305,7 +307,7 @@ const SingleDataGraph = React.memo(
               {/* Render lines for visible dataKeys only */}
               {dataKeys.map((key) => {
                 // Use group color for all keys in a group
-                const group = key.includes(NESTED_KEY_DELIMITER) ? key.split(NESTED_KEY_DELIMITER)[0] : key;
+                const group = key.includes(SERIES_NAME_DELIMITER) ? key.split(SERIES_NAME_DELIMITER)[0] : key;
                 const color = groupColorMap[group];
                 let strokeDasharray: string | undefined = undefined;
                 if (groups[group] && groups[group].length > 1) {
