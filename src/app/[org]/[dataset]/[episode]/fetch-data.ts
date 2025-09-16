@@ -437,18 +437,33 @@ function processEpisodeDataForCharts(
   // Convert parquet data to chart format
   let seriesNames: string[] = [];
   
-  // Create a mapping from numeric indices to feature names for v3.0 data
-  const v3IndexToFeatureMap: Record<string, string> = {
-    '0': 'observation.state',
-    '1': 'action',
-    '2': 'timestamp',
-    '3': 'episode_index', 
-    '4': 'frame_index',
-    '5': 'next.reward',
-    '6': 'next.done',
-    '7': 'index',
-    '8': 'task_index'
-  };
+  // Dynamically create a mapping from numeric indices to feature names based on actual dataset features
+  const v3IndexToFeatureMap: Record<string, string> = {};
+  
+  // Build mapping based on what features actually exist in the dataset
+  const featureKeys = Object.keys(info.features);
+  
+  // Common feature order for v3.0 datasets (but only include if they exist)
+  const expectedFeatureOrder = [
+    'observation.state',
+    'action', 
+    'timestamp',
+    'episode_index',
+    'frame_index',
+    'next.reward',
+    'next.done',
+    'index',
+    'task_index'
+  ];
+  
+  // Map indices to features that actually exist
+  let currentIndex = 0;
+  expectedFeatureOrder.forEach(feature => {
+    if (featureKeys.includes(feature)) {
+      v3IndexToFeatureMap[currentIndex.toString()] = feature;
+      currentIndex++;
+    }
+  });
   
   // Columns to exclude from charts
   const excludedColumns = ['index', 'task_index', 'episode_index', 'frame_index', 'next.done'];
@@ -487,6 +502,9 @@ function processEpisodeDataForCharts(
       
       // Map numeric key to feature name if available
       const featureName = v3IndexToFeatureMap[key] || key;
+      
+      // Skip if feature doesn't exist in dataset
+      if (!info.features[featureName]) return;
       
       // Skip excluded columns
       if (excludedColumns.includes(featureName)) return;
@@ -540,6 +558,9 @@ function processEpisodeDataForCharts(
         
         // Map numeric key to feature name if available
         const featureName = v3IndexToFeatureMap[key] || key;
+        
+        // Skip if feature doesn't exist in dataset
+        if (!info.features[featureName]) return;
         
         // Skip excluded columns
         if (excludedColumns.includes(featureName)) return;
