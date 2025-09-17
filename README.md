@@ -51,3 +51,6 @@ You can start editing the page by modifying `src/app/page.tsx` or other files in
 ## Contributing
 
 Contributions, bug reports, and feature requests are welcome! Please open an issue or submit a pull request.
+
+### Acknowledgement 
+The app was orignally created by [@Mishig25]([url](https://github.com/mishig25)) and taken from this PR [#1055]([url](https://github.com/huggingface/lerobot/pull/1055))
