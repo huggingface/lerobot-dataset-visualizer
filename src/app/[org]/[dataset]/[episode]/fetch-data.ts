@@ -193,21 +193,47 @@ async function getEpisodeDataV2(
 
   const arrayBuffer = await fetchParquetFile(parquetUrl);
   
-  // Extract task - v2.x datasets might have it directly in data or in tasks metadata
+  // Extract task - first check for language instructions (preferred), then fallback to task field or tasks.jsonl
   let task: string | undefined;
+  let allData: any[] = [];
   
-  // First try to get task directly from data (v2.x format)
+  // Load data first
   try {
-    const allData = await readParquetAsObjects(arrayBuffer, []);
-    if (allData && allData.length > 0 && allData[0].task) {
-      task = allData[0].task;
-    }
+    allData = await readParquetAsObjects(arrayBuffer, []);
   } catch (error) {
-    // Task might not be directly in data for this v2.x dataset
+    // Could not read parquet data
   }
   
-  // If no task found, try loading from tasks.jsonl metadata file (v2.x format)
-  if (!task) {
+  // First check for language_instruction fields in the data (preferred)
+  if (allData.length > 0) {
+    const firstRow = allData[0];
+    const languageInstructions: string[] = [];
+    
+    // Check for language_instruction field
+    if (firstRow.language_instruction) {
+      languageInstructions.push(firstRow.language_instruction);
+    }
+    
+    // Check for numbered language_instruction fields
+    let instructionNum = 2;
+    while (firstRow[`language_instruction_${instructionNum}`]) {
+      languageInstructions.push(firstRow[`language_instruction_${instructionNum}`]);
+      instructionNum++;
+    }
+    
+    // Join all instructions with line breaks
+    if (languageInstructions.length > 0) {
+      task = languageInstructions.join('\n');
+    }
+  }
+  
+  // If no language instructions found, try direct task field
+  if (!task && allData.length > 0 && allData[0].task) {
+    task = allData[0].task;
+  }
+  
+  // If still no task found, try loading from tasks.jsonl metadata file (v2.x format)
+  if (!task && allData.length > 0) {
     try {
       const tasksUrl = buildVersionedUrl(repoId, version, "meta/tasks.jsonl");
       const tasksResponse = await fetch(tasksUrl);
@@ -220,8 +246,7 @@ async function getEpisodeDataV2(
           .filter(line => line.trim())
           .map(line => JSON.parse(line));
         
-        const allData = await readParquetAsObjects(arrayBuffer, []);
-        if (allData && allData.length > 0 && tasksData && tasksData.length > 0) {
+        if (tasksData && tasksData.length > 0) {
           const taskIndex = allData[0].task_index;
           
           // Convert BigInt to number for comparison
@@ -461,29 +486,76 @@ async function loadEpisodeDataV3(
     // Convert to the same format as v2.x for compatibility with existing chart code
     const { chartDataGroups, ignoredColumns } = processEpisodeDataForCharts(episodeData, info, episodeMetadata);
     
-    // Extract task from tasks metadata file using task_index
+    // First check for language_instruction fields in the data (preferred)
     let task: string | undefined;
-    try {
-      // Load tasks metadata
-      const tasksUrl = buildVersionedUrl(repoId, version, "meta/tasks.parquet");
-      const tasksArrayBuffer = await fetchParquetFile(tasksUrl);
-      const tasksData = await readParquetAsObjects(tasksArrayBuffer, []);
+    if (episodeData.length > 0) {
+      const firstRow = episodeData[0];
+      const languageInstructions: string[] = [];
       
-      if (episodeData.length > 0 && tasksData && tasksData.length > 0) {
-        const taskIndex = episodeData[0].task_index;
-        
-        // Convert BigInt to number for comparison
-        const taskIndexNum = typeof taskIndex === 'bigint' ? Number(taskIndex) : taskIndex;
-        
-        // Look up task by index
-        if (taskIndexNum !== undefined && taskIndexNum < tasksData.length) {
-          const taskData = tasksData[taskIndexNum];
-          // Extract task from __index_level_0__ field
-          task = taskData.__index_level_0__ || taskData.task || taskData['task'] || taskData[0];
-        }
+      // Check for language_instruction field
+      if (firstRow.language_instruction) {
+        languageInstructions.push(firstRow.language_instruction);
       }
-    } catch (error) {
-      // Could not load tasks metadata - dataset might not have language tasks
+      
+      // Check for numbered language_instruction fields
+      let instructionNum = 2;
+      while (firstRow[`language_instruction_${instructionNum}`]) {
+        languageInstructions.push(firstRow[`language_instruction_${instructionNum}`]);
+        instructionNum++;
+      }
+      
+      // If no instructions found in first row, check a few more rows
+      if (languageInstructions.length === 0 && episodeData.length > 1) {
+        const middleIndex = Math.floor(episodeData.length / 2);
+        const lastIndex = episodeData.length - 1;
+        
+        [middleIndex, lastIndex].forEach((idx) => {
+          const row = episodeData[idx];
+          
+          if (row.language_instruction && languageInstructions.length === 0) {
+            // Use this row's instructions
+            if (row.language_instruction) {
+              languageInstructions.push(row.language_instruction);
+            }
+            let num = 2;
+            while (row[`language_instruction_${num}`]) {
+              languageInstructions.push(row[`language_instruction_${num}`]);
+              num++;
+            }
+          }
+        });
+      }
+      
+      // Join all instructions with line breaks
+      if (languageInstructions.length > 0) {
+        task = languageInstructions.join('\n');
+      }
+    }
+    
+    // If no language instructions found, fall back to tasks metadata
+    if (!task) {
+      try {
+        // Load tasks metadata
+        const tasksUrl = buildVersionedUrl(repoId, version, "meta/tasks.parquet");
+        const tasksArrayBuffer = await fetchParquetFile(tasksUrl);
+        const tasksData = await readParquetAsObjects(tasksArrayBuffer, []);
+        
+        if (episodeData.length > 0 && tasksData && tasksData.length > 0) {
+          const taskIndex = episodeData[0].task_index;
+          
+          // Convert BigInt to number for comparison
+          const taskIndexNum = typeof taskIndex === 'bigint' ? Number(taskIndex) : taskIndex;
+          
+          // Look up task by index
+          if (taskIndexNum !== undefined && taskIndexNum < tasksData.length) {
+            const taskData = tasksData[taskIndexNum];
+            // Extract task from __index_level_0__ field
+            task = taskData.__index_level_0__ || taskData.task || taskData['task'] || taskData[0];
+          }
+        }
+      } catch (error) {
+        // Could not load tasks metadata - dataset might not have language tasks
+      }
     }
     
     return { chartDataGroups, ignoredColumns, task };

@@ -233,9 +233,14 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
           <div className="mb-6 p-4 bg-slate-800 rounded-lg border border-slate-600">
             <p className="text-slate-300">
               <span className="font-semibold text-slate-100">Language Instruction:</span>
-              <br />
-              {task}
             </p>
+            <div className="mt-2 text-slate-300">
+              {task.split('\n').map((instruction, index) => (
+                <p key={index} className="mb-1">
+                  {instruction}
+                </p>
+              ))}
+            </div>
           </div>
         )}
 
