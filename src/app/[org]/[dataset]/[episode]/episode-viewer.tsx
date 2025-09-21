@@ -46,6 +46,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
     videosInfo,
     chartDataGroups,
     episodes,
+    task,
   } = data;
 
   const [videosReady, setVideosReady] = useState(!videosInfo.length);
@@ -225,6 +226,17 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
             videosInfo={videosInfo}
             onVideosReady={() => setVideosReady(true)}
           />
+        )}
+
+        {/* Language Instruction */}
+        {task && (
+          <div className="mb-6 p-4 bg-slate-800 rounded-lg border border-slate-600">
+            <p className="text-slate-300">
+              <span className="font-semibold text-slate-100">Language Instruction:</span>
+              <br />
+              {task}
+            </p>
+          </div>
         )}
 
         {/* Graph */}

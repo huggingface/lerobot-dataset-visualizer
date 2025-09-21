@@ -192,6 +192,53 @@ async function getEpisodeDataV2(
   );
 
   const arrayBuffer = await fetchParquetFile(parquetUrl);
+  
+  // Extract task - v2.x datasets might have it directly in data or in tasks metadata
+  let task: string | undefined;
+  
+  // First try to get task directly from data (v2.x format)
+  try {
+    const allData = await readParquetAsObjects(arrayBuffer, []);
+    if (allData && allData.length > 0 && allData[0].task) {
+      task = allData[0].task;
+    }
+  } catch (error) {
+    // Task might not be directly in data for this v2.x dataset
+  }
+  
+  // If no task found, try loading from tasks.jsonl metadata file (v2.x format)
+  if (!task) {
+    try {
+      const tasksUrl = buildVersionedUrl(repoId, version, "meta/tasks.jsonl");
+      const tasksResponse = await fetch(tasksUrl);
+      
+      if (tasksResponse.ok) {
+        const tasksText = await tasksResponse.text();
+        // Parse JSONL format (one JSON object per line)
+        const tasksData = tasksText
+          .split('\n')
+          .filter(line => line.trim())
+          .map(line => JSON.parse(line));
+        
+        const allData = await readParquetAsObjects(arrayBuffer, []);
+        if (allData && allData.length > 0 && tasksData && tasksData.length > 0) {
+          const taskIndex = allData[0].task_index;
+          
+          // Convert BigInt to number for comparison
+          const taskIndexNum = typeof taskIndex === 'bigint' ? Number(taskIndex) : taskIndex;
+          
+          // Find task by task_index
+          const taskData = tasksData.find(t => t.task_index === taskIndexNum);
+          if (taskData) {
+            task = taskData.task;
+          }
+        }
+      }
+    } catch (error) {
+      // No tasks metadata file for this v2.x dataset
+    }
+  }
+  
   const data = await readParquetColumn(arrayBuffer, filteredColumnNames);
   // Flatten and map to array of objects for chartData
   const seriesNames = [
@@ -283,7 +330,7 @@ async function getEpisodeDataV2(
       // suffixGroupArr is array of suffix groups (each is array of keys)
       const merged = suffixGroupArr.flat();
       if (merged.length > 6) {
-        const subgroups = [];
+        const subgroups: string[][] = [];
         for (let i = 0; i < merged.length; i += 6) {
           subgroups.push(merged.slice(i, i + 6));
         }
@@ -337,6 +384,7 @@ async function getEpisodeDataV2(
     episodes,
     ignoredColumns,
     duration,
+    task,
   };
 }
 
@@ -365,7 +413,7 @@ async function getEpisodeDataV3(
   const videosInfo = extractVideoInfoV3WithSegmentation(repoId, version, info, episodeMetadata);
 
   // Load episode data for charts
-  const { chartDataGroups, ignoredColumns } = await loadEpisodeDataV3(repoId, version, info, episodeMetadata);
+  const { chartDataGroups, ignoredColumns, task } = await loadEpisodeDataV3(repoId, version, info, episodeMetadata);
 
   // Calculate duration from episode length and FPS if available
   const duration = episodeMetadata.length ? episodeMetadata.length / info.fps : 
@@ -379,6 +427,7 @@ async function getEpisodeDataV3(
     episodes,
     ignoredColumns,
     duration,
+    task,
   };
 }
 
@@ -388,7 +437,7 @@ async function loadEpisodeDataV3(
   version: string,
   info: DatasetMetadata,
   episodeMetadata: any,
-): Promise<{ chartDataGroups: any[]; ignoredColumns: string[] }> {
+): Promise<{ chartDataGroups: any[]; ignoredColumns: string[]; task?: string }> {
   // Build data file path using chunk and file indices
   const dataChunkIndex = episodeMetadata.data_chunk_index || 0;
   const dataFileIndex = episodeMetadata.data_file_index || 0;
@@ -397,7 +446,7 @@ async function loadEpisodeDataV3(
   try {
     const dataUrl = buildVersionedUrl(repoId, version, dataPath);
     const arrayBuffer = await fetchParquetFile(dataUrl);
-    const fullData = await readParquetColumn(arrayBuffer, []);
+    const fullData = await readParquetAsObjects(arrayBuffer, []);
     
     // Extract the episode-specific data slice
     // Convert BigInt to number if needed
@@ -406,15 +455,40 @@ async function loadEpisodeDataV3(
     const episodeData = fullData.slice(fromIndex, toIndex);
     
     if (episodeData.length === 0) {
-      return { chartDataGroups: [], ignoredColumns: [] };
+      return { chartDataGroups: [], ignoredColumns: [], task: undefined };
     }
     
     // Convert to the same format as v2.x for compatibility with existing chart code
     const { chartDataGroups, ignoredColumns } = processEpisodeDataForCharts(episodeData, info, episodeMetadata);
     
-    return { chartDataGroups, ignoredColumns };
+    // Extract task from tasks metadata file using task_index
+    let task: string | undefined;
+    try {
+      // Load tasks metadata
+      const tasksUrl = buildVersionedUrl(repoId, version, "meta/tasks.parquet");
+      const tasksArrayBuffer = await fetchParquetFile(tasksUrl);
+      const tasksData = await readParquetAsObjects(tasksArrayBuffer, []);
+      
+      if (episodeData.length > 0 && tasksData && tasksData.length > 0) {
+        const taskIndex = episodeData[0].task_index;
+        
+        // Convert BigInt to number for comparison
+        const taskIndexNum = typeof taskIndex === 'bigint' ? Number(taskIndex) : taskIndex;
+        
+        // Look up task by index
+        if (taskIndexNum !== undefined && taskIndexNum < tasksData.length) {
+          const taskData = tasksData[taskIndexNum];
+          // Extract task from __index_level_0__ field
+          task = taskData.__index_level_0__ || taskData.task || taskData['task'] || taskData[0];
+        }
+      }
+    } catch (error) {
+      // Could not load tasks metadata - dataset might not have language tasks
+    }
+    
+    return { chartDataGroups, ignoredColumns, task };
   } catch {
-    return { chartDataGroups: [], ignoredColumns: [] };
+    return { chartDataGroups: [], ignoredColumns: [], task: undefined };
   }
 }
 
@@ -465,7 +539,7 @@ function processEpisodeDataForCharts(
     }
   });
   
-  // Columns to exclude from charts
+  // Columns to exclude from charts (note: 'task' is intentionally not excluded as we want to access it)
   const excludedColumns = ['index', 'task_index', 'episode_index', 'frame_index', 'next.done'];
 
   // Create columns structure similar to V2.1 for proper hierarchical naming
@@ -831,7 +905,7 @@ function parseEpisodeRowSimple(row: any): any {
         return parseInt(value) || 0;
       };
       
-      const episodeData = {
+      const episodeData: any = {
         episode_index: toBigIntSafe(row['episode_index']),
         data_chunk_index: toBigIntSafe(row['data/chunk_index']),
         data_file_index: toBigIntSafe(row['data/file_index']),
