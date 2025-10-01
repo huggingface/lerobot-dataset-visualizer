@@ -23,6 +23,10 @@ export async function getEpisodeData(
     const jsonUrl = buildVersionedUrl(repoId, version, "meta/info.json");
     const info = await fetchJson<DatasetMetadata>(jsonUrl);
 
+    if (info.video_path === null) {
+      throw new Error("Only videos datasets are supported in this visualizer.\nPlease use Rerun visualizer for images datasets.");
+    }
+
     // Handle different versions
     if (version === "v3.0") {
       return await getEpisodeDataV3(repoId, version, info, episodeId);
