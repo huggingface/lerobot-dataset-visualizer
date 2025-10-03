@@ -481,7 +481,19 @@ async function loadEpisodeDataV3(
     // Convert BigInt to number if needed
     const fromIndex = Number(episodeMetadata.dataset_from_index || 0);
     const toIndex = Number(episodeMetadata.dataset_to_index || fullData.length);
-    const episodeData = fullData.slice(fromIndex, toIndex);
+    
+    // Find the starting index of this parquet file by checking the first row's index
+    // This handles the case where episodes are split across multiple parquet files
+    let fileStartIndex = 0;
+    if (fullData.length > 0 && fullData[0].index !== undefined) {
+      fileStartIndex = Number(fullData[0].index);
+    }
+    
+    // Adjust indices to be relative to this file's starting position
+    const localFromIndex = Math.max(0, fromIndex - fileStartIndex);
+    const localToIndex = Math.min(fullData.length, toIndex - fileStartIndex);
+    
+    const episodeData = fullData.slice(localFromIndex, localToIndex);
     
     if (episodeData.length === 0) {
       return { chartDataGroups: [], ignoredColumns: [], task: undefined };
@@ -924,47 +936,50 @@ async function loadEpisodeMetadataV3Simple(
   version: string,
   episodeId: number,
 ): Promise<any> {
-  const episodesMetadataUrl = buildVersionedUrl(
-    repoId,
-    version,
-    "meta/episodes/chunk-000/file-000.parquet"
-  );
+  // Pattern: meta/episodes/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet
+  // Most datasets have all episodes in chunk-000/file-000, but episodes can be split across files
+  
+  let episodeRow = null;
+  let fileIndex = 0;
+  const chunkIndex = 0; // Episodes are typically in chunk-000
+  
+  // Try loading episode metadata files until we find the episode
+  while (!episodeRow) {
+    const episodesMetadataPath = `meta/episodes/chunk-${chunkIndex.toString().padStart(3, "0")}/file-${fileIndex.toString().padStart(3, "0")}.parquet`;
+    const episodesMetadataUrl = buildVersionedUrl(repoId, version, episodesMetadataPath);
 
-  try {
-    const arrayBuffer = await fetchParquetFile(episodesMetadataUrl);
-    const episodesData = await readParquetAsObjects(arrayBuffer, []);
-    
-    if (episodesData.length === 0) {
-      throw new Error("No episode metadata found");
-    }
-    
-    // Find the row for the requested episode
-    let episodeRow = null;
-    
-    for (let i = 0; i < episodesData.length; i++) {
-      const row = episodesData[i];
-      const parsedRow = parseEpisodeRowSimple(row);
+    try {
+      const arrayBuffer = await fetchParquetFile(episodesMetadataUrl);
+      const episodesData = await readParquetAsObjects(arrayBuffer, []);
       
-      if (parsedRow.episode_index === episodeId) {
-        episodeRow = row;
-        break;
+      if (episodesData.length === 0) {
+        // Empty file, try next one
+        fileIndex++;
+        continue;
       }
-    }
-    
-    if (!episodeRow) {
-      // Fallback: if we can't find the exact episode, use the row at index episodeId
-      if (episodeId < episodesData.length) {
-        episodeRow = episodesData[episodeId];
-      } else {
-        throw new Error(`Episode ${episodeId} not found in metadata`);
+      
+      // Find the row for the requested episode by episode_index
+      for (const row of episodesData) {
+        const parsedRow = parseEpisodeRowSimple(row);
+        
+        if (parsedRow.episode_index === episodeId) {
+          episodeRow = row;
+          break;
+        }
       }
+      
+      if (!episodeRow) {
+        // Not in this file, try the next one
+        fileIndex++;
+      }
+    } catch (error) {
+      // File doesn't exist - episode not found
+      throw new Error(`Episode ${episodeId} not found in metadata (searched up to file-${fileIndex.toString().padStart(3, "0")}.parquet)`);
     }
-    
-    // Convert the row to a usable format
-    return parseEpisodeRowSimple(episodeRow);
-  } catch (error) {
-    throw error;
   }
+  
+  // Convert the row to a usable format
+  return parseEpisodeRowSimple(episodeRow);
 }
 
 // Simple parser for episode row - focuses on key fields for episodes
