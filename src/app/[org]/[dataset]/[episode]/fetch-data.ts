@@ -7,7 +7,7 @@ import {
   readParquetAsObjects,
 } from "@/utils/parquetUtils";
 import { pick } from "@/utils/pick";
-import { getDatasetVersion, buildVersionedUrl } from "@/utils/versionUtils";
+import { getDatasetVersion, buildVersionedUrl, getAuthHeaders } from "@/utils/versionUtils";
 
 const SERIES_NAME_DELIMITER = " | ";
 
@@ -240,7 +240,9 @@ async function getEpisodeDataV2(
   if (!task && allData.length > 0) {
     try {
       const tasksUrl = buildVersionedUrl(repoId, version, "meta/tasks.jsonl");
-      const tasksResponse = await fetch(tasksUrl);
+      const tasksResponse = await fetch(tasksUrl, {
+        headers: getAuthHeaders()
+      });
       
       if (tasksResponse.ok) {
         const tasksText = await tasksResponse.text();
