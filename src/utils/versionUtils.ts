@@ -5,6 +5,48 @@
 const DATASET_URL = process.env.DATASET_URL || "https://huggingface.co/datasets";
 
 /**
+ * Get HuggingFace token from environment or cache
+ */
+function getHFToken(): string | undefined {
+  // First try environment variable
+  if (process.env.HF_TOKEN) {
+    return process.env.HF_TOKEN;
+  }
+  
+  // Fallback to reading from HuggingFace cache (server-side only)
+  // Check if we're in a Node.js environment
+  if (typeof window === 'undefined') {
+    try {
+      // Dynamic require to avoid webpack bundling issues
+      const fs = require('fs');
+      const os = require('os');
+      const path = require('path');
+      
+      const tokenPath = path.join(os.homedir(), '.cache', 'huggingface', 'token');
+      const token = fs.readFileSync(tokenPath, 'utf-8').trim();
+      return token;
+    } catch {
+      // Token file doesn't exist or can't be read
+      return undefined;
+    }
+  }
+  
+  return undefined;
+}
+
+/**
+ * Get authorization headers for HuggingFace API calls
+ */
+export function getAuthHeaders(): HeadersInit {
+  const headers: HeadersInit = {};
+  const token = getHFToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+/**
  * Dataset information structure from info.json
  */
 interface DatasetInfo {
@@ -36,7 +78,8 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
     const response = await fetch(testUrl, { 
       method: "GET",
       cache: "no-store",
-      signal: controller.signal
+      signal: controller.signal,
+      headers: getAuthHeaders()
     });
     
     clearTimeout(timeoutId);

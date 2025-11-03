@@ -47,6 +47,7 @@ You can start editing the page by modifying `src/app/page.tsx` or other files in
 ### Environment Variables
 
 - `DATASET_URL`: (optional) Base URL for dataset hosting (defaults to HuggingFace Datasets).
+- `HF_TOKEN`: (optional when locally running the machine) HuggingFace API token for accessing private datasets. If not set, the visualizer will automatically try to read from `~/.cache/huggingface/token` (the default HuggingFace CLI cache location). You can get your token from [HuggingFace Settings](https://huggingface.co/settings/tokens).
 
 ## Contributing
 
