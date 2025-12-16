@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useTime } from "../context/time-context";
+import { usePlayback, useTime } from "../context/time-context";
 import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
 
 type VideoInfo = {
@@ -22,7 +22,8 @@ export const VideosPlayer = ({
   videosInfo,
   onVideosReady,
 }: VideoPlayerProps) => {
-  const { currentTime, setCurrentTime, isPlaying, setIsPlaying } = useTime();
+  const { currentTime, setCurrentTime } = useTime();
+  const { isPlaying, setIsPlaying } = usePlayback();
   const videoRefs = useRef<HTMLVideoElement[]>([]);
   // Hidden/enlarged state and hidden menu
   const [hiddenVideos, setHiddenVideos] = useState<string[]>([]);
@@ -62,7 +63,7 @@ export const VideosPlayer = ({
           if (ref) {
             ref.currentTime = currentTime;
             if (isPlaying) {
-              ref.play().catch(() => {});
+              ref.play().catch(() => { });
             }
           }
         }
@@ -151,12 +152,12 @@ export const VideosPlayer = ({
     videoRefs.current.forEach((video, index) => {
       if (video && Math.abs(video.currentTime - currentTime) > 0.2) {
         const videoInfo = videosInfo[index];
-        
+
         if (videoInfo?.isSegmented) {
           // For segmented videos, map the global time to segment time
           const segmentStart = videoInfo.segmentStart || 0;
           const segmentDuration = videoInfo.segmentDuration || 0;
-          
+
           if (segmentDuration > 0) {
             // Map currentTime (0 to segmentDuration) to video time (segmentStart to segmentEnd)
             const segmentTime = segmentStart + currentTime;
@@ -177,7 +178,7 @@ export const VideosPlayer = ({
       // Find the video info for this video element
       const videoIndex = videoRefs.current.findIndex(ref => ref === video);
       const videoInfo = videosInfo[videoIndex];
-      
+
       if (videoInfo?.isSegmented) {
         // For segmented videos, map the video time back to global time (0 to segmentDuration)
         const segmentStart = videoInfo.segmentStart || 0;
@@ -196,18 +197,18 @@ export const VideosPlayer = ({
     const onCanPlayThrough = (videoIndex: number) => {
       const video = videoRefs.current[videoIndex];
       const videoInfo = videosInfo[videoIndex];
-      
+
       // Setup video segmentation for v3.0 chunked videos
       if (video && videoInfo?.isSegmented) {
         const segmentStart = videoInfo.segmentStart || 0;
         const segmentEnd = videoInfo.segmentEnd || video.duration || 0;
-        
-        
+
+
         // Set initial time to segment start if not already set
         if (video.currentTime < segmentStart || video.currentTime > segmentEnd) {
           video.currentTime = segmentStart;
         }
-        
+
         // Add event listener to handle segment boundaries
         const handleTimeUpdate = () => {
           if (video.currentTime > segmentEnd) {
@@ -217,15 +218,15 @@ export const VideosPlayer = ({
             }
           }
         };
-        
+
         video.addEventListener('timeupdate', handleTimeUpdate);
-        
+
         // Store cleanup function
         (video as any)._segmentCleanup = () => {
           video.removeEventListener('timeupdate', handleTimeUpdate);
         };
       }
-      
+
       videosReadyCount += 1;
       if (videosReadyCount === videosInfo.length) {
         if (typeof onVideosReady === "function") {
