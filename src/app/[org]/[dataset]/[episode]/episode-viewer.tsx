@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { postParentMessageWithParams } from "@/utils/postParentMessage";
 import { SimpleVideosPlayer } from "@/components/simple-videos-player";
 import DataRecharts from "@/components/data-recharts";
 import PlaybackBar from "@/components/playback-bar";
-import { TimeProvider, useTime } from "@/context/time-context";
+import { TimeProvider, usePlayback, useTime } from "@/context/time-context";
 import Sidebar from "@/components/side-nav";
 import Loading from "@/components/loading-component";
 import { getAdjacentEpisodesVideoInfo } from "./fetch-data";
@@ -53,12 +53,22 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
   const [chartsReady, setChartsReady] = useState(false);
   const isLoading = !videosReady || !chartsReady;
 
+  // Keep callbacks stable so children don't re-render / re-init on every time tick.
+  const handleVideosReady = useCallback(() => {
+    setVideosReady(true);
+  }, [setVideosReady]);
+
+  const handleChartsReady = useCallback(() => {
+    setChartsReady(true);
+  }, [setChartsReady]);
+
   const router = useRouter();
   const searchParams = useSearchParams();
 
   // State
   // Use context for time sync
-  const { currentTime, setCurrentTime, setIsPlaying, isPlaying } = useTime();
+  const { currentTime, setCurrentTime } = useTime();
+  const { setIsPlaying, isPlaying } = usePlayback();
 
   // Pagination state
   const pageSize = 100;
@@ -68,11 +78,11 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
     (currentPage - 1) * pageSize,
     currentPage * pageSize,
   );
-  
+
   // Preload adjacent episodes' videos
   useEffect(() => {
     if (!org || !dataset) return;
-    
+
     const preloadAdjacent = async () => {
       try {
         await getAdjacentEpisodesVideoInfo(org, dataset, episodeId, 2);
@@ -81,7 +91,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
         // Skip preloading on error
       }
     };
-    
+
     preloadAdjacent();
   }, [org, dataset, episodeId]);
 
@@ -224,7 +234,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
         {videosInfo.length && (
           <SimpleVideosPlayer
             videosInfo={videosInfo}
-            onVideosReady={() => setVideosReady(true)}
+            onVideosReady={handleVideosReady}
           />
         )}
 
@@ -235,7 +245,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
               <span className="font-semibold text-slate-100">Language Instruction:</span>
             </p>
             <div className="mt-2 text-slate-300">
-              {task.split('\n').map((instruction, index) => (
+              {task.split('\n').map((instruction: string, index: number) => (
                 <p key={index} className="mb-1">
                   {instruction}
                 </p>
@@ -248,7 +258,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
         <div className="mb-4">
           <DataRecharts
             data={chartDataGroups}
-            onChartsReady={() => setChartsReady(true)}
+            onChartsReady={handleChartsReady}
           />
 
         </div>

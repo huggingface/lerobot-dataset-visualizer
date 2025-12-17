@@ -259,8 +259,8 @@ const SingleDataGraph = React.memo(
               onMouseMove={(state: any) => {
                 setHoveredTime(
                   state?.activePayload?.[0]?.payload?.timestamp ??
-                    state?.activeLabel ??
-                    null,
+                  state?.activeLabel ??
+                  null,
                 );
               }}
               onMouseLeave={handleMouseLeave}

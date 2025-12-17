@@ -1,5 +1,5 @@
-import React from "react";
-import { useTime } from "../context/time-context";
+import React, { useMemo } from "react";
+import { usePlayback, useTime } from "../context/time-context";
 import {
   FaPlay,
   FaPause,
@@ -13,8 +13,8 @@ import {
 import { debounce } from "@/utils/debounce";
 
 const PlaybackBar: React.FC = () => {
-  const { duration, isPlaying, setIsPlaying, currentTime, setCurrentTime } =
-    useTime();
+  const { duration, currentTime, setCurrentTime } = useTime();
+  const { isPlaying, setIsPlaying } = usePlayback();
 
   const sliderActiveRef = React.useRef(false);
   const wasPlayingRef = React.useRef(false);
@@ -27,14 +27,24 @@ const PlaybackBar: React.FC = () => {
     }
   }, [currentTime]);
 
-  const updateTime = debounce((t: number) => {
-    setCurrentTime(t);
-  }, 200);
+  // Memoize debounced function to prevent recreation on every render
+  // This was causing multiple debounce timers that all fired together
+  const updateTime = useMemo(
+    () =>
+      debounce((t: number) => {
+        setCurrentTime(t);
+      }, 50), // Reduced from 200ms to 50ms for more responsive slider
+    [setCurrentTime]
+  );
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const t = Number(e.target.value);
     setSliderValue(t);
-    updateTime(t);
+    // During drag, keep the UI responsive by avoiding global time updates
+    // (which trigger heavy re-renders + video range seeks). We commit on mouse/touch up.
+    if (!sliderActiveRef.current) {
+      updateTime(t);
+    }
   };
 
   const handleSliderMouseDown = () => {

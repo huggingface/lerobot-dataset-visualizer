@@ -4,24 +4,34 @@ import React, {
   useRef,
   useState,
   useCallback,
+  useMemo,
 } from "react";
 
-// The shape of our context
 type TimeContextType = {
   currentTime: number;
   setCurrentTime: (t: number) => void;
   subscribe: (cb: (t: number) => void) => () => void;
-  isPlaying: boolean;
-  setIsPlaying: React.Dispatch<React.SetStateAction<boolean>>;
   duration: number;
   setDuration: React.Dispatch<React.SetStateAction<number>>;
 };
 
-const TimeContext = createContext<TimeContextType | undefined>(undefined);
+type PlaybackContextType = {
+  isPlaying: boolean;
+  setIsPlaying: React.Dispatch<React.SetStateAction<boolean>>;
+};
 
-export const useTime = () => {
+const TimeContext = createContext<TimeContextType | undefined>(undefined);
+const PlaybackContext = createContext<PlaybackContextType | undefined>(undefined);
+
+export const useTime = (): TimeContextType => {
   const ctx = useContext(TimeContext);
   if (!ctx) throw new Error("useTime must be used within a TimeProvider");
+  return ctx;
+};
+
+export const usePlayback = (): PlaybackContextType => {
+  const ctx = useContext(PlaybackContext);
+  if (!ctx) throw new Error("usePlayback must be used within a TimeProvider");
   return ctx;
 };
 
@@ -30,7 +40,6 @@ export const TimeProvider: React.FC<{
   duration: number;
 }> = ({ children, duration: initialDuration }) => {
   const [currentTime, setCurrentTime] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(initialDuration);
   const listeners = useRef<Set<(t: number) => void>>(new Set());
 
@@ -46,19 +55,32 @@ export const TimeProvider: React.FC<{
     return () => listeners.current.delete(cb);
   }, []);
 
+  const timeValue = useMemo(
+    () => ({
+      currentTime,
+      setCurrentTime: updateTime,
+      subscribe,
+      duration,
+      setDuration,
+    }),
+    [currentTime, updateTime, subscribe, duration],
+  );
+
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const playbackValue = useMemo(
+    () => ({
+      isPlaying,
+      setIsPlaying,
+    }),
+    [isPlaying],
+  );
+
   return (
-    <TimeContext.Provider
-      value={{
-        currentTime,
-        setCurrentTime: updateTime,
-        subscribe,
-        isPlaying,
-        setIsPlaying,
-        duration,
-        setDuration,
-      }}
-    >
-      {children}
+    <TimeContext.Provider value={timeValue}>
+      <PlaybackContext.Provider value={playbackValue}>
+        {children}
+      </PlaybackContext.Provider>
     </TimeContext.Provider>
   );
 };

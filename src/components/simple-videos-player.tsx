@@ -1,8 +1,19 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
-import { useTime } from "../context/time-context";
+import { usePlayback, useTime } from "../context/time-context";
 import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
+
+/**
+ * Convert a HuggingFace video URL to use the local proxy for authentication.
+ * This allows private dataset videos to be played in the browser.
+ */
+function getProxiedVideoUrl(url: string): string {
+  if (url.startsWith("https://huggingface.co/")) {
+    return `/api/video-proxy?url=${encodeURIComponent(url)}`;
+  }
+  return url;
+}
 
 type VideoInfo = {
   filename: string;
@@ -22,13 +33,15 @@ export const SimpleVideosPlayer = ({
   videosInfo,
   onVideosReady,
 }: VideoPlayerProps) => {
-  const { currentTime, setCurrentTime, isPlaying, setIsPlaying } = useTime();
+  const { currentTime, setCurrentTime } = useTime();
+  const { isPlaying, setIsPlaying } = usePlayback();
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
+  const hasSignaledReadyRef = useRef(false);
   const [hiddenVideos, setHiddenVideos] = React.useState<string[]>([]);
   const [enlargedVideo, setEnlargedVideo] = React.useState<string | null>(null);
   const [showHiddenMenu, setShowHiddenMenu] = React.useState(false);
   const [videosReady, setVideosReady] = React.useState(false);
-  
+
   const firstVisibleIdx = videosInfo.findIndex(
     (video) => !hiddenVideos.includes(video.filename)
   );
@@ -38,29 +51,77 @@ export const SimpleVideosPlayer = ({
     videoRefs.current = videoRefs.current.slice(0, videosInfo.length);
   }, [videosInfo.length]);
 
+  // Track failed videos for UI display
+  const [failedVideos, setFailedVideos] = React.useState<Set<string>>(new Set());
+
   // Handle videos ready
   useEffect(() => {
+    hasSignaledReadyRef.current = false;
+    setVideosReady(false);
     let readyCount = 0;
-    
-    const checkReady = () => {
+    const videoStatuses = new Map<number, 'pending' | 'ready' | 'failed'>();
+
+    const markVideoReady = (index: number, status: 'ready' | 'failed') => {
+      if (videoStatuses.get(index) !== 'pending') return; // Already processed
+      videoStatuses.set(index, status);
       readyCount++;
-      if (readyCount === videosInfo.length && onVideosReady) {
+
+      if (status === 'failed') {
+        const info = videosInfo[index];
+        setFailedVideos(prev => new Set(prev).add(info.filename));
+      }
+
+      const hasSuccessfulVideo = Array.from(videoStatuses.values()).some(
+        (s) => s === 'ready',
+      );
+      const allProcessed = readyCount === videosInfo.length;
+      const shouldSignalReady =
+        !hasSignaledReadyRef.current && (hasSuccessfulVideo || allProcessed);
+
+      if (shouldSignalReady && onVideosReady) {
+        hasSignaledReadyRef.current = true;
         setVideosReady(true);
         onVideosReady();
-        setIsPlaying(true);
+        // Auto-play only if at least one video loaded successfully
+        if (hasSuccessfulVideo) setIsPlaying(true);
       }
     };
+
+    // Timeout to detect videos that never load (private dataset auth failure)
+    // Increased to 120 seconds because HuggingFace can be slow for first loads
+    const VIDEO_LOAD_TIMEOUT = 120000; // 120 seconds
+    const timeoutIds: NodeJS.Timeout[] = [];
 
     videoRefs.current.forEach((video, index) => {
       if (video) {
         const info = videosInfo[index];
-        
+        videoStatuses.set(index, 'pending');
+
+        // Timeout handler for videos that never load (auth failure on private datasets)
+        // Only mark as failed if there's truly no network activity (networkState === 3 means error)
+        const timeoutId = setTimeout(() => {
+          if (videoStatuses.get(index) === 'pending') {
+            // If video is actively loading (networkState=2) or has data (readyState>0), don't fail it
+            if (video.networkState === 2 || video.readyState > 0) {
+              return; // Don't mark as failed, video is still loading
+            }
+            markVideoReady(index, 'failed');
+          }
+        }, VIDEO_LOAD_TIMEOUT);
+        timeoutIds.push(timeoutId);
+
+        // Error handler for videos
+        const handleError = () => {
+          markVideoReady(index, 'failed');
+        };
+        video.addEventListener('error', handleError);
+
         // Setup segment boundaries
         if (info.isSegmented) {
           const handleTimeUpdate = () => {
             const segmentEnd = info.segmentEnd || video.duration;
             const segmentStart = info.segmentStart || 0;
-            
+
             if (video.currentTime >= segmentEnd - 0.05) {
               video.currentTime = segmentStart;
               // Also update the global time to reset to start
@@ -69,19 +130,26 @@ export const SimpleVideosPlayer = ({
               }
             }
           };
-          
+
           const handleLoadedData = () => {
             video.currentTime = info.segmentStart || 0;
-            checkReady();
+            markVideoReady(index, 'ready');
           };
-          
+
           video.addEventListener('timeupdate', handleTimeUpdate);
           video.addEventListener('loadeddata', handleLoadedData);
-          
+
+          // Check if video already has enough data (event might have fired before we attached)
+          if (video.readyState >= 1) {
+            video.currentTime = info.segmentStart || 0;
+            markVideoReady(index, 'ready');
+          }
+
           // Store cleanup
           (video as any)._segmentHandlers = () => {
             video.removeEventListener('timeupdate', handleTimeUpdate);
             video.removeEventListener('loadeddata', handleLoadedData);
+            video.removeEventListener('error', handleError);
           };
         } else {
           // For non-segmented videos, handle end of video
@@ -91,19 +159,31 @@ export const SimpleVideosPlayer = ({
               setCurrentTime(0);
             }
           };
-          
+
+          const handleCanPlayThrough = () => {
+            markVideoReady(index, 'ready');
+          };
+
           video.addEventListener('ended', handleEnded);
-          video.addEventListener('canplaythrough', checkReady, { once: true });
-          
+          video.addEventListener('canplaythrough', handleCanPlayThrough, { once: true });
+
+          // Check if video already has enough data (event might have fired before we attached)
+          if (video.readyState >= 4) {
+            markVideoReady(index, 'ready');
+          }
+
           // Store cleanup
           (video as any)._segmentHandlers = () => {
             video.removeEventListener('ended', handleEnded);
+            video.removeEventListener('error', handleError);
           };
         }
       }
     });
 
     return () => {
+      // Clear all timeouts
+      timeoutIds.forEach(id => clearTimeout(id));
       videoRefs.current.forEach((video) => {
         if (video && (video as any)._segmentHandlers) {
           (video as any)._segmentHandlers();
@@ -115,36 +195,39 @@ export const SimpleVideosPlayer = ({
   // Handle play/pause
   useEffect(() => {
     if (!videosReady) return;
-    
+
     videoRefs.current.forEach((video, idx) => {
-      if (video && !hiddenVideos.includes(videosInfo[idx].filename)) {
-        if (isPlaying) {
-          video.play().catch(e => {
-            if (e.name !== 'AbortError') {
-              console.error("Error playing video");
-            }
-          });
-        } else {
-          video.pause();
-        }
+      if (!video) return;
+      if (hiddenVideos.includes(videosInfo[idx].filename)) return;
+
+      if (!isPlaying) {
+        video.pause();
+        return;
       }
+
+      video.play().catch(e => {
+        if (e.name !== 'AbortError') {
+          console.error("Error playing video");
+        }
+      });
     });
   }, [isPlaying, videosReady, hiddenVideos, videosInfo]);
 
   // Sync video times
   useEffect(() => {
     if (!videosReady) return;
-    
+
     videoRefs.current.forEach((video, index) => {
       if (video && !hiddenVideos.includes(videosInfo[index].filename)) {
         const info = videosInfo[index];
         let targetTime = currentTime;
-        
+
         if (info.isSegmented) {
           targetTime = (info.segmentStart || 0) + currentTime;
         }
-        
-        if (Math.abs(video.currentTime - targetTime) > 0.2) {
+
+        const drift = Math.abs(video.currentTime - targetTime);
+        if (drift > 0.2) {
           video.currentTime = targetTime;
         }
       }
@@ -156,7 +239,7 @@ export const SimpleVideosPlayer = ({
     const video = e.target as HTMLVideoElement;
     const videoIndex = videoRefs.current.findIndex(ref => ref === video);
     const info = videosInfo[videoIndex];
-    
+
     if (info) {
       let globalTime = video.currentTime;
       if (info.isSegmented) {
@@ -171,7 +254,7 @@ export const SimpleVideosPlayer = ({
     if (info.isSegmented) {
       const segmentStart = info.segmentStart || 0;
       const segmentEnd = info.segmentEnd || video.duration;
-      
+
       if (video.currentTime < segmentStart || video.currentTime >= segmentEnd) {
         video.currentTime = segmentStart;
       }
@@ -213,18 +296,17 @@ export const SimpleVideosPlayer = ({
       <div className="flex flex-wrap gap-x-2 gap-y-6">
         {videosInfo.map((info, idx) => {
           if (hiddenVideos.includes(info.filename)) return null;
-          
+
           const isEnlarged = enlargedVideo === info.filename;
           const isFirstVisible = idx === firstVisibleIdx;
-          
+
           return (
             <div
               key={info.filename}
-              className={`${
-                isEnlarged
-                  ? "z-40 fixed inset-0 bg-black bg-opacity-90 flex flex-col items-center justify-center"
-                  : "max-w-96"
-              }`}
+              className={`${isEnlarged
+                ? "z-40 fixed inset-0 bg-black bg-opacity-90 flex flex-col items-center justify-center"
+                : "max-w-96"
+                }`}
             >
               <p className="truncate w-full rounded-t-xl bg-gray-800 px-2 text-sm text-gray-300 flex items-center justify-between">
                 <span>{info.filename}</span>
@@ -246,19 +328,29 @@ export const SimpleVideosPlayer = ({
                   </button>
                 </span>
               </p>
-              <video
-                ref={el => videoRefs.current[idx] = el}
-                className={`w-full object-contain ${
-                  isEnlarged ? "max-h-[90vh] max-w-[90vw]" : ""
-                }`}
-                muted
-                preload="auto"
-                onPlay={(e) => handlePlay(e.currentTarget, info)}
-                onTimeUpdate={isFirstVisible ? handleTimeUpdate : undefined}
-              >
-                <source src={info.url} type="video/mp4" />
-                Your browser does not support the video tag.
-              </video>
+              {failedVideos.has(info.filename) ? (
+                <div className={`w-full flex flex-col items-center justify-center bg-slate-800 text-slate-300 p-4 ${isEnlarged ? "max-h-[90vh] max-w-[90vw] min-h-[300px]" : "min-h-[200px]"}`}>
+                  <svg className="w-12 h-12 mb-2 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <p className="text-sm font-medium mb-1">Video unavailable</p>
+                  <p className="text-xs text-slate-400 text-center">This video requires authentication.<br />Private dataset videos cannot be displayed in the browser.</p>
+                </div>
+              ) : (
+                <video
+                  ref={(el) => {
+                    videoRefs.current[idx] = el;
+                  }}
+                  className={`w-full object-contain ${isEnlarged ? "max-h-[90vh] max-w-[90vw]" : ""}`}
+                  muted
+                  preload="auto"
+                  onPlay={(e) => handlePlay(e.currentTarget, info)}
+                  onTimeUpdate={isFirstVisible ? handleTimeUpdate : undefined}
+                >
+                  <source src={getProxiedVideoUrl(info.url)} type="video/mp4" />
+                  Your browser does not support the video tag.
+                </video>
+              )}
             </div>
           );
         })}
