@@ -200,7 +200,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
             className="block"
           >
             <img
-              src="https://github.com/huggingface/lerobot/raw/main/media/lerobot-logo-thumbnail.png"
+              src="https://github.com/huggingface/lerobot/raw/main/media/readme/lerobot-logo-thumbnail.png"
               alt="LeRobot Logo"
               className="w-32"
             />
