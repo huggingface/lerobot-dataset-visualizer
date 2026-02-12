@@ -10,6 +10,7 @@ import {
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
+  ReferenceLine,
 } from "recharts";
 
 type ChartRow = Record<string, number | Record<string, number>>;
@@ -21,8 +22,13 @@ type DataGraphProps = {
 
 import React, { useMemo } from "react";
 
-// Use the same delimiter as the data processing
 const SERIES_NAME_DELIMITER = " | ";
+
+const CHART_COLORS = [
+  "#f97316", "#3b82f6", "#22c55e", "#ef4444", "#a855f7",
+  "#eab308", "#06b6d4", "#ec4899", "#14b8a6", "#f59e0b",
+  "#6366f1", "#84cc16",
+];
 
 export const DataRecharts = React.memo(
   ({ data, onChartsReady }: DataGraphProps) => {
@@ -112,11 +118,10 @@ const SingleDataGraph = React.memo(
       }
     });
 
-    // Assign a color per group (and for singles)
     const allGroups = [...Object.keys(groups), ...singles];
     const groupColorMap: Record<string, string> = {};
     allGroups.forEach((group, idx) => {
-      groupColorMap[group] = `hsl(${idx * (360 / allGroups.length)}, 100%, 50%)`;
+      groupColorMap[group] = CHART_COLORS[idx % CHART_COLORS.length];
     });
 
     // Find the closest data point to the current time for highlighting
@@ -160,11 +165,10 @@ const SingleDataGraph = React.memo(
         }
       });
 
-      // Assign a color per group (and for singles)
       const allGroups = [...Object.keys(groups), ...singles];
       const groupColorMap: Record<string, string> = {};
       allGroups.forEach((group, idx) => {
-        groupColorMap[group] = `hsl(${idx * (360 / allGroups.length)}, 100%, 50%)`;
+        groupColorMap[group] = CHART_COLORS[idx % CHART_COLORS.length];
       });
 
       const isGroupChecked = (group: string) => groups[group].every(k => visibleKeys.includes(k));
@@ -187,58 +191,59 @@ const SingleDataGraph = React.memo(
       };
 
       return (
-        <div className="grid grid-cols-[repeat(auto-fit,250px)] gap-4 mx-8">
-          {/* Grouped keys */}
+        <div className="flex flex-wrap gap-x-5 gap-y-2 px-1 pt-2">
           {Object.entries(groups).map(([group, children]) => {
             const color = groupColorMap[group];
             return (
-              <div key={group} className="mb-2">
-                <label className="flex gap-2 cursor-pointer select-none font-semibold">
+              <div key={group}>
+                <label className="flex items-center gap-1.5 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={isGroupChecked(group)}
                     ref={el => { if (el) el.indeterminate = isGroupIndeterminate(group); }}
                     onChange={() => handleGroupCheckboxChange(group)}
-                    className="size-3.5 mt-1"
+                    className="size-3"
                     style={{ accentColor: color }}
                   />
-                  <span className="text-sm w-40 text-white">{group}</span>
+                  <span className="text-[11px] font-semibold text-slate-200">{group}</span>
                 </label>
-                <div className="pl-7 flex flex-col gap-1 mt-1">
-                  {children.map((key) => (
-                    <label key={key} className="flex gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={visibleKeys.includes(key)}
-                        onChange={() => handleCheckboxChange(key)}
-                        className="size-3.5 mt-1"
-                        style={{ accentColor: color }}
-                      />
-                      <span className={`text-xs break-all w-36 ${visibleKeys.includes(key) ? "text-white" : "text-gray-400"}`}>{key.slice(group.length + 1)}</span>
-                      <span className={`text-xs font-mono ml-auto ${visibleKeys.includes(key) ? "text-orange-300" : "text-gray-500"}`}>
-                        {typeof currentData[key] === "number" ? currentData[key].toFixed(2) : "--"}
-                      </span>
-                    </label>
-                  ))}
+                <div className="pl-5 flex flex-col gap-0.5 mt-0.5">
+                  {children.map((key) => {
+                    const label = key.split(SERIES_NAME_DELIMITER).pop() ?? key;
+                    return (
+                      <label key={key} className="flex items-center gap-1.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={visibleKeys.includes(key)}
+                          onChange={() => handleCheckboxChange(key)}
+                          className="size-2.5"
+                          style={{ accentColor: color }}
+                        />
+                        <span className={`text-[10px] ${visibleKeys.includes(key) ? "text-slate-300" : "text-slate-500"}`}>{label}</span>
+                        <span className={`text-[10px] font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-orange-300/80" : "text-slate-600"}`}>
+                          {typeof currentData[key] === "number" ? currentData[key].toFixed(2) : "–"}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             );
           })}
-          {/* Singles (non-grouped) */}
           {singles.map((key) => {
             const color = groupColorMap[key];
             return (
-              <label key={key} className="flex gap-2 cursor-pointer select-none">
+              <label key={key} className="flex items-center gap-1.5 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={visibleKeys.includes(key)}
                   onChange={() => handleCheckboxChange(key)}
-                  className="size-3.5 mt-1"
+                  className="size-3"
                   style={{ accentColor: color }}
                 />
-                <span className={`text-sm break-all w-40 ${visibleKeys.includes(key) ? "text-white" : "text-gray-400"}`}>{key}</span>
-                <span className={`text-sm font-mono ml-auto ${visibleKeys.includes(key) ? "text-orange-300" : "text-gray-500"}`}>
-                  {typeof currentData[key] === "number" ? currentData[key].toFixed(2) : "--"}
+                <span className={`text-[11px] ${visibleKeys.includes(key) ? "text-slate-200" : "text-slate-500"}`}>{key}</span>
+                <span className={`text-[10px] font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-orange-300/80" : "text-slate-600"}`}>
+                  {typeof currentData[key] === "number" ? currentData[key].toFixed(2) : "–"}
                 </span>
               </label>
             );
@@ -247,14 +252,30 @@ const SingleDataGraph = React.memo(
       );
     };
 
+    // Derive chart title from the grouped feature names
+    const chartTitle = useMemo(() => {
+      const featureNames = Object.keys(groups);
+      if (featureNames.length > 0) {
+        const suffixes = featureNames.map(g => {
+          const parts = g.split(SERIES_NAME_DELIMITER);
+          return parts[parts.length - 1];
+        });
+        return suffixes.join(", ");
+      }
+      return singles.join(", ");
+    }, [groups, singles]);
+
     return (
-      <div className="w-full">
-        <div className="w-full h-80" onMouseLeave={handleMouseLeave}>
+      <div className="w-full bg-slate-800/40 rounded-lg border border-slate-700/50 p-3">
+        {chartTitle && (
+          <p className="text-xs font-medium text-slate-300 mb-1 px-1 truncate" title={chartTitle}>{chartTitle}</p>
+        )}
+        <div className="w-full h-72" onMouseLeave={handleMouseLeave}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={chartData}
               syncId="episode-sync"
-              margin={{ top: 24, right: 16, left: 0, bottom: 16 }}
+              margin={{ top: 12, right: 12, left: -8, bottom: 8 }}
               onClick={handleClick}
               onMouseMove={(state) => {
                 const payload = state?.activePayload?.[0]?.payload as { timestamp?: number } | undefined;
@@ -262,33 +283,24 @@ const SingleDataGraph = React.memo(
               }}
               onMouseLeave={handleMouseLeave}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" strokeOpacity={0.6} />
               <XAxis
                 dataKey="timestamp"
-                label={{
-                  value: "time",
-                  position: "insideBottomLeft",
-                  fill: "#cbd5e1",
-                }}
                 domain={[
                   chartData.at(0)?.timestamp ?? 0,
                   chartData.at(-1)?.timestamp ?? 0,
                 ]}
-                ticks={useMemo(
-                  () =>
-                    Array.from(
-                      new Set(chartData.map((d) => Math.ceil(d.timestamp))),
-                    ),
-                  [chartData],
-                )}
-                stroke="#cbd5e1"
-                minTickGap={20} // Increased for fewer ticks
+                tickFormatter={(v: number) => `${v.toFixed(1)}s`}
+                stroke="#64748b"
+                tick={{ fontSize: 10, fill: "#94a3b8" }}
+                minTickGap={30}
                 allowDataOverflow={true}
               />
               <YAxis
                 domain={["auto", "auto"]}
-                stroke="#cbd5e1"
-                interval={0}
+                stroke="#64748b"
+                tick={{ fontSize: 10, fill: "#94a3b8" }}
+                width={45}
                 allowDataOverflow={true}
               />
 
@@ -301,9 +313,14 @@ const SingleDataGraph = React.memo(
                 }
               />
 
-              {/* Render lines for visible dataKeys only */}
+              <ReferenceLine
+                x={currentTime}
+                stroke="#f97316"
+                strokeWidth={1.5}
+                strokeOpacity={0.7}
+              />
+
               {dataKeys.map((key) => {
-                // Use group color for all keys in a group
                 const group = key.includes(SERIES_NAME_DELIMITER) ? key.split(SERIES_NAME_DELIMITER)[0] : key;
                 const color = groupColorMap[group];
                 let strokeDasharray: string | undefined = undefined;

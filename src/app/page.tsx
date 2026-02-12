@@ -130,14 +130,6 @@ function HomeInner() {
         <h1 className="text-4xl md:text-5xl font-bold mb-6 drop-shadow-lg">
           LeRobot Dataset Visualizer
         </h1>
-        <a
-          href="https://x.com/RemiCadene/status/1825455895561859185"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sky-400 font-medium text-lg underline mb-8 inline-block hover:text-sky-300 transition-colors"
-        >
-          create & train your own robots
-        </a>
         <form onSubmit={handleGo} className="flex gap-2 justify-center mt-6">
           <input
             ref={inputRef}

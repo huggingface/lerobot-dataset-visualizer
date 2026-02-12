@@ -19,12 +19,14 @@ import {
   type ColumnMinMax,
   type EpisodeLengthStats,
   type EpisodeFramesData,
+  type CrossEpisodeVarianceData,
 } from "./fetch-data";
-import { fetchEpisodeLengthStats, fetchEpisodeFrames } from "./actions";
+import { fetchEpisodeLengthStats, fetchEpisodeFrames, fetchCrossEpisodeVariance } from "./actions";
 
 const URDFViewer = lazy(() => import("@/components/urdf-viewer"));
+const ActionInsightsPanel = lazy(() => import("@/components/action-insights-panel"));
 
-type ActiveTab = "episodes" | "statistics" | "frames" | "urdf";
+type ActiveTab = "episodes" | "statistics" | "frames" | "insights" | "urdf";
 
 export default function EpisodeViewer({
   data,
@@ -87,6 +89,9 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
   const [episodeFramesData, setEpisodeFramesData] = useState<EpisodeFramesData | null>(null);
   const [framesLoading, setFramesLoading] = useState(false);
   const framesLoadedRef = useRef(false);
+  const [crossEpData, setCrossEpData] = useState<CrossEpisodeVarianceData | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const insightsLoadedRef = useRef(false);
 
   const loadStats = () => {
     if (statsLoadedRef.current) return;
@@ -113,10 +118,21 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
       .finally(() => setFramesLoading(false));
   };
 
+  const loadInsights = () => {
+    if (insightsLoadedRef.current || !org || !dataset) return;
+    insightsLoadedRef.current = true;
+    setInsightsLoading(true);
+    fetchCrossEpisodeVariance(org, dataset)
+      .then(setCrossEpData)
+      .catch((err) => console.error("[cross-ep] Failed:", err))
+      .finally(() => setInsightsLoading(false));
+  };
+
   const handleTabChange = (tab: ActiveTab) => {
     setActiveTab(tab);
     if (tab === "statistics") loadStats();
     if (tab === "frames") loadFrames();
+    if (tab === "insights") loadInsights();
   };
 
   // Use context for time sync
@@ -288,6 +304,19 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
             <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
           )}
         </button>
+        <button
+          className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
+            activeTab === "insights"
+              ? "text-orange-400"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+          onClick={() => handleTabChange("insights")}
+        >
+          Action Insights
+          {activeTab === "insights" && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
+          )}
+        </button>
         {isSO101Robot(datasetInfo.robot_type) && (
           <button
             className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
@@ -403,6 +432,17 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
 
           {activeTab === "frames" && (
             <OverviewPanel data={episodeFramesData} loading={framesLoading} />
+          )}
+
+          {activeTab === "insights" && (
+            <Suspense fallback={<Loading />}>
+              <ActionInsightsPanel
+                flatChartData={data.flatChartData}
+                fps={datasetInfo.fps}
+                crossEpisodeData={crossEpData}
+                crossEpisodeLoading={insightsLoading}
+              />
+            </Suspense>
           )}
 
           {activeTab === "urdf" && (
