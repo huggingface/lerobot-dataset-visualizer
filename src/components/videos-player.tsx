@@ -3,20 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useTime } from "../context/time-context";
 import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
-
-type VideoInfo = {
-  filename: string;
-  url: string;
-  isSegmented?: boolean;
-  segmentStart?: number;
-  segmentEnd?: number;
-  segmentDuration?: number;
-};
+import type { VideoInfo } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 
 type VideoPlayerProps = {
   videosInfo: VideoInfo[];
   onVideosReady?: () => void;
 };
+
+const videoCleanupHandlers = new WeakMap<HTMLVideoElement, () => void>();
+const videoReadyHandlers = new WeakMap<HTMLVideoElement, EventListener>();
 
 export const VideosPlayer = ({
   videosInfo,
@@ -42,6 +37,10 @@ export const VideosPlayer = ({
   const hiddenMenuRef = useRef<HTMLDivElement | null>(null);
   const showHiddenBtnRef = useRef<HTMLButtonElement | null>(null);
   const [videoCodecError, setVideoCodecError] = useState(false);
+
+  // Tracks the last time value set by the primary video's onTimeUpdate.
+  // If currentTime differs from this, an external source (slider/chart click) changed it.
+  const lastVideoTimeRef = useRef(0);
 
   // Initialize video refs
   useEffect(() => {
@@ -146,45 +145,47 @@ export const VideosPlayer = ({
     }
   }, [hiddenVideos, showHiddenMenu, enlargedVideo]);
 
-  // Sync video times (with segment awareness)
+  // Sync all video times when currentTime changes.
+  // For the primary video, only seek when the change came from an external source
+  // (slider drag, chart click, etc.) — detected by comparing against lastVideoTimeRef.
   useEffect(() => {
+    const isExternalSeek = Math.abs(currentTime - lastVideoTimeRef.current) > 0.3;
+
     videoRefs.current.forEach((video, index) => {
-      if (video && Math.abs(video.currentTime - currentTime) > 0.2) {
-        const videoInfo = videosInfo[index];
-        
-        if (videoInfo?.isSegmented) {
-          // For segmented videos, map the global time to segment time
-          const segmentStart = videoInfo.segmentStart || 0;
-          const segmentDuration = videoInfo.segmentDuration || 0;
-          
-          if (segmentDuration > 0) {
-            // Map currentTime (0 to segmentDuration) to video time (segmentStart to segmentEnd)
-            const segmentTime = segmentStart + currentTime;
-            video.currentTime = segmentTime;
-          }
-        } else {
-          // For non-segmented videos, use direct time mapping
+      if (!video) return;
+
+      // Skip the primary video unless the time was changed externally
+      if (index === firstVisibleIdx && !isExternalSeek) return;
+
+      const videoInfo = videosInfo[index];
+      if (videoInfo?.isSegmented) {
+        const segmentStart = videoInfo.segmentStart || 0;
+        const segmentTime = segmentStart + currentTime;
+        if (Math.abs(video.currentTime - segmentTime) > 0.2) {
+          video.currentTime = segmentTime;
+        }
+      } else {
+        if (Math.abs(video.currentTime - currentTime) > 0.2) {
           video.currentTime = currentTime;
         }
       }
     });
-  }, [currentTime, videosInfo]);
+  }, [currentTime, videosInfo, firstVisibleIdx]);
 
   // Handle time update
   const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.target as HTMLVideoElement;
     if (video && video.duration) {
-      // Find the video info for this video element
       const videoIndex = videoRefs.current.findIndex(ref => ref === video);
       const videoInfo = videosInfo[videoIndex];
       
       if (videoInfo?.isSegmented) {
-        // For segmented videos, map the video time back to global time (0 to segmentDuration)
         const segmentStart = videoInfo.segmentStart || 0;
         const globalTime = Math.max(0, video.currentTime - segmentStart);
+        lastVideoTimeRef.current = globalTime;
         setCurrentTime(globalTime);
       } else {
-        // For non-segmented videos, use direct time mapping
+        lastVideoTimeRef.current = video.currentTime;
         setCurrentTime(video.currentTime);
       }
     }
@@ -220,10 +221,9 @@ export const VideosPlayer = ({
         
         video.addEventListener('timeupdate', handleTimeUpdate);
         
-        // Store cleanup function
-        (video as any)._segmentCleanup = () => {
+        videoCleanupHandlers.set(video, () => {
           video.removeEventListener('timeupdate', handleTimeUpdate);
-        };
+        });
       }
       
       videosReadyCount += 1;
@@ -243,22 +243,23 @@ export const VideosPlayer = ({
         } else {
           const readyHandler = () => onCanPlayThrough(index);
           video.addEventListener("canplaythrough", readyHandler);
-          (video as any)._readyHandler = readyHandler;
+          videoReadyHandlers.set(video, readyHandler);
         }
       }
     });
 
     return () => {
       videoRefs.current.forEach((video) => {
-        if (video) {
-          // Remove ready handler
-          if ((video as any)._readyHandler) {
-            video.removeEventListener("canplaythrough", (video as any)._readyHandler);
-          }
-          // Remove segment handler
-          if ((video as any)._segmentCleanup) {
-            (video as any)._segmentCleanup();
-          }
+        if (!video) return;
+        const readyHandler = videoReadyHandlers.get(video);
+        if (readyHandler) {
+          video.removeEventListener("canplaythrough", readyHandler);
+          videoReadyHandlers.delete(video);
+        }
+        const cleanup = videoCleanupHandlers.get(video);
+        if (cleanup) {
+          cleanup();
+          videoCleanupHandlers.delete(video);
         }
       });
     };
@@ -395,7 +396,7 @@ export const VideosPlayer = ({
                 }}
                 muted
                 loop
-                preload={idx === firstVisibleIdx ? "auto" : "metadata"}
+                preload="auto"
                 className={`w-full object-contain ${isEnlarged ? "max-h-[90vh] max-w-[90vw]" : ""}`}
                 onTimeUpdate={
                   idx === firstVisibleIdx ? handleTimeUpdate : undefined

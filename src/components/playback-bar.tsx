@@ -10,8 +10,6 @@ import {
   FaArrowUp,
 } from "react-icons/fa";
 
-import { debounce } from "@/utils/debounce";
-
 const PlaybackBar: React.FC = () => {
   const { duration, isPlaying, setIsPlaying, currentTime, setCurrentTime } =
     useTime();
@@ -27,14 +25,11 @@ const PlaybackBar: React.FC = () => {
     }
   }, [currentTime]);
 
-  const updateTime = debounce((t: number) => {
-    setCurrentTime(t);
-  }, 200);
-
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const t = Number(e.target.value);
     setSliderValue(t);
-    updateTime(t);
+    // Seek videos immediately while dragging (no debounce)
+    setCurrentTime(t);
   };
 
   const handleSliderMouseDown = () => {
@@ -45,11 +40,11 @@ const PlaybackBar: React.FC = () => {
 
   const handleSliderMouseUp = () => {
     sliderActiveRef.current = false;
-    setCurrentTime(sliderValue); // Snap to final value
+    // Final seek to exact slider position
+    setCurrentTime(sliderValue);
     if (wasPlayingRef.current) {
       setIsPlaying(true);
     }
-    // If it was paused before, keep it paused
   };
 
   return (

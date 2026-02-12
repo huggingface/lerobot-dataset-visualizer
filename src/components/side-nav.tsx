@@ -3,10 +3,12 @@
 import Link from "next/link";
 import React from "react";
 
+import type { DatasetDisplayInfo } from "@/app/[org]/[dataset]/[episode]/fetch-data";
+
 interface SidebarProps {
-  datasetInfo: any;
-  paginatedEpisodes: any[];
-  episodeId: any;
+  datasetInfo: DatasetDisplayInfo;
+  paginatedEpisodes: number[];
+  episodeId: number;
   totalPages: number;
   currentPage: number;
   prevPage: () => void;
@@ -53,7 +55,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         aria-label="Sidebar navigation"
       >
         <ul>
-          <li>Number of samples/frames: {datasetInfo.total_frames}</li>
+          <li>Number of frames: {datasetInfo.total_frames}</li>
           <li>Number of episodes: {datasetInfo.total_episodes}</li>
           <li>Frames per second: {datasetInfo.fps}</li>
         </ul>

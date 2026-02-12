@@ -9,7 +9,7 @@ import PlaybackBar from "@/components/playback-bar";
 import { TimeProvider, useTime } from "@/context/time-context";
 import Sidebar from "@/components/side-nav";
 import Loading from "@/components/loading-component";
-import { getAdjacentEpisodesVideoInfo } from "./fetch-data";
+import { getAdjacentEpisodesVideoInfo, type EpisodeData } from "./fetch-data";
 
 export default function EpisodeViewer({
   data,
@@ -17,7 +17,7 @@ export default function EpisodeViewer({
   org,
   dataset,
 }: {
-  data?: any;
+  data?: EpisodeData;
   error?: string;
   org?: string;
   dataset?: string;
@@ -33,13 +33,13 @@ export default function EpisodeViewer({
     );
   }
   return (
-    <TimeProvider duration={data.duration}>
-      <EpisodeViewerInner data={data} org={org} dataset={dataset} />
+    <TimeProvider duration={data!.duration}>
+      <EpisodeViewerInner data={data!} org={org} dataset={dataset} />
     </TimeProvider>
   );
 }
 
-function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; dataset?: string; }) {
+function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: string; dataset?: string }) {
   const {
     datasetInfo,
     episodeId,
@@ -52,6 +52,13 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
   const [videosReady, setVideosReady] = useState(!videosInfo.length);
   const [chartsReady, setChartsReady] = useState(false);
   const isLoading = !videosReady || !chartsReady;
+
+  const loadStartRef = useRef(performance.now());
+  useEffect(() => {
+    if (!isLoading) {
+      console.log(`[perf] Loading complete in ${(performance.now() - loadStartRef.current).toFixed(0)}ms (videos: ${videosReady ? '✓' : '…'}, charts: ${chartsReady ? '✓' : '…'})`);
+    }
+  }, [isLoading]);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -84,7 +91,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
             link.href = v.url;
             document.head.appendChild(link);
             links.push(link);
-          }
+      }
         }
       })
       .catch(() => {});
@@ -244,7 +251,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
               <span className="font-semibold text-slate-100">Language Instruction:</span>
             </p>
             <div className="mt-2 text-slate-300">
-              {task.split('\n').map((instruction, index) => (
+              {task.split('\n').map((instruction: string, index: number) => (
                 <p key={index} className="mb-1">
                   {instruction}
                 </p>

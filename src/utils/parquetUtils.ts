@@ -17,9 +17,9 @@ export interface DatasetMetadata {
     string,
     {
       dtype: string;
-      shape: any[];
-      names: any[] | Record<string, any> | null;
-      info?: Record<string, any>;
+      shape: number[];
+      names: string[] | Record<string, unknown> | null;
+      info?: Record<string, unknown>;
     }
   >;
 }
@@ -36,7 +36,7 @@ export async function fetchJson<T>(url: string): Promise<T> {
 
 export function formatStringWithVars(
   format: string,
-  vars: Record<string, any>,
+  vars: Record<string, string>,
 ): string {
   return format.replace(/{(\w+)(?::\d+d)?}/g, (_, key) => vars[key]);
 }
@@ -56,13 +56,13 @@ export async function fetchParquetFile(url: string): Promise<ArrayBuffer> {
 export async function readParquetColumn(
   fileBuffer: ArrayBuffer,
   columns: string[],
-): Promise<any[]> {
+): Promise<unknown[][]> {
   return new Promise((resolve, reject) => {
     try {
       parquetRead({
         file: fileBuffer,
-        columns: columns.length > 0 ? columns : undefined, // Let hyparquet read all columns if empty array
-        onComplete: (data: any[]) => {
+        columns: columns.length > 0 ? columns : undefined,
+        onComplete: (data: unknown[][]) => {
           resolve(data);
         }
       });
@@ -72,15 +72,14 @@ export async function readParquetColumn(
   });
 }
 
-// Read parquet file and return objects with column names as keys
 export async function readParquetAsObjects(
   fileBuffer: ArrayBuffer,
   columns: string[] = [],
-): Promise<Record<string, any>[]> {
+): Promise<Record<string, unknown>[]> {
   return parquetReadObjects({
     file: fileBuffer,
     columns: columns.length > 0 ? columns : undefined,
-  });
+  }) as Promise<Record<string, unknown>[]>;
 }
 
 // Convert a 2D array to a CSV string
@@ -88,8 +87,9 @@ export function arrayToCSV(data: (number | string)[][]): string {
   return data.map((row) => row.join(",")).join("\n");
 }
 
-// Get rows from the current frame data
-export function getRows(currentFrameData: any[], columns: any[]) {
+type ColumnInfo = { key: string; value: string[] };
+
+export function getRows(currentFrameData: unknown[], columns: ColumnInfo[]) {
   if (!currentFrameData || currentFrameData.length === 0) {
     return [];
   }

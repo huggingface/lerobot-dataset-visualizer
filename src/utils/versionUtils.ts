@@ -7,7 +7,14 @@ const DATASET_URL = process.env.DATASET_URL || "https://huggingface.co/datasets"
 /**
  * Dataset information structure from info.json
  */
-interface DatasetInfo {
+type FeatureInfo = {
+  dtype: string;
+  shape: number[];
+  names: string[] | Record<string, unknown> | null;
+  info?: Record<string, unknown>;
+};
+
+export interface DatasetInfo {
   codebase_version: string;
   robot_type: string | null;
   total_episodes: number;
@@ -20,7 +27,7 @@ interface DatasetInfo {
   splits: Record<string, string>;
   data_path: string;
   video_path: string;
-  features: Record<string, any>;
+  features: Record<string, FeatureInfo>;
 }
 
 // In-memory cache for dataset info (5 min TTL)
@@ -30,8 +37,10 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
   const cached = datasetInfoCache.get(repoId);
   if (cached && Date.now() < cached.expiry) {
+    console.log(`[perf] getDatasetInfo cache HIT for ${repoId}`);
     return cached.data;
   }
+  console.log(`[perf] getDatasetInfo cache MISS for ${repoId} — fetching`);
 
   try {
     const testUrl = `${DATASET_URL}/${repoId}/resolve/main/meta/info.json`;
@@ -77,7 +86,6 @@ const SUPPORTED_VERSIONS = ["v3.0", "v2.1", "v2.0"];
  */
 export async function getDatasetVersionAndInfo(repoId: string): Promise<{ version: string; info: DatasetInfo }> {
   const info = await getDatasetInfo(repoId);
-
   const version = info.codebase_version;
   if (!version) {
     throw new Error("Dataset info.json does not contain codebase_version");
@@ -89,7 +97,6 @@ export async function getDatasetVersionAndInfo(repoId: string): Promise<{ versio
       "Please use a compatible dataset version."
     );
   }
-
   return { version, info };
 }
 

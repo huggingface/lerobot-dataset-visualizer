@@ -12,7 +12,7 @@ export default async function ExplorePage({
 }: {
   searchParams: { p?: string };
 }) {
-  let datasets: any[] = [];
+  let datasets: { id: string }[] = [];
   let currentPage = 1;
   let totalPages = 1;
   try {
@@ -42,7 +42,7 @@ export default async function ExplorePage({
   // Fetch episode 0 data for each dataset
   const datasetWithVideos = (
     await Promise.all(
-      datasets.map(async (ds: any) => {
+      datasets.map(async (ds) => {
         try {
           const [org, dataset] = ds.id.split("/");
           const repoId = `${org}/${dataset}`;

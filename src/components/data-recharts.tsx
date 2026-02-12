@@ -12,8 +12,10 @@ import {
   Tooltip,
 } from "recharts";
 
+type ChartRow = Record<string, number | Record<string, number>>;
+
 type DataGraphProps = {
-  data: Array<Array<Record<string, number>>>;
+  data: ChartRow[][];
   onChartsReady?: () => void;
 };
 
@@ -57,12 +59,12 @@ const SingleDataGraph = React.memo(
     hoveredTime,
     setHoveredTime,
   }: {
-    data: Array<Record<string, number>>;
+    data: ChartRow[];
     hoveredTime: number | null;
     setHoveredTime: (t: number | null) => void;
   }) => {
     const { currentTime, setCurrentTime } = useTime();
-    function flattenRow(row: Record<string, any>, prefix = ""): Record<string, number> {
+    function flattenRow(row: Record<string, number | Record<string, number>>, prefix = ""): Record<string, number> {
       const result: Record<string, number> = {};
       for (const [key, value] of Object.entries(row)) {
         // Special case: if this is a group value that is a primitive, assign to prefix.key
@@ -77,8 +79,7 @@ const SingleDataGraph = React.memo(
           Object.assign(result, flattenRow(value, prefix ? `${prefix}${SERIES_NAME_DELIMITER}${key}` : key));
         }
       }
-      // Always keep timestamp at top level if present
-      if ("timestamp" in row) {
+      if ("timestamp" in row && typeof row["timestamp"] === "number") {
         result["timestamp"] = row["timestamp"];
       }
       return result;
@@ -132,10 +133,9 @@ const SingleDataGraph = React.memo(
       setHoveredTime(null);
     };
 
-    const handleClick = (data: any) => {
-      if (data && data.activePayload && data.activePayload.length) {
-        const timeValue = data.activePayload[0].payload.timestamp;
-        setCurrentTime(timeValue);
+    const handleClick = (data: { activePayload?: { payload: { timestamp: number } }[] } | null) => {
+      if (data?.activePayload?.length) {
+        setCurrentTime(data.activePayload[0].payload.timestamp);
       }
     };
 
@@ -256,12 +256,9 @@ const SingleDataGraph = React.memo(
               syncId="episode-sync"
               margin={{ top: 24, right: 16, left: 0, bottom: 16 }}
               onClick={handleClick}
-              onMouseMove={(state: any) => {
-                setHoveredTime(
-                  state?.activePayload?.[0]?.payload?.timestamp ??
-                    state?.activeLabel ??
-                    null,
-                );
+              onMouseMove={(state) => {
+                const payload = state?.activePayload?.[0]?.payload as { timestamp?: number } | undefined;
+                setHoveredTime(payload?.timestamp ?? null);
               }}
               onMouseLeave={handleMouseLeave}
             >
