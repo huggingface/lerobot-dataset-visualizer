@@ -11,7 +11,7 @@ import Sidebar from "@/components/side-nav";
 import StatsPanel from "@/components/stats-panel";
 import OverviewPanel from "@/components/overview-panel";
 import Loading from "@/components/loading-component";
-import { isSO101Robot } from "@/lib/so101-robot";
+import { hasURDFSupport } from "@/lib/so101-robot";
 import {
   getAdjacentEpisodesVideoInfo,
   computeColumnMinMax,
@@ -317,7 +317,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
             <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
           )}
         </button>
-        {isSO101Robot(datasetInfo.robot_type) && (
+        {hasURDFSupport(datasetInfo.robot_type) && (
           <button
             className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
               activeTab === "urdf"
