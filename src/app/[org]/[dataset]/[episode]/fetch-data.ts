@@ -1337,6 +1337,309 @@ export async function loadAllEpisodeFrameInfo(
   return { cameras, framesByCamera };
 }
 
+// ─── Cross-episode action variance ──────────────────────────────
+
+export type LowMovementEpisode = { episodeIndex: number; totalMovement: number };
+
+export type AggVelocityStat = {
+  name: string;
+  std: number;
+  maxAbs: number;
+  bins: number[];
+  lo: number;
+  hi: number;
+};
+
+export type AggAutocorrelation = {
+  chartData: Record<string, number>[];
+  suggestedChunk: number | null;
+  shortKeys: string[];
+};
+
+export type CrossEpisodeVarianceData = {
+  actionNames: string[];
+  timeBins: number[];
+  variance: number[][];
+  numEpisodes: number;
+  lowMovementEpisodes: LowMovementEpisode[];
+  aggVelocity: AggVelocityStat[];
+  aggAutocorrelation: AggAutocorrelation | null;
+};
+
+export async function loadCrossEpisodeActionVariance(
+  repoId: string,
+  version: string,
+  info: DatasetMetadata,
+  fps: number,
+  maxEpisodes = 500,
+  numTimeBins = 50,
+): Promise<CrossEpisodeVarianceData | null> {
+  const actionEntry = Object.entries(info.features)
+    .find(([key, f]) => key === "action" && f.shape.length === 1);
+  if (!actionEntry) {
+    console.warn("[cross-ep] No action feature found. Available features:", Object.entries(info.features).map(([k, f]) => `${k}(${f.dtype}, shape=${JSON.stringify(f.shape)})`).join(", "));
+    return null;
+  }
+
+  const [actionKey, actionMeta] = actionEntry;
+  const actionDim = actionMeta.shape[0];
+
+  let names: unknown = actionMeta.names;
+  while (typeof names === "object" && names !== null && !Array.isArray(names)) {
+    names = Object.values(names)[0];
+  }
+  const actionNames = Array.isArray(names)
+    ? (names as string[]).map(n => `${actionKey}${SERIES_NAME_DELIMITER}${n}`)
+    : Array.from({ length: actionDim }, (_, i) => `${actionKey}${SERIES_NAME_DELIMITER}${i}`);
+
+  // Collect episode metadata
+  type EpMeta = { index: number; chunkIdx: number; fileIdx: number; from: number; to: number };
+  const allEps: EpMeta[] = [];
+
+  if (version === "v3.0") {
+    let fileIndex = 0;
+    while (true) {
+      const path = `meta/episodes/chunk-000/file-${fileIndex.toString().padStart(3, "0")}.parquet`;
+      try {
+        const buf = await fetchParquetFile(buildVersionedUrl(repoId, version, path));
+        const rows = await readParquetAsObjects(buf, []);
+        if (rows.length === 0 && fileIndex > 0) break;
+        for (const row of rows) {
+          const parsed = parseEpisodeRowSimple(row);
+          allEps.push({
+            index: parsed.episode_index,
+            chunkIdx: parsed.data_chunk_index,
+            fileIdx: parsed.data_file_index,
+            from: parsed.dataset_from_index,
+            to: parsed.dataset_to_index,
+          });
+        }
+        fileIndex++;
+      } catch { break; }
+    }
+  } else {
+    for (let i = 0; i < info.total_episodes; i++) {
+      allEps.push({ index: i, chunkIdx: 0, fileIdx: 0, from: 0, to: 0 });
+    }
+  }
+
+  if (allEps.length < 2) {
+    console.warn(`[cross-ep] Only ${allEps.length} episode(s) found in metadata, need ≥2`);
+    return null;
+  }
+  console.log(`[cross-ep] Found ${allEps.length} episodes in metadata, sampling up to ${maxEpisodes}`);
+
+  // Sample episodes evenly
+  const sampled = allEps.length <= maxEpisodes
+    ? allEps
+    : Array.from({ length: maxEpisodes }, (_, i) =>
+        allEps[Math.round((i * (allEps.length - 1)) / (maxEpisodes - 1))]
+      );
+
+  // Load action data per episode, tracking episode index alongside
+  const episodeActions: { index: number; actions: number[][] }[] = [];
+
+  if (version === "v3.0") {
+    const byFile = new Map<string, EpMeta[]>();
+    for (const ep of sampled) {
+      const key = `${ep.chunkIdx}-${ep.fileIdx}`;
+      if (!byFile.has(key)) byFile.set(key, []);
+      byFile.get(key)!.push(ep);
+    }
+
+    for (const [, eps] of byFile) {
+      const ep0 = eps[0];
+      const dataPath = `data/chunk-${ep0.chunkIdx.toString().padStart(3, "0")}/file-${ep0.fileIdx.toString().padStart(3, "0")}.parquet`;
+      try {
+        const buf = await fetchParquetFile(buildVersionedUrl(repoId, version, dataPath));
+        const rows = await readParquetAsObjects(buf, []);
+        const fileStart = rows.length > 0 && rows[0].index !== undefined ? Number(rows[0].index) : 0;
+
+        for (const ep of eps) {
+          const localFrom = Math.max(0, ep.from - fileStart);
+          const localTo = Math.min(rows.length, ep.to - fileStart);
+          const actions: number[][] = [];
+          for (let r = localFrom; r < localTo; r++) {
+            const raw = rows[r]?.[actionKey];
+            if (Array.isArray(raw)) actions.push(raw.map(Number));
+          }
+          if (actions.length > 0) episodeActions.push({ index: ep.index, actions });
+        }
+      } catch { /* skip file */ }
+    }
+  } else {
+    const chunkSize = info.chunks_size || 1000;
+    for (const ep of sampled) {
+      const chunk = Math.floor(ep.index / chunkSize);
+      const dataPath = formatStringWithVars(info.data_path, {
+        episode_chunk: chunk.toString().padStart(3, "0"),
+        episode_index: ep.index.toString().padStart(6, "0"),
+      });
+      try {
+        const buf = await fetchParquetFile(buildVersionedUrl(repoId, version, dataPath));
+        const rows = await readParquetAsObjects(buf, []);
+        const actions: number[][] = [];
+        for (const row of rows) {
+          const raw = row[actionKey];
+          if (Array.isArray(raw)) {
+            actions.push(raw.map(Number));
+          } else {
+            const vec: number[] = [];
+            for (let d = 0; d < actionDim; d++) {
+              const v = row[`${actionKey}.${d}`] ?? row[d];
+              vec.push(typeof v === "number" ? v : Number(v) || 0);
+            }
+            actions.push(vec);
+          }
+        }
+        if (actions.length > 0) episodeActions.push({ index: ep.index, actions });
+      } catch { /* skip */ }
+    }
+  }
+
+  if (episodeActions.length < 2) {
+    console.warn(`[cross-ep] Only ${episodeActions.length} episode(s) had loadable action data out of ${sampled.length} sampled`);
+    return null;
+  }
+  console.log(`[cross-ep] Loaded action data for ${episodeActions.length}/${sampled.length} episodes`);
+
+  // Resample each episode to numTimeBins and compute variance
+  const timeBins = Array.from({ length: numTimeBins }, (_, i) => i / (numTimeBins - 1));
+  const sums = Array.from({ length: numTimeBins }, () => new Float64Array(actionDim));
+  const sumsSq = Array.from({ length: numTimeBins }, () => new Float64Array(actionDim));
+  const counts = new Uint32Array(numTimeBins);
+
+  for (const { actions: epActions } of episodeActions) {
+    const T = epActions.length;
+    for (let b = 0; b < numTimeBins; b++) {
+      const srcIdx = Math.min(Math.round(timeBins[b] * (T - 1)), T - 1);
+      const row = epActions[srcIdx];
+      for (let d = 0; d < actionDim; d++) {
+        const v = row[d] ?? 0;
+        sums[b][d] += v;
+        sumsSq[b][d] += v * v;
+      }
+      counts[b]++;
+    }
+  }
+
+  const variance: number[][] = [];
+  for (let b = 0; b < numTimeBins; b++) {
+    const row: number[] = [];
+    const n = counts[b];
+    for (let d = 0; d < actionDim; d++) {
+      if (n < 2) { row.push(0); continue; }
+      const mean = sums[b][d] / n;
+      row.push(sumsSq[b][d] / n - mean * mean);
+    }
+    variance.push(row);
+  }
+
+  // Per-episode average movement per frame: mean L2 norm of frame-to-frame action deltas
+  const movementScores: LowMovementEpisode[] = episodeActions.map(({ index, actions: ep }) => {
+    if (ep.length < 2) return { episodeIndex: index, totalMovement: 0 };
+    let total = 0;
+    for (let t = 1; t < ep.length; t++) {
+      let sumSq = 0;
+      for (let d = 0; d < actionDim; d++) {
+        const delta = (ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0);
+        sumSq += delta * delta;
+      }
+      total += Math.sqrt(sumSq);
+    }
+    const avgPerFrame = total / (ep.length - 1);
+    return { episodeIndex: index, totalMovement: Math.round(avgPerFrame * 10000) / 10000 };
+  });
+
+  movementScores.sort((a, b) => a.totalMovement - b.totalMovement);
+  const lowMovementEpisodes = movementScores.slice(0, 10);
+
+  // Aggregated velocity stats: pool deltas from all episodes
+  const shortName = (k: string) => { const p = k.split(SERIES_NAME_DELIMITER); return p.length > 1 ? p[p.length - 1] : k; };
+
+  const aggVelocity: AggVelocityStat[] = (() => {
+    const binCount = 30;
+    return Array.from({ length: actionDim }, (_, d) => {
+      const deltas: number[] = [];
+      for (const { actions: ep } of episodeActions) {
+        for (let t = 1; t < ep.length; t++) {
+          deltas.push((ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0));
+        }
+      }
+      if (deltas.length === 0) return { name: shortName(actionNames[d]), std: 0, maxAbs: 0, bins: [], lo: 0, hi: 0 };
+      let sum = 0, maxAbs = 0, lo = Infinity, hi = -Infinity;
+      for (const v of deltas) { sum += v; const a = Math.abs(v); if (a > maxAbs) maxAbs = a; if (v < lo) lo = v; if (v > hi) hi = v; }
+      const mean = sum / deltas.length;
+      let varSum = 0; for (const v of deltas) varSum += (v - mean) ** 2;
+      const std = Math.sqrt(varSum / deltas.length);
+      const range = hi - lo || 1;
+      const binW = range / binCount;
+      const bins = new Array(binCount).fill(0);
+      for (const v of deltas) { let b = Math.floor((v - lo) / binW); if (b >= binCount) b = binCount - 1; bins[b]++; }
+      return { name: shortName(actionNames[d]), std, maxAbs, bins, lo, hi };
+    });
+  })();
+
+  // Aggregated autocorrelation: average per-episode ACFs
+  const aggAutocorrelation: AggAutocorrelation | null = (() => {
+    const maxLag = Math.min(100, Math.floor(
+      episodeActions.reduce((min, e) => Math.min(min, e.actions.length), Infinity) / 2
+    ));
+    if (maxLag < 2) return null;
+
+    const avgAcf: number[][] = Array.from({ length: actionDim }, () => new Array(maxLag).fill(0));
+    let epCount = 0;
+
+    for (const { actions: ep } of episodeActions) {
+      if (ep.length < maxLag * 2) continue;
+      epCount++;
+      for (let d = 0; d < actionDim; d++) {
+        const vals = ep.map(row => row[d] ?? 0);
+        const n = vals.length;
+        const m = vals.reduce((a, b) => a + b, 0) / n;
+        const centered = vals.map(v => v - m);
+        const vari = centered.reduce((a, v) => a + v * v, 0);
+        if (vari === 0) continue;
+        for (let lag = 1; lag <= maxLag; lag++) {
+          let s = 0;
+          for (let t = 0; t < n - lag; t++) s += centered[t] * centered[t + lag];
+          avgAcf[d][lag - 1] += s / vari;
+        }
+      }
+    }
+
+    if (epCount === 0) return null;
+    for (let d = 0; d < actionDim; d++) for (let l = 0; l < maxLag; l++) avgAcf[d][l] /= epCount;
+
+    const shortKeys = actionNames.map(shortName);
+    const chartData = Array.from({ length: maxLag }, (_, lag) => {
+      const row: Record<string, number> = { lag: lag + 1, time: (lag + 1) / fps };
+      shortKeys.forEach((k, d) => { row[k] = avgAcf[d][lag]; });
+      return row;
+    });
+
+    // Suggested chunk: median lag where ACF drops below 0.5
+    const lags = avgAcf.map(acf => { const i = acf.findIndex(v => v < 0.5); return i >= 0 ? i + 1 : null; }).filter(Boolean) as number[];
+    const suggestedChunk = lags.length > 0 ? lags.sort((a, b) => a - b)[Math.floor(lags.length / 2)] : null;
+
+    return { chartData, suggestedChunk, shortKeys };
+  })();
+
+  return { actionNames, timeBins, variance, numEpisodes: episodeActions.length, lowMovementEpisodes, aggVelocity, aggAutocorrelation };
+}
+
+// Load only flatChartData for a specific episode (used by URDF viewer episode switching)
+export async function loadEpisodeFlatChartData(
+  repoId: string,
+  version: string,
+  info: DatasetMetadata,
+  episodeId: number,
+): Promise<Record<string, number>[]> {
+  const episodeMetadata = await loadEpisodeMetadataV3Simple(repoId, version, episodeId);
+  const { flatChartData } = await loadEpisodeDataV3(repoId, version, info, episodeMetadata);
+  return flatChartData;
+}
+
 // Safe wrapper for UI error display
 export async function getEpisodeDataSafe(
   org: string,

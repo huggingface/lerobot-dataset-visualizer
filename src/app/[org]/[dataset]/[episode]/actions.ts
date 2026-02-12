@@ -5,8 +5,10 @@ import type { DatasetMetadata } from "@/utils/parquetUtils";
 import {
   loadAllEpisodeLengthsV3,
   loadAllEpisodeFrameInfo,
+  loadCrossEpisodeActionVariance,
   type EpisodeLengthStats,
   type EpisodeFramesData,
+  type CrossEpisodeVarianceData,
 } from "./fetch-data";
 
 export async function fetchEpisodeLengthStats(
@@ -26,5 +28,14 @@ export async function fetchEpisodeFrames(
   const repoId = `${org}/${dataset}`;
   const { version, info } = await getDatasetVersionAndInfo(repoId);
   return loadAllEpisodeFrameInfo(repoId, version, info as unknown as DatasetMetadata);
+}
+
+export async function fetchCrossEpisodeVariance(
+  org: string,
+  dataset: string,
+): Promise<CrossEpisodeVarianceData | null> {
+  const repoId = `${org}/${dataset}`;
+  const { version, info } = await getDatasetVersionAndInfo(repoId);
+  return loadCrossEpisodeActionVariance(repoId, version, info as unknown as DatasetMetadata, info.fps);
 }
 
