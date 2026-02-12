@@ -1,13 +1,11 @@
 import {
   DatasetMetadata,
-  fetchJson,
   fetchParquetFile,
   formatStringWithVars,
-  readParquetColumn,
   readParquetAsObjects,
 } from "@/utils/parquetUtils";
 import { pick } from "@/utils/pick";
-import { getDatasetVersion, buildVersionedUrl } from "@/utils/versionUtils";
+import { getDatasetVersionAndInfo, buildVersionedUrl } from "@/utils/versionUtils";
 
 const SERIES_NAME_DELIMITER = " | ";
 
@@ -18,16 +16,13 @@ export async function getEpisodeData(
 ) {
   const repoId = `${org}/${dataset}`;
   try {
-    // Check for compatible dataset version (v3.0, v2.1, or v2.0)
-    const version = await getDatasetVersion(repoId);
-    const jsonUrl = buildVersionedUrl(repoId, version, "meta/info.json");
-    const info = await fetchJson<DatasetMetadata>(jsonUrl);
+    const { version, info: rawInfo } = await getDatasetVersionAndInfo(repoId);
+    const info = rawInfo as unknown as DatasetMetadata;
 
     if (info.video_path === null) {
       throw new Error("Only videos datasets are supported in this visualizer.\nPlease use Rerun visualizer for images datasets.");
     }
 
-    // Handle different versions
     if (version === "v3.0") {
       return await getEpisodeDataV3(repoId, version, info, episodeId);
     } else {
@@ -39,7 +34,6 @@ export async function getEpisodeData(
   }
 }
 
-// Get video info for adjacent episodes (for preloading)
 export async function getAdjacentEpisodesVideoInfo(
   org: string,
   dataset: string,
@@ -48,9 +42,8 @@ export async function getAdjacentEpisodesVideoInfo(
 ) {
   const repoId = `${org}/${dataset}`;
   try {
-    const version = await getDatasetVersion(repoId);
-    const jsonUrl = buildVersionedUrl(repoId, version, "meta/info.json");
-    const info = await fetchJson<DatasetMetadata>(jsonUrl);
+    const { version, info: rawInfo } = await getDatasetVersionAndInfo(repoId);
+    const info = rawInfo as unknown as DatasetMetadata;
     
     const totalEpisodes = info.total_episodes;
     const adjacentVideos: Array<{episodeId: number; videosInfo: any[]}> = [];
@@ -196,47 +189,34 @@ async function getEpisodeDataV2(
   );
 
   const arrayBuffer = await fetchParquetFile(parquetUrl);
+  const allData = await readParquetAsObjects(arrayBuffer, []);
   
-  // Extract task - first check for language instructions (preferred), then fallback to task field or tasks.jsonl
+  // Extract task from language_instruction fields, task field, or tasks.jsonl
   let task: string | undefined;
-  let allData: any[] = [];
   
-  // Load data first
-  try {
-    allData = await readParquetAsObjects(arrayBuffer, []);
-  } catch (error) {
-    // Could not read parquet data
-  }
-  
-  // First check for language_instruction fields in the data (preferred)
   if (allData.length > 0) {
     const firstRow = allData[0];
     const languageInstructions: string[] = [];
     
-    // Check for language_instruction field
     if (firstRow.language_instruction) {
       languageInstructions.push(firstRow.language_instruction);
     }
     
-    // Check for numbered language_instruction fields
     let instructionNum = 2;
     while (firstRow[`language_instruction_${instructionNum}`]) {
       languageInstructions.push(firstRow[`language_instruction_${instructionNum}`]);
       instructionNum++;
     }
     
-    // Join all instructions with line breaks
     if (languageInstructions.length > 0) {
       task = languageInstructions.join('\n');
     }
   }
   
-  // If no language instructions found, try direct task field
   if (!task && allData.length > 0 && allData[0].task) {
     task = allData[0].task;
   }
   
-  // If still no task found, try loading from tasks.jsonl metadata file (v2.x format)
   if (!task && allData.length > 0) {
     try {
       const tasksUrl = buildVersionedUrl(repoId, version, "meta/tasks.jsonl");
@@ -244,7 +224,6 @@ async function getEpisodeDataV2(
       
       if (tasksResponse.ok) {
         const tasksText = await tasksResponse.text();
-        // Parse JSONL format (one JSON object per line)
         const tasksData = tasksText
           .split('\n')
           .filter(line => line.trim())
@@ -252,11 +231,7 @@ async function getEpisodeDataV2(
         
         if (tasksData && tasksData.length > 0) {
           const taskIndex = allData[0].task_index;
-          
-          // Convert BigInt to number for comparison
           const taskIndexNum = typeof taskIndex === 'bigint' ? Number(taskIndex) : taskIndex;
-          
-          // Find task by task_index
           const taskData = tasksData.find(t => t.task_index === taskIndexNum);
           if (taskData) {
             task = taskData.task;
@@ -268,19 +243,25 @@ async function getEpisodeDataV2(
     }
   }
   
-  const data = await readParquetColumn(arrayBuffer, filteredColumnNames);
-  // Flatten and map to array of objects for chartData
+  // Build chart data from already-parsed allData (no second parquet parse)
   const seriesNames = [
     "timestamp",
     ...columns.map(({ value }) => value).flat(),
   ];
 
-  const chartData = data.map((row) => {
-    const flatRow = row.flat();
+  const chartData = allData.map((row) => {
     const obj: Record<string, number> = {};
-    seriesNames.forEach((key, idx) => {
-      obj[key] = flatRow[idx];
-    });
+    obj["timestamp"] = row.timestamp;
+    for (const col of columns) {
+      const rawVal = row[col.key];
+      if (Array.isArray(rawVal)) {
+        rawVal.forEach((v: any, i: number) => {
+          if (i < col.value.length) obj[col.value[i]] = Number(v);
+        });
+      } else if (rawVal !== undefined) {
+        obj[col.value[0]] = Number(rawVal);
+      }
+    }
     return obj;
   });
 
