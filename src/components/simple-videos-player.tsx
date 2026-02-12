@@ -252,7 +252,7 @@ export const SimpleVideosPlayer = ({
                   isEnlarged ? "max-h-[90vh] max-w-[90vw]" : ""
                 }`}
                 muted
-                preload="auto"
+                preload={isFirstVisible ? "auto" : "metadata"}
                 onPlay={(e) => handlePlay(e.currentTarget, info)}
                 onTimeUpdate={isFirstVisible ? handleTimeUpdate : undefined}
               >

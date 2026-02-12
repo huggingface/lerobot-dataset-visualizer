@@ -395,7 +395,7 @@ export const VideosPlayer = ({
                 }}
                 muted
                 loop
-                preload="auto"
+                preload={idx === firstVisibleIdx ? "auto" : "metadata"}
                 className={`w-full object-contain ${isEnlarged ? "max-h-[90vh] max-w-[90vw]" : ""}`}
                 onTimeUpdate={
                   idx === firstVisibleIdx ? handleTimeUpdate : undefined

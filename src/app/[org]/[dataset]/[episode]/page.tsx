@@ -27,7 +27,7 @@ export default async function EpisodePage({
   const { data, error } = await getEpisodeDataSafe(org, dataset, episodeNumber);
   return (
     <Suspense fallback={null}>
-      <EpisodeViewer data={data} error={error} />
+      <EpisodeViewer data={data} error={error} org={org} dataset={dataset} />
     </Suspense>
   );
 }

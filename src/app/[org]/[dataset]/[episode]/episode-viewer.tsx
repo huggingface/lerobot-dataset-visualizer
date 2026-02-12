@@ -69,20 +69,29 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
     currentPage * pageSize,
   );
   
-  // Preload adjacent episodes' videos
+  // Preload adjacent episodes' videos via <link rel="preload"> tags
   useEffect(() => {
     if (!org || !dataset) return;
-    
-    const preloadAdjacent = async () => {
-      try {
-        await getAdjacentEpisodesVideoInfo(org, dataset, episodeId, 2);
-        // Preload adjacent episodes for smoother navigation
-      } catch {
-        // Skip preloading on error
-      }
+    const links: HTMLLinkElement[] = [];
+
+    getAdjacentEpisodesVideoInfo(org, dataset, episodeId, 2)
+      .then((adjacentVideos) => {
+        for (const ep of adjacentVideos) {
+          for (const v of ep.videosInfo) {
+            const link = document.createElement("link");
+            link.rel = "preload";
+            link.as = "video";
+            link.href = v.url;
+            document.head.appendChild(link);
+            links.push(link);
+          }
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      links.forEach((l) => l.remove());
     };
-    
-    preloadAdjacent();
   }, [org, dataset, episodeId]);
 
   // Initialize based on URL time parameter
