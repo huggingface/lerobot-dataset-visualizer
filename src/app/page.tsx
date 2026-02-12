@@ -128,7 +128,7 @@ function HomeInner() {
       {/* Centered Content */}
       <div className="relative z-10 h-screen flex flex-col items-center justify-center text-white text-center">
         <h1 className="text-4xl md:text-5xl font-bold mb-6 drop-shadow-lg">
-          LeRobot Dataset Visualizer
+          LeRobot Dataset Tool and Visualizer
         </h1>
         <form onSubmit={handleGo} className="flex gap-2 justify-center mt-6">
           <input
