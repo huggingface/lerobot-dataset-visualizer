@@ -7,20 +7,26 @@ import * as THREE from "three";
 import URDFLoader from "urdf-loader";
 import type { URDFRobot } from "urdf-loader";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { ColladaLoader } from "three/examples/jsm/loaders/ColladaLoader.js";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import type { EpisodeData } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import { fetchEpisodeChartData } from "@/app/[org]/[dataset]/[episode]/actions";
+import { isOpenArmRobot } from "@/lib/so101-robot";
 
 const SERIES_DELIM = " | ";
-const SCALE = 10;
 const DEG2RAD = Math.PI / 180;
 
-function getUrdfUrl(robotType: string | null): string {
+function getRobotConfig(robotType: string | null) {
   const lower = (robotType ?? "").toLowerCase();
-  if (lower.includes("so100") && !lower.includes("so101")) return "/urdf/so101/so100.urdf";
-  return "/urdf/so101/so101_new_calib.urdf";
+  if (lower.includes("openarm")) {
+    return { urdfUrl: "/urdf/openarm/openarm_bimanual.urdf", scale: 3, isDualArm: true };
+  }
+  if (lower.includes("so100") && !lower.includes("so101")) {
+    return { urdfUrl: "/urdf/so101/so100.urdf", scale: 10, isDualArm: false };
+  }
+  return { urdfUrl: "/urdf/so101/so101_new_calib.urdf", scale: 10, isDualArm: false };
 }
 
 // Detect unit: servo ticks (0-4096), degrees (>6.28), or radians
@@ -46,34 +52,60 @@ function groupColumnsByPrefix(keys: string[]): Record<string, string[]> {
 
 function autoMatchJoints(urdfJointNames: string[], columnKeys: string[]): Record<string, string> {
   const mapping: Record<string, string> = {};
+  const suffixes = columnKeys.map((k) => (k.split(SERIES_DELIM).pop()?.trim() ?? k).toLowerCase());
+
   for (const jointName of urdfJointNames) {
     const lower = jointName.toLowerCase();
-    const exactMatch = columnKeys.find((k) => {
-      const suffix = (k.split(SERIES_DELIM).pop()?.trim() ?? k).toLowerCase();
-      return suffix === lower;
-    });
-    if (exactMatch) { mapping[jointName] = exactMatch; continue; }
+
+    // Exact match on column suffix
+    const exactIdx = suffixes.findIndex((s) => s === lower);
+    if (exactIdx >= 0) { mapping[jointName] = columnKeys[exactIdx]; continue; }
+
+    // OpenArm: openarm_(left|right)_joint(\d+) → (left|right)_joint_(\d+)
+    const armMatch = lower.match(/^openarm_(left|right)_joint(\d+)$/);
+    if (armMatch) {
+      const pattern = `${armMatch[1]}_joint_${armMatch[2]}`;
+      const idx = suffixes.findIndex((s) => s.includes(pattern));
+      if (idx >= 0) { mapping[jointName] = columnKeys[idx]; continue; }
+    }
+
+    // OpenArm: openarm_(left|right)_finger_joint1 → (left|right)_gripper
+    const fingerMatch = lower.match(/^openarm_(left|right)_finger_joint1$/);
+    if (fingerMatch) {
+      const pattern = `${fingerMatch[1]}_gripper`;
+      const idx = suffixes.findIndex((s) => s.includes(pattern));
+      if (idx >= 0) { mapping[jointName] = columnKeys[idx]; continue; }
+    }
+
+    // finger_joint2 is a mimic joint — skip
+    if (lower.includes("finger_joint2")) continue;
+
+    // Generic fuzzy fallback
     const fuzzy = columnKeys.find((k) => k.toLowerCase().includes(lower));
     if (fuzzy) mapping[jointName] = fuzzy;
   }
   return mapping;
 }
 
-// Tip link names to try (so101 then so100 naming)
-const TIP_LINK_NAMES = ["gripper_frame_link", "gripperframe", "gripper_link", "gripper"];
+// Tip link names to try (so101, so100, then openarm naming)
+const TIP_LINK_NAMES = [
+  "gripper_frame_link", "gripperframe", "gripper_link", "gripper",
+  "openarm_left_hand_tcp", "openarm_right_hand_tcp",
+];
 const TRAIL_DURATION = 1.0; // seconds
 const TRAIL_COLOR = new THREE.Color("#ff6600");
 const MAX_TRAIL_POINTS = 300;
 
 // ─── Robot scene (imperative, inside Canvas) ───
 function RobotScene({
-  urdfUrl, jointValues, onJointsLoaded, trailEnabled, trailResetKey,
+  urdfUrl, jointValues, onJointsLoaded, trailEnabled, trailResetKey, scale,
 }: {
   urdfUrl: string;
   jointValues: Record<string, number>;
   onJointsLoaded: (names: string[]) => void;
   trailEnabled: boolean;
   trailResetKey: number;
+  scale: number;
 }) {
   const { scene, size } = useThree();
   const robotRef = useRef<URDFRobot | null>(null);
@@ -123,19 +155,32 @@ function RobotScene({
   useEffect(() => {
     setLoading(true);
     setError(null);
+    const isOpenArm = urdfUrl.includes("openarm");
     const manager = new THREE.LoadingManager();
     const loader = new URDFLoader(manager);
     loader.loadMeshCb = (url, mgr, onLoad) => {
+      // DAE (Collada) files — load with embedded materials
+      if (url.endsWith(".dae")) {
+        const colladaLoader = new ColladaLoader(mgr);
+        colladaLoader.load(url, (collada) => onLoad(collada.scene), undefined,
+          (err) => onLoad(new THREE.Object3D(), err as Error));
+        return;
+      }
+      // STL files — apply custom materials
       const stlLoader = new STLLoader(mgr);
       stlLoader.load(
         url,
         (geometry) => {
-          const isMotor = url.includes("sts3215");
-          const material = new THREE.MeshStandardMaterial({
-            color: isMotor ? "#1a1a1a" : "#FFD700",
-            metalness: isMotor ? 0.7 : 0.1,
-            roughness: isMotor ? 0.3 : 0.6,
-          });
+          let color = "#FFD700";
+          let metalness = 0.1;
+          let roughness = 0.6;
+          if (url.includes("sts3215")) {
+            color = "#1a1a1a"; metalness = 0.7; roughness = 0.3;
+          } else if (isOpenArm) {
+            color = url.includes("body_link0") ? "#3a3a4a" : "#f5f5f5";
+            metalness = 0.15; roughness = 0.6;
+          }
+          const material = new THREE.MeshStandardMaterial({ color, metalness, roughness });
           onLoad(new THREE.Mesh(geometry, material));
         },
         undefined,
@@ -149,18 +194,17 @@ function RobotScene({
         robot.rotateOnAxis(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
         robot.traverse((c) => { c.castShadow = true; });
         robot.updateMatrixWorld(true);
-        robot.scale.set(SCALE, SCALE, SCALE);
+        robot.scale.set(scale, scale, scale);
         scene.add(robot);
 
-        // Find the tip link for the trail
         for (const name of TIP_LINK_NAMES) {
           if (robot.frames[name]) { tipLinkRef.current = robot.frames[name]; break; }
         }
 
-        const revolute = Object.values(robot.joints)
-          .filter((j) => j.jointType === "revolute" || j.jointType === "continuous")
+        const movable = Object.values(robot.joints)
+          .filter((j) => j.jointType === "revolute" || j.jointType === "continuous" || j.jointType === "prismatic")
           .map((j) => j.name);
-        onJointsLoaded(revolute);
+        onJointsLoaded(movable);
         setLoading(false);
       },
       undefined,
@@ -170,7 +214,7 @@ function RobotScene({
       if (robotRef.current) { scene.remove(robotRef.current); robotRef.current = null; }
       tipLinkRef.current = null;
     };
-  }, [urdfUrl, scene, onJointsLoaded]);
+  }, [urdfUrl, scale, scene, onJointsLoaded]);
 
   const tipWorldPos = useMemo(() => new THREE.Vector3(), []);
 
@@ -290,7 +334,8 @@ export default function URDFViewer({
 }) {
   const { datasetInfo, episodes } = data;
   const fps = datasetInfo.fps || 30;
-  const urdfUrl = useMemo(() => getUrdfUrl(datasetInfo.robot_type), [datasetInfo.robot_type]);
+  const robotConfig = useMemo(() => getRobotConfig(datasetInfo.robot_type), [datasetInfo.robot_type]);
+  const { urdfUrl, scale, isDualArm } = robotConfig;
 
   // Episode selection & chart data
   const [selectedEpisode, setSelectedEpisode] = useState(data.episodeId);
@@ -357,6 +402,7 @@ export default function URDFViewer({
 
   // Trail
   const [trailEnabled, setTrailEnabled] = useState(true);
+  const [showMapping, setShowMapping] = useState(false);
 
   // Playback
   const [frame, setFrame] = useState(0);
@@ -369,24 +415,68 @@ export default function URDFViewer({
     frameRef.current = f;
   }, []);
 
+  // Filter out mimic joints (finger_joint2) from the UI list
+  const displayJointNames = useMemo(
+    () => urdfJointNames.filter((n) => !n.toLowerCase().includes("finger_joint2")),
+    [urdfJointNames],
+  );
+
+  // Auto-detect gripper column range for linear mapping to 0-0.044m
+  const gripperRanges = useMemo(() => {
+    const ranges: Record<string, { min: number; max: number }> = {};
+    for (const jn of urdfJointNames) {
+      if (!jn.toLowerCase().includes("finger_joint1")) continue;
+      const col = mapping[jn];
+      if (!col) continue;
+      let min = Infinity, max = -Infinity;
+      for (const row of chartData) {
+        const v = row[col];
+        if (typeof v === "number") { if (v < min) min = v; if (v > max) max = v; }
+      }
+      if (min < max) ranges[jn] = { min, max };
+    }
+    return ranges;
+  }, [chartData, mapping, urdfJointNames]);
+
   // Compute joint values for current frame
   const jointValues = useMemo(() => {
     if (totalFrames === 0 || urdfJointNames.length === 0) return {};
     const row = chartData[Math.min(frame, totalFrames - 1)];
-    const rawValues: number[] = [];
-    const names: string[] = [];
+    const revoluteValues: number[] = [];
+    const revoluteNames: string[] = [];
+    const values: Record<string, number> = {};
 
     for (const jn of urdfJointNames) {
+      if (jn.toLowerCase().includes("finger_joint2")) continue;
       const col = mapping[jn];
-      if (col && typeof row[col] === "number") {
-        rawValues.push(row[col]);
-        names.push(jn);
+      if (!col || typeof row[col] !== "number") continue;
+      const raw = row[col];
+
+      if (jn.toLowerCase().includes("finger_joint1")) {
+        // Map gripper range → 0-0.044m using auto-detected min/max
+        const range = gripperRanges[jn];
+        if (range) {
+          const t = (raw - range.min) / (range.max - range.min);
+          values[jn] = t * 0.044;
+        } else {
+          values[jn] = (raw / 100) * 0.044; // fallback: assume 0-100
+        }
+      } else {
+        revoluteValues.push(raw);
+        revoluteNames.push(jn);
       }
     }
 
-    const converted = detectAndConvert(rawValues);
-    const values: Record<string, number> = {};
-    names.forEach((n, i) => { values[n] = converted[i]; });
+    const converted = detectAndConvert(revoluteValues);
+    revoluteNames.forEach((n, i) => { values[n] = converted[i]; });
+
+    // Copy finger_joint1 → finger_joint2 (mimic joints)
+    for (const jn of urdfJointNames) {
+      if (jn.toLowerCase().includes("finger_joint2")) {
+        const j1 = jn.replace(/finger_joint2/, "finger_joint1");
+        if (values[j1] !== undefined) values[jn] = values[j1];
+      }
+    }
     return values;
   }, [chartData, frame, mapping, totalFrames, urdfJointNames]);
 
@@ -406,12 +496,12 @@ export default function URDFViewer({
             <span className="text-white text-lg animate-pulse">Loading episode {selectedEpisode}…</span>
           </div>
         )}
-        <Canvas camera={{ position: [0.3 * SCALE, 0.25 * SCALE, 0.3 * SCALE], fov: 45, near: 0.01, far: 100 }}>
-          <ambientLight intensity={0.5} />
-          <directionalLight position={[3, 5, 4]} intensity={1.2} />
-          <directionalLight position={[-2, 3, -2]} intensity={0.4} />
-          <hemisphereLight args={["#b1e1ff", "#444444", 0.4]} />
-          <RobotScene urdfUrl={urdfUrl} jointValues={jointValues} onJointsLoaded={onJointsLoaded} trailEnabled={trailEnabled} trailResetKey={selectedEpisode} />
+        <Canvas camera={{ position: [0.3 * scale, 0.25 * scale, 0.3 * scale], fov: 45, near: 0.01, far: 100 }}>
+          <ambientLight intensity={0.7} />
+          <directionalLight position={[3, 5, 4]} intensity={1.5} />
+          <directionalLight position={[-2, 3, -2]} intensity={0.6} />
+          <hemisphereLight args={["#b1e1ff", "#666666", 0.5]} />
+          <RobotScene urdfUrl={urdfUrl} jointValues={jointValues} onJointsLoaded={onJointsLoaded} trailEnabled={trailEnabled} trailResetKey={selectedEpisode} scale={scale} />
           <Grid
             args={[10, 10]} cellSize={0.2} cellThickness={0.5} cellColor="#334155"
             sectionSize={1} sectionThickness={1} sectionColor="#475569"
@@ -477,55 +567,66 @@ export default function URDFViewer({
           <span className="text-xs text-slate-500 tabular-nums w-20 text-right shrink-0">F {frame}/{Math.max(totalFrames - 1, 0)}</span>
         </div>
 
-        {/* Data source + joint mapping */}
-        <div className="flex gap-4 items-start">
-          <div className="space-y-1 shrink-0">
-            <label className="text-xs text-slate-400">Data source</label>
-            <div className="flex gap-1 flex-wrap">
-              {groupNames.map((name) => (
-                <button key={name} onClick={() => setSelectedGroup(name)}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
-                    selectedGroup === name ? "bg-orange-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-                  }`}>{name}</button>
-              ))}
+        {/* Collapsible joint mapping */}
+        <button
+          onClick={() => setShowMapping((v) => !v)}
+          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+        >
+          <span className={`transition-transform ${showMapping ? "rotate-90" : ""}`}>▶</span>
+          Joint Mapping
+          <span className="text-slate-600">({Object.keys(mapping).filter((k) => mapping[k]).length}/{displayJointNames.length} mapped)</span>
+        </button>
+
+        {showMapping && (
+          <div className="flex gap-4 items-start">
+            <div className="space-y-1 shrink-0">
+              <label className="text-xs text-slate-400">Data source</label>
+              <div className="flex gap-1 flex-wrap">
+                {groupNames.map((name) => (
+                  <button key={name} onClick={() => setSelectedGroup(name)}
+                    className={`px-2 py-1 text-xs rounded transition-colors ${
+                      selectedGroup === name ? "bg-orange-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                    }`}>{name}</button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-x-auto max-h-48 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-slate-800">
+                  <tr className="text-slate-500">
+                    <th className="text-left font-normal px-1">URDF Joint</th>
+                    <th className="text-left font-normal px-1">→</th>
+                    <th className="text-left font-normal px-1">Dataset Column</th>
+                    <th className="text-right font-normal px-1">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayJointNames.map((jointName) => (
+                    <tr key={jointName} className="border-t border-slate-700/50">
+                      <td className="px-1 py-0.5 text-slate-300 font-mono">{jointName}</td>
+                      <td className="px-1 text-slate-600">→</td>
+                      <td className="px-1 py-0.5">
+                        <select value={mapping[jointName] ?? ""}
+                          onChange={(e) => setMapping((m) => ({ ...m, [jointName]: e.target.value }))}
+                          className="bg-slate-900 text-slate-200 text-xs rounded px-1 py-0.5 border border-slate-600 w-full max-w-[200px]">
+                          <option value="">-- unmapped --</option>
+                          {selectedColumns.map((col) => {
+                            const label = col.split(SERIES_DELIM).pop() ?? col;
+                            return <option key={col} value={col}>{label}</option>;
+                          })}
+                        </select>
+                      </td>
+                      <td className="px-1 py-0.5 text-right tabular-nums text-slate-400 font-mono">
+                        {jointValues[jointName] !== undefined ? jointValues[jointName].toFixed(3) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-
-          <div className="flex-1 overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-slate-500">
-                  <th className="text-left font-normal px-1">URDF Joint</th>
-                  <th className="text-left font-normal px-1">→</th>
-                  <th className="text-left font-normal px-1">Dataset Column</th>
-                  <th className="text-right font-normal px-1">Value (rad)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {urdfJointNames.map((jointName) => (
-                  <tr key={jointName} className="border-t border-slate-700/50">
-                    <td className="px-1 py-0.5 text-slate-300 font-mono">{jointName}</td>
-                    <td className="px-1 text-slate-600">→</td>
-                    <td className="px-1 py-0.5">
-                      <select value={mapping[jointName] ?? ""}
-                        onChange={(e) => setMapping((m) => ({ ...m, [jointName]: e.target.value }))}
-                        className="bg-slate-900 text-slate-200 text-xs rounded px-1 py-0.5 border border-slate-600 w-full max-w-[200px]">
-                        <option value="">-- unmapped --</option>
-                        {selectedColumns.map((col) => {
-                          const label = col.split(SERIES_DELIM).pop() ?? col;
-                          return <option key={col} value={col}>{label}</option>;
-                        })}
-                      </select>
-                    </td>
-                    <td className="px-1 py-0.5 text-right tabular-nums text-slate-400 font-mono">
-                      {jointValues[jointName] !== undefined ? jointValues[jointName].toFixed(3) : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
