@@ -6,6 +6,7 @@ import {
   loadAllEpisodeLengthsV3,
   loadAllEpisodeFrameInfo,
   loadCrossEpisodeActionVariance,
+  loadEpisodeFlatChartData,
   type EpisodeLengthStats,
   type EpisodeFramesData,
   type CrossEpisodeVarianceData,
@@ -37,5 +38,15 @@ export async function fetchCrossEpisodeVariance(
   const repoId = `${org}/${dataset}`;
   const { version, info } = await getDatasetVersionAndInfo(repoId);
   return loadCrossEpisodeActionVariance(repoId, version, info as unknown as DatasetMetadata, info.fps);
+}
+
+export async function fetchEpisodeChartData(
+  org: string,
+  dataset: string,
+  episodeId: number,
+): Promise<Record<string, number>[]> {
+  const repoId = `${org}/${dataset}`;
+  const { version, info } = await getDatasetVersionAndInfo(repoId);
+  return loadEpisodeFlatChartData(repoId, version, info as unknown as DatasetMetadata, episodeId);
 }
 

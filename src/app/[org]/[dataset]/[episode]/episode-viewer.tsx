@@ -447,7 +447,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
 
           {activeTab === "urdf" && (
             <Suspense fallback={<Loading />}>
-              <URDFViewer data={data} />
+              <URDFViewer data={data} org={org} dataset={dataset} />
             </Suspense>
           )}
         </div>
