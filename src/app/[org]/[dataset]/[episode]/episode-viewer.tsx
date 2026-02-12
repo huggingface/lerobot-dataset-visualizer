@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { postParentMessageWithParams } from "@/utils/postParentMessage";
 import { SimpleVideosPlayer } from "@/components/simple-videos-player";
@@ -8,8 +8,23 @@ import DataRecharts from "@/components/data-recharts";
 import PlaybackBar from "@/components/playback-bar";
 import { TimeProvider, useTime } from "@/context/time-context";
 import Sidebar from "@/components/side-nav";
+import StatsPanel from "@/components/stats-panel";
+import OverviewPanel from "@/components/overview-panel";
 import Loading from "@/components/loading-component";
-import { getAdjacentEpisodesVideoInfo, type EpisodeData } from "./fetch-data";
+import { isSO101Robot } from "@/lib/so101-robot";
+import {
+  getAdjacentEpisodesVideoInfo,
+  computeColumnMinMax,
+  type EpisodeData,
+  type ColumnMinMax,
+  type EpisodeLengthStats,
+  type EpisodeFramesData,
+} from "./fetch-data";
+import { fetchEpisodeLengthStats, fetchEpisodeFrames } from "./actions";
+
+const URDFViewer = lazy(() => import("@/components/urdf-viewer"));
+
+type ActiveTab = "episodes" | "statistics" | "frames" | "urdf";
 
 export default function EpisodeViewer({
   data,
@@ -63,7 +78,47 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // State
+  // Tab state & lazy stats
+  const [activeTab, setActiveTab] = useState<ActiveTab>("episodes");
+  const [columnMinMax, setColumnMinMax] = useState<ColumnMinMax[] | null>(null);
+  const [episodeLengthStats, setEpisodeLengthStats] = useState<EpisodeLengthStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const statsLoadedRef = useRef(false);
+  const [episodeFramesData, setEpisodeFramesData] = useState<EpisodeFramesData | null>(null);
+  const [framesLoading, setFramesLoading] = useState(false);
+  const framesLoadedRef = useRef(false);
+
+  const loadStats = () => {
+    if (statsLoadedRef.current) return;
+    statsLoadedRef.current = true;
+    setStatsLoading(true);
+    setColumnMinMax(computeColumnMinMax(data.chartDataGroups));
+    if (org && dataset) {
+      fetchEpisodeLengthStats(org, dataset)
+        .then((result) => setEpisodeLengthStats(result))
+        .catch(() => {})
+        .finally(() => setStatsLoading(false));
+    } else {
+      setStatsLoading(false);
+    }
+  };
+
+  const loadFrames = () => {
+    if (framesLoadedRef.current || !org || !dataset) return;
+    framesLoadedRef.current = true;
+    setFramesLoading(true);
+    fetchEpisodeFrames(org, dataset)
+      .then(setEpisodeFramesData)
+      .catch(() => setEpisodeFramesData({ cameras: [], framesByCamera: {} }))
+      .finally(() => setFramesLoading(false));
+  };
+
+  const handleTabChange = (tab: ActiveTab) => {
+    setActiveTab(tab);
+    if (tab === "statistics") loadStats();
+    if (tab === "frames") loadFrames();
+  };
+
   // Use context for time sync
   const { currentTime, setCurrentTime, setIsPlaying, isPlaying } = useTime();
 
@@ -191,85 +246,171 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
   };
 
   return (
-    <div className="flex h-screen max-h-screen bg-slate-950 text-gray-200">
-      {/* Sidebar */}
-      <Sidebar
-        datasetInfo={datasetInfo}
-        paginatedEpisodes={paginatedEpisodes}
-        episodeId={episodeId}
-        totalPages={totalPages}
-        currentPage={currentPage}
-        prevPage={prevPage}
-        nextPage={nextPage}
-      />
-
-      {/* Content */}
-      <div
-        className={`flex max-h-screen flex-col gap-4 p-4 md:flex-1 relative ${isLoading ? "overflow-hidden" : "overflow-y-auto"}`}
-      >
-        {isLoading && <Loading />}
-
-        <div className="flex items-center justify-start my-4">
-          <a
-            href="https://github.com/huggingface/lerobot"
-            target="_blank"
-            className="block"
+    <div className="flex flex-col h-screen max-h-screen bg-slate-950 text-gray-200">
+      {/* Top tab bar */}
+      <div className="flex items-center border-b border-slate-700 bg-slate-900 shrink-0">
+        <button
+          className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
+            activeTab === "episodes"
+              ? "text-orange-400"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+          onClick={() => handleTabChange("episodes")}
+        >
+          Episodes
+          {activeTab === "episodes" && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
+          )}
+        </button>
+        <button
+          className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
+            activeTab === "statistics"
+              ? "text-orange-400"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+          onClick={() => handleTabChange("statistics")}
+        >
+          Statistics
+          {activeTab === "statistics" && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
+          )}
+        </button>
+        <button
+          className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
+            activeTab === "frames"
+              ? "text-orange-400"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+          onClick={() => handleTabChange("frames")}
+        >
+          Frames
+          {activeTab === "frames" && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
+          )}
+        </button>
+        {isSO101Robot(datasetInfo.robot_type) && (
+          <button
+            className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
+              activeTab === "urdf"
+                ? "text-orange-400"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+            onClick={() => handleTabChange("urdf")}
           >
-            <img
-              src="https://github.com/huggingface/lerobot/raw/main/media/readme/lerobot-logo-thumbnail.png"
-              alt="LeRobot Logo"
-              className="w-32"
+            3D Replay
+            {activeTab === "urdf" && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
+            )}
+          </button>
+        )}
+      </div>
+
+      {/* Body: sidebar + content */}
+      <div className="flex flex-1 min-h-0">
+        {/* Sidebar — only on Episodes tab */}
+        {activeTab === "episodes" && (
+          <Sidebar
+            datasetInfo={datasetInfo}
+            paginatedEpisodes={paginatedEpisodes}
+            episodeId={episodeId}
+            totalPages={totalPages}
+            currentPage={currentPage}
+            prevPage={prevPage}
+            nextPage={nextPage}
+          />
+        )}
+
+        {/* Main content */}
+        <div
+          className={`flex flex-col gap-4 p-4 flex-1 relative ${isLoading ? "overflow-hidden" : "overflow-y-auto"}`}
+        >
+          {isLoading && <Loading />}
+
+          {activeTab === "episodes" && (
+            <>
+              <div className="flex items-center justify-start my-4">
+                <a
+                  href="https://github.com/huggingface/lerobot"
+                  target="_blank"
+                  className="block"
+                >
+                  <img
+                    src="https://github.com/huggingface/lerobot/raw/main/media/readme/lerobot-logo-thumbnail.png"
+                    alt="LeRobot Logo"
+                    className="w-32"
+                  />
+                </a>
+
+                <div>
+                  <a
+                    href={`https://huggingface.co/datasets/${datasetInfo.repoId}`}
+                    target="_blank"
+                  >
+                    <p className="text-lg font-semibold">{datasetInfo.repoId}</p>
+                  </a>
+
+                  <p className="font-mono text-lg font-semibold">
+                    episode {episodeId}
+                  </p>
+                </div>
+              </div>
+
+              {/* Videos */}
+              {videosInfo.length > 0 && (
+                <SimpleVideosPlayer
+                  videosInfo={videosInfo}
+                  onVideosReady={() => setVideosReady(true)}
+                />
+              )}
+
+              {/* Language Instruction */}
+              {task && (
+                <div className="mb-6 p-4 bg-slate-800 rounded-lg border border-slate-600">
+                  <p className="text-slate-300">
+                    <span className="font-semibold text-slate-100">Language Instruction:</span>
+                  </p>
+                  <div className="mt-2 text-slate-300">
+                    {task.split('\n').map((instruction: string, index: number) => (
+                      <p key={index} className="mb-1">
+                        {instruction}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Graph */}
+              <div className="mb-4">
+                <DataRecharts
+                  data={chartDataGroups}
+                  onChartsReady={() => setChartsReady(true)}
+                />
+              </div>
+
+              <PlaybackBar />
+            </>
+          )}
+
+          {activeTab === "statistics" && (
+            <StatsPanel
+              datasetInfo={datasetInfo}
+              episodeId={episodeId}
+              columnMinMax={columnMinMax}
+              episodeLengthStats={episodeLengthStats}
+              loading={statsLoading}
             />
-          </a>
+          )}
 
-          <div>
-            <a
-              href={`https://huggingface.co/datasets/${datasetInfo.repoId}`}
-              target="_blank"
-            >
-              <p className="text-lg font-semibold">{datasetInfo.repoId}</p>
-            </a>
+          {activeTab === "frames" && (
+            <OverviewPanel data={episodeFramesData} loading={framesLoading} />
+          )}
 
-            <p className="font-mono text-lg font-semibold">
-              episode {episodeId}
-            </p>
-          </div>
+          {activeTab === "urdf" && (
+            <Suspense fallback={<Loading />}>
+              <URDFViewer data={data} />
+            </Suspense>
+          )}
         </div>
-
-        {/* Videos */}
-        {videosInfo.length && (
-          <SimpleVideosPlayer
-            videosInfo={videosInfo}
-            onVideosReady={() => setVideosReady(true)}
-          />
-        )}
-
-        {/* Language Instruction */}
-        {task && (
-          <div className="mb-6 p-4 bg-slate-800 rounded-lg border border-slate-600">
-            <p className="text-slate-300">
-              <span className="font-semibold text-slate-100">Language Instruction:</span>
-            </p>
-            <div className="mt-2 text-slate-300">
-              {task.split('\n').map((instruction: string, index: number) => (
-                <p key={index} className="mb-1">
-                  {instruction}
-                </p>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Graph */}
-        <div className="mb-4">
-          <DataRecharts
-            data={chartDataGroups}
-            onChartsReady={() => setChartsReady(true)}
-          />
-
-        </div>
-
-        <PlaybackBar />
       </div>
     </div>
   );

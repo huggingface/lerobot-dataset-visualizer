@@ -24,46 +24,29 @@ const Sidebar: React.FC<SidebarProps> = ({
   prevPage,
   nextPage,
 }) => {
-  const [sidebarVisible, setSidebarVisible] = React.useState(true);
-  const toggleSidebar = () => setSidebarVisible((prev) => !prev);
-
-  const sidebarRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    if (!sidebarVisible) return;
-    function handleClickOutside(event: MouseEvent) {
-      // If click is outside the sidebar nav
-      if (
-        sidebarRef.current &&
-        !sidebarRef.current.contains(event.target as Node)
-      ) {
-        setTimeout(() => setSidebarVisible(false), 500);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [sidebarVisible]);
+  // On mobile, allow toggling; on desktop the sidebar is always visible
+  const [mobileVisible, setMobileVisible] = React.useState(false);
 
   return (
-    <div className="flex z-10 min-h-screen absolute md:static" ref={sidebarRef}>
+    <div className="flex z-10 shrink-0">
+      {/* Sidebar panel — always visible on md+, togglable on mobile */}
       <nav
-        className={`shrink-0 overflow-y-auto bg-slate-900 p-5 break-words md:max-h-screen w-60 md:shrink ${
-          !sidebarVisible ? "hidden" : ""
-        }`}
+        className={`shrink-0 overflow-y-auto bg-slate-900 p-5 break-words w-60 ${
+          mobileVisible ? "block" : "hidden"
+        } md:block`}
         aria-label="Sidebar navigation"
       >
-        <ul>
-          <li>Number of frames: {datasetInfo.total_frames}</li>
-          <li>Number of episodes: {datasetInfo.total_episodes}</li>
-          <li>Frames per second: {datasetInfo.fps}</li>
+        {/* Basic dataset info */}
+        <ul className="text-sm text-slate-300 space-y-0.5">
+          <li>Frames: {datasetInfo.total_frames.toLocaleString()}</li>
+          <li>Episodes: {datasetInfo.total_episodes.toLocaleString()}</li>
+          <li>FPS: {datasetInfo.fps}</li>
         </ul>
 
-        <p>Episodes:</p>
+        <p className="mt-4 text-sm font-semibold text-slate-200">Episodes:</p>
 
-        {/* episodes menu for medium & large screens */}
-        <div className="ml-2 block">
+        {/* Episodes list */}
+        <div className="ml-2 mt-1">
           <ul>
             {paginatedEpisodes.map((episode) => (
               <li key={episode} className="mt-0.5 font-mono text-sm">
@@ -106,13 +89,14 @@ const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
       </nav>
-      {/* Toggle sidebar button */}
+
+      {/* Mobile toggle button */}
       <button
-        className="mx-1 flex items-center opacity-50 hover:opacity-100 focus:outline-none focus:ring-0"
-        onClick={toggleSidebar}
+        className="mx-1 flex items-center opacity-50 hover:opacity-100 focus:outline-none focus:ring-0 md:hidden"
+        onClick={() => setMobileVisible((prev) => !prev)}
         title="Toggle sidebar"
       >
-        <div className="h-10 w-2 rounded-full bg-slate-500"></div>
+        <div className="h-10 w-2 rounded-full bg-slate-500" />
       </button>
     </div>
   );

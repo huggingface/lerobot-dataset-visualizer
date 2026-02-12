@@ -18,20 +18,62 @@ export type VideoInfo = {
   segmentDuration?: number;
 };
 
+export type CameraInfo = { name: string; width: number; height: number };
+
 export type DatasetDisplayInfo = {
   repoId: string;
   total_frames: number;
   total_episodes: number;
   fps: number;
+  robot_type: string | null;
+  codebase_version: string;
+  total_tasks: number;
+  dataset_size_mb: number;
+  cameras: CameraInfo[];
 };
 
 export type ChartRow = Record<string, number | Record<string, number>>;
+
+export type ColumnMinMax = {
+  column: string;
+  min: number;
+  max: number;
+};
+
+export type EpisodeLengthInfo = {
+  episodeIndex: number;
+  lengthSeconds: number;
+  frames: number;
+};
+
+export type EpisodeLengthStats = {
+  shortestEpisodes: EpisodeLengthInfo[];
+  longestEpisodes: EpisodeLengthInfo[];
+  allEpisodeLengths: EpisodeLengthInfo[];
+  meanEpisodeLength: number;
+  medianEpisodeLength: number;
+  stdEpisodeLength: number;
+  episodeLengthHistogram: { binLabel: string; count: number }[];
+};
+
+export type EpisodeFrameInfo = {
+  episodeIndex: number;
+  videoUrl: string;
+  firstFrameTime: number;
+  lastFrameTime: number | null; // null = seek to video.duration on client
+};
+
+export type EpisodeFramesData = {
+  cameras: string[];
+  framesByCamera: Record<string, EpisodeFrameInfo[]>;
+};
 
 export type EpisodeData = {
   datasetInfo: DatasetDisplayInfo;
   episodeId: number;
   videosInfo: VideoInfo[];
   chartDataGroups: ChartRow[][];
+  flatChartData: Record<string, number>[];
   episodes: number[];
   ignoredColumns: string[];
   duration: number;
@@ -107,6 +149,21 @@ export async function getEpisodeData(
       ? await getEpisodeDataV3(repoId, version, info, episodeId)
       : await getEpisodeDataV2(repoId, version, info, episodeId);
     console.timeEnd(`[perf] getEpisodeData (${version})`);
+
+    // Extract camera resolutions from features
+    const cameras: CameraInfo[] = Object.entries(rawInfo.features)
+      .filter(([, f]) => f.dtype === "video" && f.shape.length >= 2)
+      .map(([name, f]) => ({ name, height: f.shape[0], width: f.shape[1] }));
+
+    result.datasetInfo = {
+      ...result.datasetInfo,
+      robot_type: rawInfo.robot_type ?? null,
+      codebase_version: rawInfo.codebase_version,
+      total_tasks: rawInfo.total_tasks ?? 0,
+      dataset_size_mb: Math.round(((rawInfo.data_files_size_in_mb ?? 0) + (rawInfo.video_files_size_in_mb ?? 0)) * 10) / 10,
+      cameras,
+    };
+
     return result;
   } catch (err) {
     console.error("Error loading episode data:", err);
@@ -181,12 +238,16 @@ async function getEpisodeDataV2(
 ): Promise<EpisodeData> {
   const episode_chunk = Math.floor(0 / 1000);
 
-  // Dataset information
-  const datasetInfo = {
+  const datasetInfo: DatasetDisplayInfo = {
     repoId,
     total_frames: info.total_frames,
     total_episodes: info.total_episodes,
     fps: info.fps,
+    robot_type: null,
+    codebase_version: version,
+    total_tasks: 0,
+    dataset_size_mb: 0,
+    cameras: [],
   };
 
   // Generate list of episodes
@@ -440,6 +501,7 @@ async function getEpisodeDataV2(
     episodeId,
     videosInfo,
     chartDataGroups,
+    flatChartData: chartData,
     episodes,
     ignoredColumns,
     duration,
@@ -454,15 +516,18 @@ async function getEpisodeDataV3(
   info: DatasetMetadata,
   episodeId: number,
 ): Promise<EpisodeData> {
-  // Create dataset info structure (like v2.x)
-  const datasetInfo = {
+  const datasetInfo: DatasetDisplayInfo = {
     repoId,
     total_frames: info.total_frames,
     total_episodes: info.total_episodes,
     fps: info.fps,
+    robot_type: null,
+    codebase_version: version,
+    total_tasks: 0,
+    dataset_size_mb: 0,
+    cameras: [],
   };
 
-  // Generate episodes list based on total_episodes from dataset info
   const episodes = Array.from({ length: info.total_episodes }, (_, i) => i);
 
   // Load episode metadata to get timestamps for episode 0
@@ -472,17 +537,17 @@ async function getEpisodeDataV3(
   const videosInfo = extractVideoInfoV3WithSegmentation(repoId, version, info, episodeMetadata);
 
   // Load episode data for charts
-  const { chartDataGroups, ignoredColumns, task } = await loadEpisodeDataV3(repoId, version, info, episodeMetadata);
+  const { chartDataGroups, flatChartData, ignoredColumns, task } = await loadEpisodeDataV3(repoId, version, info, episodeMetadata);
 
-  // Calculate duration from episode length and FPS if available
   const duration = episodeMetadata.length ? episodeMetadata.length / info.fps : 
                    (episodeMetadata.video_to_timestamp - episodeMetadata.video_from_timestamp);
-  
+
   return {
     datasetInfo,
     episodeId,
     videosInfo,
     chartDataGroups,
+    flatChartData,
     episodes,
     ignoredColumns,
     duration,
@@ -496,7 +561,7 @@ async function loadEpisodeDataV3(
   version: string,
   info: DatasetMetadata,
   episodeMetadata: EpisodeMetadataV3,
-): Promise<{ chartDataGroups: ChartRow[][]; ignoredColumns: string[]; task?: string }> {
+): Promise<{ chartDataGroups: ChartRow[][]; flatChartData: Record<string, number>[]; ignoredColumns: string[]; task?: string }> {
   // Build data file path using chunk and file indices
   const dataChunkIndex = episodeMetadata.data_chunk_index || 0;
   const dataFileIndex = episodeMetadata.data_file_index || 0;
@@ -526,11 +591,11 @@ async function loadEpisodeDataV3(
     const episodeData = fullData.slice(localFromIndex, localToIndex);
     
     if (episodeData.length === 0) {
-      return { chartDataGroups: [], ignoredColumns: [], task: undefined };
+      return { chartDataGroups: [], flatChartData: [], ignoredColumns: [], task: undefined };
     }
     
     // Convert to the same format as v2.x for compatibility with existing chart code
-    const { chartDataGroups, ignoredColumns } = processEpisodeDataForCharts(episodeData, info, episodeMetadata);
+    const { chartDataGroups, flatChartData, ignoredColumns } = processEpisodeDataForCharts(episodeData, info, episodeMetadata);
     
     // First check for language_instruction fields in the data (preferred)
     let task: string | undefined;
@@ -586,9 +651,9 @@ async function loadEpisodeDataV3(
       }
     }
     
-    return { chartDataGroups, ignoredColumns, task };
+    return { chartDataGroups, flatChartData, ignoredColumns, task };
   } catch {
-    return { chartDataGroups: [], ignoredColumns: [], task: undefined };
+    return { chartDataGroups: [], flatChartData: [], ignoredColumns: [], task: undefined };
   }
 }
 
@@ -597,7 +662,7 @@ function processEpisodeDataForCharts(
   episodeData: Record<string, unknown>[],
   info: DatasetMetadata,
   episodeMetadata?: EpisodeMetadataV3,
-): { chartDataGroups: ChartRow[][]; ignoredColumns: string[] } {
+): { chartDataGroups: ChartRow[][]; flatChartData: Record<string, number>[]; ignoredColumns: string[] } {
   
   // Get numeric column features
   const columnNames = Object.entries(info.features)
@@ -854,7 +919,7 @@ function processEpisodeDataForCharts(
     chartData.map((row) => groupRowBySuffix(pick(row, [...group, "timestamp"])))
   );
 
-  return { chartDataGroups, ignoredColumns };
+  return { chartDataGroups, flatChartData: chartData, ignoredColumns };
 }
 
 
@@ -1053,6 +1118,224 @@ function parseEpisodeRowSimple(row: Record<string, unknown>): EpisodeMetadataV3 
 
 
 
+
+// ─── Stats computation ───────────────────────────────────────────
+
+/**
+ * Compute per-column min/max values from the current episode's chart data.
+ */
+export function computeColumnMinMax(chartDataGroups: ChartRow[][]): ColumnMinMax[] {
+  const stats: Record<string, { min: number; max: number }> = {};
+
+  for (const group of chartDataGroups) {
+    for (const row of group) {
+      for (const [key, value] of Object.entries(row)) {
+        if (key === "timestamp") continue;
+        if (typeof value === "number" && isFinite(value)) {
+          if (!stats[key]) {
+            stats[key] = { min: value, max: value };
+          } else {
+            if (value < stats[key].min) stats[key].min = value;
+            if (value > stats[key].max) stats[key].max = value;
+          }
+        } else if (typeof value === "object" && value !== null) {
+          // Nested group like { joint_0: 1.2, joint_1: 3.4 }
+          for (const [subKey, subVal] of Object.entries(value)) {
+            const fullKey = `${key} | ${subKey}`;
+            if (typeof subVal === "number" && isFinite(subVal)) {
+              if (!stats[fullKey]) {
+                stats[fullKey] = { min: subVal, max: subVal };
+              } else {
+                if (subVal < stats[fullKey].min) stats[fullKey].min = subVal;
+                if (subVal > stats[fullKey].max) stats[fullKey].max = subVal;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return Object.entries(stats).map(([column, { min, max }]) => ({
+    column,
+    min: Math.round(min * 1000) / 1000,
+    max: Math.round(max * 1000) / 1000,
+  }));
+}
+
+/**
+ * Load all episode lengths from the episodes metadata parquet files (v3.0).
+ * Returns min/max/mean/median/std and a histogram, or null if unavailable.
+ */
+export async function loadAllEpisodeLengthsV3(
+  repoId: string,
+  version: string,
+  fps: number,
+): Promise<EpisodeLengthStats | null> {
+  try {
+    const allEpisodes: { index: number; length: number }[] = [];
+    let fileIndex = 0;
+    const chunkIndex = 0;
+
+    while (true) {
+      const path = `meta/episodes/chunk-${chunkIndex.toString().padStart(3, "0")}/file-${fileIndex.toString().padStart(3, "0")}.parquet`;
+      const url = buildVersionedUrl(repoId, version, path);
+      try {
+        const buf = await fetchParquetFile(url);
+        const rows = await readParquetAsObjects(buf, []);
+        if (rows.length === 0 && fileIndex > 0) break;
+        for (const row of rows) {
+          const parsed = parseEpisodeRowSimple(row);
+          allEpisodes.push({ index: parsed.episode_index, length: parsed.length });
+        }
+        fileIndex++;
+      } catch {
+        break;
+      }
+    }
+
+    if (allEpisodes.length === 0) return null;
+
+    const withSeconds = allEpisodes.map((ep) => ({
+      episodeIndex: ep.index,
+      frames: ep.length,
+      lengthSeconds: Math.round((ep.length / fps) * 100) / 100,
+    }));
+
+    const sortedByLength = [...withSeconds].sort((a, b) => a.lengthSeconds - b.lengthSeconds);
+    const shortestEpisodes = sortedByLength.slice(0, 5);
+    const longestEpisodes = sortedByLength.slice(-5).reverse();
+
+    const lengths = withSeconds.map((e) => e.lengthSeconds);
+    const sum = lengths.reduce((a, b) => a + b, 0);
+    const mean = Math.round((sum / lengths.length) * 100) / 100;
+
+    const sorted = [...lengths].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    const median = sorted.length % 2 === 0
+      ? Math.round(((sorted[mid - 1] + sorted[mid]) / 2) * 100) / 100
+      : sorted[mid];
+
+    const variance = lengths.reduce((acc, l) => acc + (l - mean) ** 2, 0) / lengths.length;
+    const std = Math.round(Math.sqrt(variance) * 100) / 100;
+
+    // Build histogram
+    const histMin = Math.min(...lengths);
+    const histMax = Math.max(...lengths);
+
+    if (histMax === histMin) {
+      return {
+        shortestEpisodes, longestEpisodes, allEpisodeLengths: withSeconds,
+        meanEpisodeLength: mean, medianEpisodeLength: median, stdEpisodeLength: std,
+        episodeLengthHistogram: [{ binLabel: `${histMin.toFixed(1)}s`, count: lengths.length }],
+      };
+    }
+
+    const p1 = sorted[Math.floor(sorted.length * 0.01)];
+    const p99 = sorted[Math.ceil(sorted.length * 0.99) - 1];
+    const range = (p99 - p1) || 1;
+
+    const targetBins = Math.max(10, Math.min(50, Math.ceil(Math.log2(lengths.length) + 1)));
+    const rawBinWidth = range / targetBins;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(rawBinWidth)));
+    const niceSteps = [1, 2, 2.5, 5, 10];
+    const niceBinWidth = niceSteps.map((s) => s * magnitude).find((w) => w >= rawBinWidth) ?? rawBinWidth;
+
+    const niceMin = Math.floor(p1 / niceBinWidth) * niceBinWidth;
+    const niceMax = Math.ceil(p99 / niceBinWidth) * niceBinWidth;
+    const actualBinCount = Math.max(1, Math.round((niceMax - niceMin) / niceBinWidth));
+    const bins = Array.from({ length: actualBinCount }, () => 0);
+
+    for (const len of lengths) {
+      let binIdx = Math.floor((len - niceMin) / niceBinWidth);
+      if (binIdx < 0) binIdx = 0;
+      if (binIdx >= actualBinCount) binIdx = actualBinCount - 1;
+      bins[binIdx]++;
+    }
+
+    const histogram = bins.map((count, i) => {
+      const lo = niceMin + i * niceBinWidth;
+      const hi = lo + niceBinWidth;
+      return { binLabel: `${lo.toFixed(1)}–${hi.toFixed(1)}s`, count };
+    });
+
+    return {
+      shortestEpisodes, longestEpisodes, allEpisodeLengths: withSeconds,
+      meanEpisodeLength: mean, medianEpisodeLength: median, stdEpisodeLength: std,
+      episodeLengthHistogram: histogram,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Load video frame info for all episodes across all cameras.
+ * Returns camera names + a map of camera → EpisodeFrameInfo[].
+ */
+export async function loadAllEpisodeFrameInfo(
+  repoId: string,
+  version: string,
+  info: DatasetMetadata,
+): Promise<EpisodeFramesData> {
+  const videoFeatures = Object.entries(info.features).filter(([, f]) => f.dtype === "video");
+  if (videoFeatures.length === 0) return { cameras: [], framesByCamera: {} };
+
+  const cameras = videoFeatures.map(([key]) => key);
+  const framesByCamera: Record<string, EpisodeFrameInfo[]> = {};
+  for (const cam of cameras) framesByCamera[cam] = [];
+
+  if (version === "v3.0") {
+    let fileIndex = 0;
+    while (true) {
+      const path = `meta/episodes/chunk-000/file-${fileIndex.toString().padStart(3, "0")}.parquet`;
+      try {
+        const buf = await fetchParquetFile(buildVersionedUrl(repoId, version, path));
+        const rows = await readParquetAsObjects(buf, []);
+        if (rows.length === 0 && fileIndex > 0) break;
+        for (const row of rows) {
+          const epIdx = Number(row["episode_index"] ?? 0);
+          for (const cam of cameras) {
+            const cIdx = Number(row[`videos/${cam}/chunk_index`] ?? row["video_chunk_index"] ?? 0);
+            const fIdx = Number(row[`videos/${cam}/file_index`] ?? row["video_file_index"] ?? 0);
+            const fromTs = Number(row[`videos/${cam}/from_timestamp`] ?? row["video_from_timestamp"] ?? 0);
+            const toTs = Number(row[`videos/${cam}/to_timestamp`] ?? row["video_to_timestamp"] ?? 30);
+            const videoPath = `videos/${cam}/chunk-${cIdx.toString().padStart(3, "0")}/file-${fIdx.toString().padStart(3, "0")}.mp4`;
+            framesByCamera[cam].push({
+              episodeIndex: epIdx,
+              videoUrl: buildVersionedUrl(repoId, version, videoPath),
+              firstFrameTime: fromTs,
+              lastFrameTime: Math.max(0, toTs - 0.05),
+            });
+          }
+        }
+        fileIndex++;
+      } catch {
+        break;
+      }
+    }
+    return { cameras, framesByCamera };
+  }
+
+  // v2.x — construct URLs from template
+  for (let i = 0; i < info.total_episodes; i++) {
+    const chunk = Math.floor(i / (info.chunks_size || 1000));
+    for (const cam of cameras) {
+      const videoPath = formatStringWithVars(info.video_path, {
+        video_key: cam,
+        episode_chunk: chunk.toString().padStart(3, "0"),
+        episode_index: i.toString().padStart(6, "0"),
+      });
+      framesByCamera[cam].push({
+        episodeIndex: i,
+        videoUrl: buildVersionedUrl(repoId, version, videoPath),
+        firstFrameTime: 0,
+        lastFrameTime: null,
+      });
+    }
+  }
+  return { cameras, framesByCamera };
+}
 
 // Safe wrapper for UI error display
 export async function getEpisodeDataSafe(
