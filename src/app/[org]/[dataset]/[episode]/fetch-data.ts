@@ -1391,6 +1391,11 @@ export type AggAlignment = {
   numPairs: number;
 };
 
+export type JerkyEpisode = {
+  episodeIndex: number;
+  meanAbsDelta: number;
+};
+
 export type CrossEpisodeVarianceData = {
   actionNames: string[];
   timeBins: number[];
@@ -1400,6 +1405,7 @@ export type CrossEpisodeVarianceData = {
   aggVelocity: AggVelocityStat[];
   aggAutocorrelation: AggAutocorrelation | null;
   speedDistribution: SpeedDistEntry[];
+  jerkyEpisodes: JerkyEpisode[];
   multimodality: number[][] | null;
   trajectoryClustering: TrajectoryClustering | null;
   aggAlignment: AggAlignment | null;
@@ -1692,6 +1698,18 @@ export async function loadCrossEpisodeActionVariance(
     return { chartData, suggestedChunk, shortKeys };
   })();
 
+  // Per-episode jerkiness: mean |Δa| across all dimensions
+  const jerkyEpisodes: JerkyEpisode[] = episodeActions.map(({ index, actions: ep }) => {
+    let sum = 0, count = 0;
+    for (let t = 1; t < ep.length; t++) {
+      for (let d = 0; d < actionDim; d++) {
+        sum += Math.abs((ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0));
+        count++;
+      }
+    }
+    return { episodeIndex: index, meanAbsDelta: count > 0 ? sum / count : 0 };
+  }).sort((a, b) => b.meanAbsDelta - a.meanAbsDelta);
+
   // Speed distribution: all episode movement scores (not just lowest 10)
   const speedDistribution: SpeedDistEntry[] = movementScores.map(s => ({
     episodeIndex: s.episodeIndex,
@@ -1967,7 +1985,7 @@ export async function loadCrossEpisodeActionVariance(
   return {
     actionNames, timeBins, variance, numEpisodes: episodeActions.length,
     lowMovementEpisodes, aggVelocity, aggAutocorrelation,
-    speedDistribution, multimodality, trajectoryClustering, aggAlignment,
+    speedDistribution, jerkyEpisodes, multimodality, trajectoryClustering, aggAlignment,
   };
 }
 

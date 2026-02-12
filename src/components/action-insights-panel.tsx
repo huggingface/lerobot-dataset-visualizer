@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
-import type { CrossEpisodeVarianceData, LowMovementEpisode, AggVelocityStat, AggAutocorrelation, SpeedDistEntry, TrajectoryClustering, AggAlignment } from "@/app/[org]/[dataset]/[episode]/fetch-data";
+import type { CrossEpisodeVarianceData, LowMovementEpisode, AggVelocityStat, AggAutocorrelation, SpeedDistEntry, JerkyEpisode, TrajectoryClustering, AggAlignment } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 
 const DELIMITER = " | ";
 const COLORS = [
@@ -171,7 +171,7 @@ function AutocorrelationSection({ data, fps, agg, numEpisodes }: { data: Record<
 
 // ─── Action Velocity ─────────────────────────────────────────────
 
-function ActionVelocitySection({ data, agg, numEpisodes }: { data: Record<string, number>[]; agg?: AggVelocityStat[]; numEpisodes?: number }) {
+function ActionVelocitySection({ data, agg, numEpisodes, jerkyEpisodes }: { data: Record<string, number>[]; agg?: AggVelocityStat[]; numEpisodes?: number; jerkyEpisodes?: JerkyEpisode[] }) {
   const actionKeys = useMemo(() => (data.length > 0 ? getActionKeys(data[0]) : []), [data]);
 
   const fallbackStats = useMemo(() => {
@@ -298,6 +298,46 @@ function ActionVelocitySection({ data, agg, numEpisodes }: { data: Record<string
           {insight.lines.map((l, i) => <li key={i}>{l}</li>)}
         </ul>
         <p className="text-xs text-slate-500 pt-1">{insight.tip}</p>
+      </div>
+
+      {jerkyEpisodes && jerkyEpisodes.length > 0 && <JerkyEpisodesList episodes={jerkyEpisodes} />}
+    </div>
+  );
+}
+
+function JerkyEpisodesList({ episodes }: { episodes: JerkyEpisode[] }) {
+  const [showAll, setShowAll] = useState(false);
+  const display = showAll ? episodes : episodes.slice(0, 15);
+
+  return (
+    <div className="bg-slate-900/60 rounded-md px-4 py-3 border border-slate-700/60 space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-slate-200">
+          Most Jerky Episodes <span className="text-xs text-slate-500 font-normal">sorted by mean |Δa|</span>
+        </p>
+        {episodes.length > 15 && (
+          <button onClick={() => setShowAll(v => !v)} className="text-xs text-slate-400 hover:text-slate-200 transition-colors">
+            {showAll ? "Show top 15" : `Show all ${episodes.length}`}
+          </button>
+        )}
+      </div>
+      <div className="max-h-48 overflow-y-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-slate-500 border-b border-slate-700">
+              <th className="text-left py-1 pr-3">Episode</th>
+              <th className="text-right py-1">Mean |Δa|</th>
+            </tr>
+          </thead>
+          <tbody>
+            {display.map(e => (
+              <tr key={e.episodeIndex} className="border-b border-slate-800/40 text-slate-300">
+                <td className="py-1 pr-3">ep {e.episodeIndex}</td>
+                <td className="py-1 text-right tabular-nums">{e.meanAbsDelta.toFixed(4)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -1135,7 +1175,7 @@ const ActionInsightsPanel: React.FC<ActionInsightsPanelProps> = ({
       </div>
 
       <AutocorrelationSection data={flatChartData} fps={fps} agg={showAgg ? crossEpisodeData?.aggAutocorrelation : null} numEpisodes={crossEpisodeData?.numEpisodes} />
-      <ActionVelocitySection data={flatChartData} agg={showAgg ? crossEpisodeData?.aggVelocity : undefined} numEpisodes={crossEpisodeData?.numEpisodes} />
+      <ActionVelocitySection data={flatChartData} agg={showAgg ? crossEpisodeData?.aggVelocity : undefined} numEpisodes={crossEpisodeData?.numEpisodes} jerkyEpisodes={showAgg ? crossEpisodeData?.jerkyEpisodes : undefined} />
 
       {crossEpisodeData?.speedDistribution && crossEpisodeData.speedDistribution.length > 2 && (
         <SpeedVarianceSection distribution={crossEpisodeData.speedDistribution} numEpisodes={crossEpisodeData.numEpisodes} />
