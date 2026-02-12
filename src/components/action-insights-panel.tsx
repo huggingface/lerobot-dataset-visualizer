@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   LineChart,
   Line,
@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
-import type { CrossEpisodeVarianceData, LowMovementEpisode, AggVelocityStat, AggAutocorrelation } from "@/app/[org]/[dataset]/[episode]/fetch-data";
+import type { CrossEpisodeVarianceData, LowMovementEpisode, AggVelocityStat, AggAutocorrelation, SpeedDistEntry, TrajectoryClustering, AggAlignment } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 
 const DELIMITER = " | ";
 const COLORS = [
@@ -27,6 +27,12 @@ function shortName(key: string): string {
 function getActionKeys(row: Record<string, number>): string[] {
   return Object.keys(row)
     .filter(k => k.startsWith("action") && k !== "timestamp")
+    .sort();
+}
+
+function getStateKeys(row: Record<string, number>): string[] {
+  return Object.keys(row)
+    .filter(k => k.includes("state") && k !== "timestamp" && !k.startsWith("action"))
     .sort();
 }
 
@@ -507,6 +513,585 @@ function LowMovementSection({ episodes }: { episodes: LowMovementEpisode[] }) {
   );
 }
 
+// ─── Demonstrator Speed Variance ────────────────────────────────
+
+function SpeedVarianceSection({ distribution, numEpisodes }: { distribution: SpeedDistEntry[]; numEpisodes: number }) {
+  const { speeds, mean, std, cv, median, bins, lo, binW, maxBin, verdict } = useMemo(() => {
+    const sp = distribution.map(d => d.speed).sort((a, b) => a - b);
+    const m = sp.reduce((a, b) => a + b, 0) / sp.length;
+    const s = Math.sqrt(sp.reduce((a, v) => a + (v - m) ** 2, 0) / sp.length);
+    const c = m > 0 ? s / m : 0;
+    const med = sp[Math.floor(sp.length / 2)];
+
+    const binCount = Math.min(30, Math.ceil(Math.sqrt(sp.length)));
+    const lo = sp[0], hi = sp[sp.length - 1];
+    const bw = (hi - lo || 1) / binCount;
+    const b = new Array(binCount).fill(0);
+    for (const v of sp) { let i = Math.floor((v - lo) / bw); if (i >= binCount) i = binCount - 1; b[i]++; }
+
+    let v: { label: string; color: string; tip: string };
+    if (c < 0.2) v = { label: "Consistent", color: "text-green-400", tip: "Demonstrators execute at similar speeds — no velocity normalization needed." };
+    else if (c < 0.4) v = { label: "Moderate variance", color: "text-yellow-400", tip: "Some speed variation across demonstrators. Consider velocity normalization for best results." };
+    else v = { label: "High variance", color: "text-red-400", tip: "Large speed differences between demonstrations. Velocity normalization before training is strongly recommended." };
+
+    return { speeds: sp, mean: m, std: s, cv: c, median: med, bins: b, lo, binW: bw, maxBin: Math.max(...b), verdict: v };
+  }, [distribution]);
+
+  if (speeds.length < 3) return null;
+
+  const barH = 100;
+  const barW = Math.max(8, Math.floor(500 / bins.length));
+
+  return (
+    <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-slate-200">
+          Demonstrator Speed Variance
+          <span className="text-xs text-slate-500 ml-2 font-normal">({numEpisodes} episodes)</span>
+        </h3>
+        <p className="text-xs text-slate-400 mt-1">
+          Distribution of average execution speed (mean ‖Δa<sub>t</sub>‖ per frame) across all episodes.
+          Different human demonstrators often execute at <span className="text-orange-400">different speeds</span>, creating
+          artificial multimodality in the action distribution that confuses the policy. A coefficient of variation (CV) above 0.3
+          strongly suggests normalizing trajectory speed before training.
+          <br />
+          <span className="text-slate-500">
+            Based on &quot;Is Diversity All You Need&quot; (AGI-Bot, 2025) which shows velocity normalization dramatically improves
+            fine-tuning success rate. Also relates to ACT (Zhao et al., 2023) and Pi0.5 (Physical Intelligence, 2025).
+          </span>
+        </p>
+      </div>
+
+      <div className="flex gap-4">
+        <div className="flex-1 overflow-x-auto">
+          <svg width={bins.length * barW} height={barH + 24} className="block">
+            {bins.map((count: number, i: number) => {
+              const h = maxBin > 0 ? (count / maxBin) * barH : 0;
+              const speed = lo + (i + 0.5) * binW;
+              const ratio = median > 0 ? speed / median : 1;
+              const dev = Math.abs(ratio - 1);
+              const color = dev < 0.2 ? "#22c55e" : dev < 0.5 ? "#eab308" : "#ef4444";
+              return (
+                <rect key={i} x={i * barW} y={barH - h} width={barW - 1} height={Math.max(1, h)} fill={color} opacity={0.7} rx={1}>
+                  <title>{`Speed ${(lo + i * binW).toFixed(3)}–${(lo + (i + 1) * binW).toFixed(3)}: ${count} ep (${ratio.toFixed(2)}× median)`}</title>
+                </rect>
+              );
+            })}
+            {[0, 0.25, 0.5, 0.75, 1].map(frac => {
+              const idx = Math.round(frac * (bins.length - 1));
+              return (
+                <text key={frac} x={idx * barW + barW / 2} y={barH + 14} textAnchor="middle" className="fill-slate-400" fontSize={9}>
+                  {(lo + idx * binW).toFixed(2)}
+                </text>
+              );
+            })}
+          </svg>
+        </div>
+        <div className="flex flex-col gap-2 text-xs shrink-0 min-w-[120px]">
+          <div><span className="text-slate-500">Mean</span> <span className="text-slate-200 tabular-nums ml-1">{mean.toFixed(4)}</span></div>
+          <div><span className="text-slate-500">Median</span> <span className="text-slate-200 tabular-nums ml-1">{median.toFixed(4)}</span></div>
+          <div><span className="text-slate-500">Std</span> <span className="text-slate-200 tabular-nums ml-1">{std.toFixed(4)}</span></div>
+          <div>
+            <span className="text-slate-500">CV</span>
+            <span className={`tabular-nums ml-1 font-bold ${verdict.color}`}>{cv.toFixed(3)}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-slate-900/60 rounded-md px-4 py-3 border border-slate-700/60 space-y-1.5">
+        <p className="text-sm font-medium text-slate-200">
+          Verdict: <span className={verdict.color}>{verdict.label}</span>
+        </p>
+        <p className="text-xs text-slate-400">{verdict.tip}</p>
+      </div>
+    </div>
+  );
+}
+
+// ─── State–Action Temporal Alignment ────────────────────────────
+
+function StateActionAlignmentSection({ data, fps, agg, numEpisodes }: { data: Record<string, number>[]; fps: number; agg?: AggAlignment | null; numEpisodes?: number }) {
+  const result = useMemo(() => {
+    if (agg) return { ...agg, fromAgg: true };
+    if (data.length < 10) return null;
+    const actionKeys = getActionKeys(data[0]);
+    const stateKeys = getStateKeys(data[0]);
+    if (actionKeys.length === 0 || stateKeys.length === 0) return null;
+    const maxLag = Math.min(Math.floor(data.length / 4), 30);
+    if (maxLag < 2) return null;
+
+    // Match action↔state by suffix, fall back to index matching
+    const pairs: [string, string][] = [];
+    for (const aKey of actionKeys) {
+      const match = stateKeys.find(sKey => shortName(sKey) === shortName(aKey));
+      if (match) pairs.push([aKey, match]);
+    }
+    if (pairs.length === 0) {
+      const count = Math.min(actionKeys.length, stateKeys.length);
+      for (let i = 0; i < count; i++) pairs.push([actionKeys[i], stateKeys[i]]);
+    }
+    if (pairs.length === 0) return null;
+
+    // Per-pair cross-correlation
+    const pairCorrs: number[][] = [];
+    for (const [aKey, sKey] of pairs) {
+      const aVals = data.map(row => row[aKey] ?? 0);
+      const sDeltas = data.slice(1).map((row, i) => (row[sKey] ?? 0) - (data[i][sKey] ?? 0));
+      const n = Math.min(aVals.length, sDeltas.length);
+      const aM = aVals.slice(0, n).reduce((a, b) => a + b, 0) / n;
+      const sM = sDeltas.slice(0, n).reduce((a, b) => a + b, 0) / n;
+
+      const corrs: number[] = [];
+      for (let lag = -maxLag; lag <= maxLag; lag++) {
+        let sum = 0, aV = 0, sV = 0;
+        for (let t = 0; t < n; t++) {
+          const sIdx = t + lag;
+          if (sIdx < 0 || sIdx >= sDeltas.length) continue;
+          const a = aVals[t] - aM, s = sDeltas[sIdx] - sM;
+          sum += a * s; aV += a * a; sV += s * s;
+        }
+        const d = Math.sqrt(aV * sV);
+        corrs.push(d > 0 ? sum / d : 0);
+      }
+      pairCorrs.push(corrs);
+    }
+
+    // Aggregate min/mean/max per lag
+    const ccData = Array.from({ length: 2 * maxLag + 1 }, (_, li) => {
+      const lag = -maxLag + li;
+      const vals = pairCorrs.map(pc => pc[li]);
+      return {
+        lag, time: lag / fps,
+        max: Math.max(...vals),
+        mean: vals.reduce((a, b) => a + b, 0) / vals.length,
+        min: Math.min(...vals),
+      };
+    });
+
+    // Peaks of the envelope curves
+    let meanPeakLag = 0, meanPeakCorr = -Infinity;
+    let maxPeakLag = 0, maxPeakCorr = -Infinity;
+    let minPeakLag = 0, minPeakCorr = -Infinity;
+    for (const row of ccData) {
+      if (row.max > maxPeakCorr) { maxPeakCorr = row.max; maxPeakLag = row.lag; }
+      if (row.mean > meanPeakCorr) { meanPeakCorr = row.mean; meanPeakLag = row.lag; }
+      if (row.min > minPeakCorr) { minPeakCorr = row.min; minPeakLag = row.lag; }
+    }
+
+    // Per-pair individual peak lags (for showing the true range across dimensions)
+    const perPairPeakLags = pairCorrs.map(pc => {
+      let best = -Infinity, bestLag = 0;
+      for (let li = 0; li < pc.length; li++) {
+        if (pc[li] > best) { best = pc[li]; bestLag = -maxLag + li; }
+      }
+      return bestLag;
+    });
+    const lagRangeMin = Math.min(...perPairPeakLags);
+    const lagRangeMax = Math.max(...perPairPeakLags);
+
+    return { ccData, meanPeakLag, meanPeakCorr, maxPeakLag, maxPeakCorr, minPeakLag, minPeakCorr, lagRangeMin, lagRangeMax, numPairs: pairs.length, fromAgg: false };
+  }, [data, fps, agg]);
+
+  if (!result) return null;
+  const { ccData, meanPeakLag, meanPeakCorr, maxPeakLag, maxPeakCorr, minPeakLag, minPeakCorr, lagRangeMin, lagRangeMax, numPairs, fromAgg } = result;
+  const scopeLabel = fromAgg ? `${numEpisodes} episodes sampled` : "current episode";
+
+  return (
+    <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-slate-200">
+          State–Action Temporal Alignment
+          <span className="text-xs text-slate-500 ml-2 font-normal">({scopeLabel}, {numPairs} matched pair{numPairs !== 1 ? "s" : ""})</span>
+        </h3>
+        <p className="text-xs text-slate-400 mt-1">
+          Per-dimension cross-correlation between action<sub>d</sub>(t) and Δstate<sub>d</sub>(t+lag), aggregated as
+          <span className="text-orange-400"> max</span>, <span className="text-slate-200">mean</span>, and
+          <span className="text-blue-400"> min</span> across all matched action–state pairs.
+          The <span className="text-orange-400">peak lag</span> reveals the effective control delay — the time between
+          when an action is commanded and when the corresponding state changes.
+          <br />
+          <span className="text-slate-500">
+            Central to ACT (Zhao et al., 2023 — action chunking compensates for delay),
+            Real-Time Chunking (RTC, 2024), and Training-Time RTC (Biza et al., 2025) — all address
+            the timing mismatch between commanded actions and observed state changes.
+          </span>
+        </p>
+      </div>
+
+      {meanPeakLag !== 0 && (
+        <div className="flex items-center gap-3 bg-orange-500/10 border border-orange-500/30 rounded-md px-4 py-2.5">
+          <span className="text-orange-400 font-bold text-lg tabular-nums">{meanPeakLag}</span>
+          <div>
+            <p className="text-sm text-orange-300 font-medium">
+              Mean control delay: {meanPeakLag} step{Math.abs(meanPeakLag) !== 1 ? "s" : ""} ({(meanPeakLag / fps).toFixed(3)}s)
+            </p>
+            <p className="text-xs text-slate-400">
+              {meanPeakLag > 0
+                ? `State changes lag behind actions by ~${meanPeakLag} frames on average. Consider aligning action[t] with state[t+${meanPeakLag}].`
+                : `Actions lag behind state changes by ~${-meanPeakLag} frames on average (predictive actions).`}
+              {lagRangeMin !== lagRangeMax && ` Individual dimension peaks range from ${lagRangeMin} to ${lagRangeMax} steps.`}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="h-56">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={ccData} margin={{ top: 8, right: 16, left: 0, bottom: 16 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+            <XAxis dataKey="lag" stroke="#94a3b8"
+              label={{ value: "Lag (steps)", position: "insideBottom", offset: -8, fill: "#94a3b8", fontSize: 11 }} />
+            <YAxis stroke="#94a3b8" domain={[-0.5, 1]} />
+            <Tooltip
+              contentStyle={{ background: "#1e293b", border: "1px solid #475569", borderRadius: 6 }}
+              labelFormatter={(v) => `Lag ${v} (${(Number(v) / fps).toFixed(3)}s)`}
+              formatter={(v: number) => v.toFixed(3)}
+            />
+            <Line dataKey="max" stroke="#f97316" dot={false} strokeWidth={2} isAnimationActive={false} name="max" />
+            <Line dataKey="mean" stroke="#94a3b8" dot={false} strokeWidth={2} isAnimationActive={false} name="mean" />
+            <Line dataKey="min" stroke="#3b82f6" dot={false} strokeWidth={2} isAnimationActive={false} name="min" />
+            <Line dataKey={() => 0} stroke="#64748b" strokeDasharray="6 4" dot={false} name="zero" legendType="none" isAnimationActive={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="flex flex-wrap gap-x-4 gap-y-1 px-1">
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-[3px] rounded-full shrink-0 bg-orange-500" />
+          <span className="text-[11px] text-slate-400">max (peak: lag {maxPeakLag}, r={maxPeakCorr.toFixed(3)})</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-[3px] rounded-full shrink-0 bg-slate-400" />
+          <span className="text-[11px] text-slate-400">mean (peak: lag {meanPeakLag}, r={meanPeakCorr.toFixed(3)})</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-[3px] rounded-full shrink-0 bg-blue-500" />
+          <span className="text-[11px] text-slate-400">min (peak: lag {minPeakLag}, r={minPeakCorr.toFixed(3)})</span>
+        </div>
+      </div>
+
+      {meanPeakLag === 0 && (
+        <p className="text-xs text-green-400">
+          Mean peak correlation at lag 0 (r={meanPeakCorr.toFixed(3)}) — actions and state changes are well-aligned in this episode.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Multimodality Detection ────────────────────────────────────
+
+const BC_THRESHOLD = 5 / 9;
+
+function MultimodalitySection({ data }: { data: CrossEpisodeVarianceData }) {
+  const { actionNames, timeBins, multimodality, numEpisodes } = data;
+  if (!multimodality || multimodality.length === 0) return null;
+
+  const numDims = actionNames.length;
+  const numBins = timeBins.length;
+
+  const { bimodalPct, verdict } = useMemo(() => {
+    let bimodal = 0, total = 0;
+    for (const row of multimodality!) for (const v of row) { total++; if (v > BC_THRESHOLD) bimodal++; }
+    const pct = total > 0 ? (bimodal / total * 100) : 0;
+
+    let v: { label: string; color: string };
+    if (pct < 10) v = { label: "Mostly Unimodal", color: "text-green-400" };
+    else if (pct < 30) v = { label: "Some Multimodality", color: "text-yellow-400" };
+    else v = { label: "Significantly Multimodal", color: "text-red-400" };
+
+    return { bimodalPct: pct, verdict: v };
+  }, [multimodality]);
+
+  const cellW = Math.max(6, Math.min(14, Math.floor(560 / numBins)));
+  const cellH = Math.max(20, Math.min(36, Math.floor(300 / numDims)));
+  const labelW = 100;
+  const svgW = labelW + numBins * cellW + 60;
+  const svgH = numDims * cellH + 40;
+
+  function bcColor(bc: number): string {
+    if (bc < 0.4) {
+      const t = bc / 0.4;
+      return `rgb(${Math.round(34 + t * 200)}, ${Math.round(197 - t * 50)}, ${Math.round(94 - t * 50)})`;
+    }
+    const t = Math.min(1, (bc - 0.4) / 0.4);
+    return `rgb(${Math.round(234 + t * 5)}, ${Math.round(147 - t * 79)}, ${Math.round(44 + t * 24)})`;
+  }
+
+  return (
+    <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-slate-200">
+          Multimodality Detection
+          <span className="text-xs text-slate-500 ml-2 font-normal">({numEpisodes} episodes sampled)</span>
+        </h3>
+        <p className="text-xs text-slate-400 mt-1">
+          Bimodality coefficient (BC) per action dimension over episode progress.
+          BC values above <span className="text-red-400">5/9 ≈ 0.556</span> suggest the action distribution at that point is bimodal —
+          meaning demonstrators use <span className="text-red-400">multiple distinct strategies</span>. This directly answers:
+          &quot;Do I need a generative policy (diffusion, flow-matching) or would MSE regression work?&quot;
+          <br />
+          <span className="text-slate-500">
+            Grounded in Diffusion Policy (Chi et al., 2023 — diffusion handles multimodality natively),
+            ACT (Zhao et al., 2023 — CVAE captures multiple modes). Extends the cross-episode variance heatmap above
+            by distinguishing true multimodality from mere noise.
+          </span>
+        </p>
+      </div>
+
+      <div className="overflow-x-auto">
+        <svg width={svgW} height={svgH} className="block">
+          {multimodality.map((row, bi) => row.map((bc, di) => (
+            <rect key={`${bi}-${di}`} x={labelW + bi * cellW} y={di * cellH} width={cellW} height={cellH}
+              fill={bcColor(bc)} stroke="#1e293b" strokeWidth={0.5}>
+              <title>{`${shortName(actionNames[di])} @ ${(timeBins[bi] * 100).toFixed(0)}%: BC=${bc.toFixed(3)} ${bc > BC_THRESHOLD ? "(bimodal)" : "(unimodal)"}`}</title>
+            </rect>
+          )))}
+          {actionNames.map((name, di) => (
+            <text key={di} x={labelW - 4} y={di * cellH + cellH / 2} textAnchor="end" dominantBaseline="central"
+              className="fill-slate-400" fontSize={Math.min(11, cellH - 4)}>{shortName(name)}</text>
+          ))}
+          {[0, 0.25, 0.5, 0.75, 1].map(frac => {
+            const binIdx = Math.round(frac * (numBins - 1));
+            return (
+              <text key={frac} x={labelW + binIdx * cellW + cellW / 2} y={numDims * cellH + 14}
+                textAnchor="middle" className="fill-slate-400" fontSize={9}>{(frac * 100).toFixed(0)}%</text>
+            );
+          })}
+          <text x={labelW + (numBins * cellW) / 2} y={numDims * cellH + 30}
+            textAnchor="middle" className="fill-slate-500" fontSize={10}>Episode progress</text>
+          {Array.from({ length: 10 }, (_, i) => {
+            const t = i / 9;
+            const barX = labelW + numBins * cellW + 16;
+            const barCellH = (numDims * cellH) / 10;
+            return <rect key={i} x={barX} y={(9 - i) * barCellH} width={12} height={barCellH} fill={bcColor(t)} />;
+          })}
+          <text x={labelW + numBins * cellW + 34} y={10} className="fill-slate-500" fontSize={8}
+            dominantBaseline="central">bimodal</text>
+          <text x={labelW + numBins * cellW + 34} y={numDims * cellH - 4} className="fill-slate-500" fontSize={8}
+            dominantBaseline="central">unimodal</text>
+        </svg>
+      </div>
+
+      <div className="bg-slate-900/60 rounded-md px-4 py-3 border border-slate-700/60 space-y-1.5">
+        <p className="text-sm font-medium text-slate-200">
+          Assessment: <span className={verdict.color}>{verdict.label}</span>
+          <span className="text-xs text-slate-500 ml-2">{bimodalPct.toFixed(1)}% of regions above threshold</span>
+        </p>
+        <p className="text-xs text-slate-400">
+          {bimodalPct < 10
+            ? "Action distributions are mostly unimodal — MSE regression or simple flow-matching should work well."
+            : bimodalPct < 30
+              ? "Moderate multimodality detected. A generative policy (diffusion/flow-matching) will likely outperform MSE regression in the highlighted regions."
+              : "Significant multimodality across the trajectory. A generative policy (diffusion or flow-matching action head) is strongly recommended over MSE regression."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Trajectory Clustering & Outlier Detection ──────────────────
+
+const CLUSTER_COLORS = ["#f97316", "#3b82f6", "#22c55e", "#a855f7", "#eab308"];
+
+function TrajectoryClusteringSection({ data, numEpisodes }: { data: TrajectoryClustering; numEpisodes: number }) {
+  const { entries, numClusters, clusterSizes, outlierCount } = data;
+
+  const [showAll, setShowAll] = useState(false);
+  const [rotX, setRotX] = useState(-0.4);
+  const [rotY, setRotY] = useState(0.6);
+  const dragRef = React.useRef<{ x: number; y: number; rx: number; ry: number } | null>(null);
+
+  const sorted = useMemo(() =>
+    [...entries].sort((a, b) => b.distFromCenter - a.distFromCenter),
+  [entries]);
+
+  const plotW = 500, plotH = 400;
+  const cx = plotW / 2, cy = plotH / 2;
+  const scale = Math.min(plotW, plotH) * 0.35;
+
+  // Normalize xyz to [-1, 1]
+  const bounds = useMemo(() => {
+    let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity, zMin = Infinity, zMax = -Infinity;
+    for (const e of entries) {
+      if (e.x < xMin) xMin = e.x; if (e.x > xMax) xMax = e.x;
+      if (e.y < yMin) yMin = e.y; if (e.y > yMax) yMax = e.y;
+      if (e.z < zMin) zMin = e.z; if (e.z > zMax) zMax = e.z;
+    }
+    const r = Math.max(xMax - xMin, yMax - yMin, zMax - zMin) / 2 || 1;
+    return { mx: (xMin + xMax) / 2, my: (yMin + yMax) / 2, mz: (zMin + zMax) / 2, r };
+  }, [entries]);
+
+  // Project 3D → 2D with rotation
+  const projected = useMemo(() => {
+    const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+    const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+    return entries.map(e => {
+      const nx = (e.x - bounds.mx) / bounds.r;
+      const ny = (e.y - bounds.my) / bounds.r;
+      const nz = (e.z - bounds.mz) / bounds.r;
+      // Rotate around Y then X
+      const x1 = nx * cosY + nz * sinY;
+      const z1 = -nx * sinY + nz * cosY;
+      const y1 = ny * cosX - z1 * sinX;
+      const z2 = ny * sinX + z1 * cosX;
+      return { sx: cx + x1 * scale, sy: cy - y1 * scale, depth: z2, entry: e };
+    });
+  }, [entries, rotX, rotY, bounds, cx, cy, scale]);
+
+  // Sort by depth (back to front) for correct overlap
+  const sortedByDepth = useMemo(() => [...projected].sort((a, b) => a.depth - b.depth), [projected]);
+
+  const onMouseDown = (ev: React.MouseEvent) => {
+    dragRef.current = { x: ev.clientX, y: ev.clientY, rx: rotX, ry: rotY };
+  };
+  const onMouseMove = (ev: React.MouseEvent) => {
+    if (!dragRef.current) return;
+    setRotY(dragRef.current.ry + (ev.clientX - dragRef.current.x) * 0.005);
+    setRotX(dragRef.current.rx + (ev.clientY - dragRef.current.y) * 0.005);
+  };
+  const onMouseUp = () => { dragRef.current = null; };
+
+  // Axis lines
+  const axisLines = useMemo(() => {
+    const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+    const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+    const project = (x: number, y: number, z: number) => {
+      const x1 = x * cosY + z * sinY;
+      const z1 = -x * sinY + z * cosY;
+      const y1 = y * cosX - z1 * sinX;
+      return { px: cx + x1 * scale * 0.9, py: cy - y1 * scale * 0.9 };
+    };
+    const len = 1.1;
+    return [
+      { ...project(len, 0, 0), label: "PC1", color: "#64748b" },
+      { ...project(0, len, 0), label: "PC2", color: "#64748b" },
+      { ...project(0, 0, len), label: "PC3", color: "#64748b" },
+    ].map(a => ({ ...a, ox: cx, oy: cy }));
+  }, [rotX, rotY, cx, cy, scale]);
+
+  const imbalance = useMemo(() => {
+    const max = Math.max(...clusterSizes), min = Math.min(...clusterSizes);
+    return max > 0 ? (max - min) / max : 0;
+  }, [clusterSizes]);
+
+  return (
+    <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-slate-200">
+          Trajectory Clustering & Outlier Detection
+          <span className="text-xs text-slate-500 ml-2 font-normal">({numEpisodes} episodes sampled)</span>
+        </h3>
+        <p className="text-xs text-slate-400 mt-1">
+          Episodes clustered by trajectory similarity: each episode&apos;s action trajectory is time-normalized, standardized,
+          and projected to 3D via PCA. K-means clustering (k selected by silhouette score) groups similar demonstrations.
+          <span className="text-red-400"> Outlier episodes</span> ({">"} 2σ from cluster center) may indicate recording errors,
+          failed demonstrations, or fundamentally different strategies worth reviewing.
+          <span className="text-yellow-400"> Imbalanced clusters</span> suggest multimodal demonstrations.
+          Drag to rotate.
+          <br />
+          <span className="text-slate-500">
+            Grounded in FAST-UMI-100K (Zhao et al., 2025 — automatic quality tools at scale),
+            &quot;Curating Demonstrations using Online Experience&quot; (Burns et al., 2025),
+            GVL (Mazzaglia et al., 2024), and SARM (Li et al., 2025).
+          </span>
+        </p>
+      </div>
+
+      <div className="flex gap-4 flex-wrap">
+        <div className="flex-1 min-w-[340px]">
+          <svg
+            width={plotW} height={plotH}
+            className="block bg-slate-900/50 rounded cursor-grab active:cursor-grabbing select-none"
+            onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
+          >
+            {/* Axis lines */}
+            {axisLines.map(a => (
+              <React.Fragment key={a.label}>
+                <line x1={a.ox} y1={a.oy} x2={a.px} y2={a.py} stroke={a.color} strokeWidth={0.5} strokeDasharray="4 3" opacity={0.4} />
+                <text x={a.px} y={a.py} className="fill-slate-600" fontSize={9} textAnchor="middle" dominantBaseline="central">{a.label}</text>
+              </React.Fragment>
+            ))}
+            {/* Points sorted back→front */}
+            {sortedByDepth.map(({ sx, sy, depth, entry: e }, i) => {
+              const color = CLUSTER_COLORS[e.cluster % CLUSTER_COLORS.length];
+              const depthFade = 0.3 + 0.7 * ((depth + 1) / 2);
+              const r = e.isOutlier ? 5 : 2.5 + depthFade * 2;
+              return (
+                <circle key={i} cx={sx} cy={sy} r={r}
+                  fill={e.isOutlier ? "transparent" : color}
+                  stroke={e.isOutlier ? "#ef4444" : color}
+                  strokeWidth={e.isOutlier ? 2 : 0}
+                  opacity={e.isOutlier ? 1 : depthFade * 0.8}>
+                  <title>{`ep ${e.episodeIndex} — cluster ${e.cluster}${e.isOutlier ? " (outlier)" : ""}, dist=${e.distFromCenter.toFixed(2)}`}</title>
+                </circle>
+              );
+            })}
+          </svg>
+        </div>
+
+        <div className="flex flex-col gap-3 text-xs shrink-0 min-w-[160px]">
+          <div>
+            <p className="text-slate-500 mb-1">Clusters: {numClusters}</p>
+            {clusterSizes.map((size, c) => (
+              <div key={c} className="flex items-center gap-2 py-0.5">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CLUSTER_COLORS[c % CLUSTER_COLORS.length] }} />
+                <span className="text-slate-300">Cluster {c}</span>
+                <span className="text-slate-500 tabular-nums ml-auto">{size} ep</span>
+              </div>
+            ))}
+          </div>
+          {outlierCount > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0 border-2 border-red-500" />
+              <span className="text-red-400">{outlierCount} outlier{outlierCount !== 1 ? "s" : ""}</span>
+            </div>
+          )}
+          {imbalance > 0.5 && (
+            <p className="text-yellow-400 text-[11px]">
+              Clusters are imbalanced ({(imbalance * 100).toFixed(0)}% size ratio) — the dataset may contain multiple distinct strategies.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-slate-900/60 rounded-md px-4 py-3 border border-slate-700/60 space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium text-slate-200">
+            {showAll ? "All Episodes" : "Most Anomalous Episodes"} <span className="text-xs text-slate-500 font-normal">sorted by distance from cluster center</span>
+          </p>
+          <button onClick={() => setShowAll(v => !v)} className="text-xs text-slate-400 hover:text-slate-200 transition-colors">
+            {showAll ? "Show top 15" : `Show all ${entries.length}`}
+          </button>
+        </div>
+        <div className="max-h-48 overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-slate-500 border-b border-slate-700">
+                <th className="text-left py-1 pr-3">Episode</th>
+                <th className="text-left py-1 pr-3">Cluster</th>
+                <th className="text-right py-1">Distance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(showAll ? sorted : sorted.slice(0, 15)).map(e => (
+                <tr key={e.episodeIndex} className={`border-b border-slate-800/40 ${e.isOutlier ? "text-red-400" : "text-slate-300"}`}>
+                  <td className="py-1 pr-3">ep {e.episodeIndex}{e.isOutlier ? " ⚠" : ""}</td>
+                  <td className="py-1 pr-3">
+                    <span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ background: CLUSTER_COLORS[e.cluster % CLUSTER_COLORS.length] }} />
+                    {e.cluster}
+                  </td>
+                  <td className="py-1 text-right tabular-nums">{e.distFromCenter.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Panel ──────────────────────────────────────────────────
 
 interface ActionInsightsPanelProps {
@@ -522,18 +1107,45 @@ const ActionInsightsPanel: React.FC<ActionInsightsPanelProps> = ({
   crossEpisodeData,
   crossEpisodeLoading,
 }) => {
+  const [mode, setMode] = useState<"episode" | "dataset">("dataset");
+  const showAgg = mode === "dataset" && !!crossEpisodeData;
+
   return (
     <div className="max-w-5xl mx-auto py-6 space-y-8">
-      <div>
-        <h2 className="text-xl font-bold text-slate-100">Action Insights</h2>
-        <p className="text-sm text-slate-400 mt-1">
-          Data-driven analysis to guide action chunking, data quality assessment, and training configuration.
-        </p>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-slate-100">Action Insights</h2>
+          <p className="text-sm text-slate-400 mt-1">
+            Data-driven analysis to guide action chunking, data quality assessment, and training configuration.
+          </p>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <span className={`text-sm ${mode === "episode" ? "text-slate-100 font-medium" : "text-slate-500"}`}>Current Episode</span>
+          <button
+            onClick={() => setMode(m => m === "episode" ? "dataset" : "episode")}
+            className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors shrink-0 ${mode === "dataset" ? "bg-orange-500" : "bg-slate-600"}`}
+            aria-label="Toggle episode/dataset scope"
+          >
+            <span className={`inline-block w-3.5 h-3.5 bg-white rounded-full transition-transform ${mode === "dataset" ? "translate-x-[18px]" : "translate-x-[3px]"}`} />
+          </button>
+          <span className={`text-sm ${mode === "dataset" ? "text-slate-100 font-medium" : "text-slate-500"}`}>
+            All Episodes{crossEpisodeData ? ` (${crossEpisodeData.numEpisodes})` : ""}
+          </span>
+        </div>
       </div>
 
-      <AutocorrelationSection data={flatChartData} fps={fps} agg={crossEpisodeData?.aggAutocorrelation} numEpisodes={crossEpisodeData?.numEpisodes} />
-      <ActionVelocitySection data={flatChartData} agg={crossEpisodeData?.aggVelocity} numEpisodes={crossEpisodeData?.numEpisodes} />
+      <AutocorrelationSection data={flatChartData} fps={fps} agg={showAgg ? crossEpisodeData?.aggAutocorrelation : null} numEpisodes={crossEpisodeData?.numEpisodes} />
+      <ActionVelocitySection data={flatChartData} agg={showAgg ? crossEpisodeData?.aggVelocity : undefined} numEpisodes={crossEpisodeData?.numEpisodes} />
+
+      {crossEpisodeData?.speedDistribution && crossEpisodeData.speedDistribution.length > 2 && (
+        <SpeedVarianceSection distribution={crossEpisodeData.speedDistribution} numEpisodes={crossEpisodeData.numEpisodes} />
+      )}
+      <StateActionAlignmentSection data={flatChartData} fps={fps} agg={showAgg ? crossEpisodeData?.aggAlignment : null} numEpisodes={crossEpisodeData?.numEpisodes} />
       <VarianceHeatmap data={crossEpisodeData} loading={crossEpisodeLoading} />
+      {crossEpisodeData && <MultimodalitySection data={crossEpisodeData} />}
+      {crossEpisodeData?.trajectoryClustering && (
+        <TrajectoryClusteringSection data={crossEpisodeData.trajectoryClustering} numEpisodes={crossEpisodeData.numEpisodes} />
+      )}
       {crossEpisodeData?.lowMovementEpisodes && (
         <LowMovementSection episodes={crossEpisodeData.lowMovementEpisodes} />
       )}
