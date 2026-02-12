@@ -1356,6 +1356,41 @@ export type AggAutocorrelation = {
   shortKeys: string[];
 };
 
+export type SpeedDistEntry = {
+  episodeIndex: number;
+  speed: number;
+};
+
+export type ClusterEntry = {
+  episodeIndex: number;
+  x: number;
+  y: number;
+  z: number;
+  cluster: number;
+  distFromCenter: number;
+  isOutlier: boolean;
+};
+
+export type TrajectoryClustering = {
+  entries: ClusterEntry[];
+  numClusters: number;
+  clusterSizes: number[];
+  outlierCount: number;
+};
+
+export type AggAlignment = {
+  ccData: { lag: number; max: number; mean: number; min: number }[];
+  meanPeakLag: number;
+  meanPeakCorr: number;
+  maxPeakLag: number;
+  maxPeakCorr: number;
+  minPeakLag: number;
+  minPeakCorr: number;
+  lagRangeMin: number;
+  lagRangeMax: number;
+  numPairs: number;
+};
+
 export type CrossEpisodeVarianceData = {
   actionNames: string[];
   timeBins: number[];
@@ -1364,6 +1399,10 @@ export type CrossEpisodeVarianceData = {
   lowMovementEpisodes: LowMovementEpisode[];
   aggVelocity: AggVelocityStat[];
   aggAutocorrelation: AggAutocorrelation | null;
+  speedDistribution: SpeedDistEntry[];
+  multimodality: number[][] | null;
+  trajectoryClustering: TrajectoryClustering | null;
+  aggAlignment: AggAlignment | null;
 };
 
 export async function loadCrossEpisodeActionVariance(
@@ -1391,6 +1430,12 @@ export async function loadCrossEpisodeActionVariance(
   const actionNames = Array.isArray(names)
     ? (names as string[]).map(n => `${actionKey}${SERIES_NAME_DELIMITER}${n}`)
     : Array.from({ length: actionDim }, (_, i) => `${actionKey}${SERIES_NAME_DELIMITER}${i}`);
+
+  // State feature for alignment computation
+  const stateEntry = Object.entries(info.features)
+    .find(([key, f]) => key === "observation.state" && f.shape.length === 1);
+  const stateKey = stateEntry?.[0] ?? null;
+  const stateDim = stateEntry?.[1].shape[0] ?? 0;
 
   // Collect episode metadata
   type EpMeta = { index: number; chunkIdx: number; fileIdx: number; from: number; to: number };
@@ -1436,8 +1481,9 @@ export async function loadCrossEpisodeActionVariance(
         allEps[Math.round((i * (allEps.length - 1)) / (maxEpisodes - 1))]
       );
 
-  // Load action data per episode, tracking episode index alongside
+  // Load action (and state) data per episode
   const episodeActions: { index: number; actions: number[][] }[] = [];
+  const episodeStates: (number[][] | null)[] = [];
 
   if (version === "v3.0") {
     const byFile = new Map<string, EpMeta[]>();
@@ -1459,11 +1505,19 @@ export async function loadCrossEpisodeActionVariance(
           const localFrom = Math.max(0, ep.from - fileStart);
           const localTo = Math.min(rows.length, ep.to - fileStart);
           const actions: number[][] = [];
+          const states: number[][] = [];
           for (let r = localFrom; r < localTo; r++) {
             const raw = rows[r]?.[actionKey];
             if (Array.isArray(raw)) actions.push(raw.map(Number));
+            if (stateKey) {
+              const sRaw = rows[r]?.[stateKey];
+              if (Array.isArray(sRaw)) states.push(sRaw.map(Number));
+            }
           }
-          if (actions.length > 0) episodeActions.push({ index: ep.index, actions });
+          if (actions.length > 0) {
+            episodeActions.push({ index: ep.index, actions });
+            episodeStates.push(stateKey && states.length === actions.length ? states : null);
+          }
         }
       } catch { /* skip file */ }
     }
@@ -1479,6 +1533,7 @@ export async function loadCrossEpisodeActionVariance(
         const buf = await fetchParquetFile(buildVersionedUrl(repoId, version, dataPath));
         const rows = await readParquetAsObjects(buf, []);
         const actions: number[][] = [];
+        const states: number[][] = [];
         for (const row of rows) {
           const raw = row[actionKey];
           if (Array.isArray(raw)) {
@@ -1491,8 +1546,15 @@ export async function loadCrossEpisodeActionVariance(
             }
             actions.push(vec);
           }
+          if (stateKey) {
+            const sRaw = row[stateKey];
+            if (Array.isArray(sRaw)) states.push(sRaw.map(Number));
+          }
         }
-        if (actions.length > 0) episodeActions.push({ index: ep.index, actions });
+        if (actions.length > 0) {
+          episodeActions.push({ index: ep.index, actions });
+          episodeStates.push(stateKey && states.length === actions.length ? states : null);
+        }
       } catch { /* skip */ }
     }
   }
@@ -1503,10 +1565,12 @@ export async function loadCrossEpisodeActionVariance(
   }
   console.log(`[cross-ep] Loaded action data for ${episodeActions.length}/${sampled.length} episodes`);
 
-  // Resample each episode to numTimeBins and compute variance
+  // Resample each episode to numTimeBins and compute variance + higher moments for multimodality
   const timeBins = Array.from({ length: numTimeBins }, (_, i) => i / (numTimeBins - 1));
   const sums = Array.from({ length: numTimeBins }, () => new Float64Array(actionDim));
   const sumsSq = Array.from({ length: numTimeBins }, () => new Float64Array(actionDim));
+  const sumsCube = Array.from({ length: numTimeBins }, () => new Float64Array(actionDim));
+  const sumsFourth = Array.from({ length: numTimeBins }, () => new Float64Array(actionDim));
   const counts = new Uint32Array(numTimeBins);
 
   for (const { actions: epActions } of episodeActions) {
@@ -1516,8 +1580,11 @@ export async function loadCrossEpisodeActionVariance(
       const row = epActions[srcIdx];
       for (let d = 0; d < actionDim; d++) {
         const v = row[d] ?? 0;
+        const v2 = v * v;
         sums[b][d] += v;
-        sumsSq[b][d] += v * v;
+        sumsSq[b][d] += v2;
+        sumsCube[b][d] += v2 * v;
+        sumsFourth[b][d] += v2 * v2;
       }
       counts[b]++;
     }
@@ -1625,7 +1692,283 @@ export async function loadCrossEpisodeActionVariance(
     return { chartData, suggestedChunk, shortKeys };
   })();
 
-  return { actionNames, timeBins, variance, numEpisodes: episodeActions.length, lowMovementEpisodes, aggVelocity, aggAutocorrelation };
+  // Speed distribution: all episode movement scores (not just lowest 10)
+  const speedDistribution: SpeedDistEntry[] = movementScores.map(s => ({
+    episodeIndex: s.episodeIndex,
+    speed: s.totalMovement,
+  }));
+
+  // Multimodality: bimodality coefficient per time-bin per dimension
+  // BC = (skewness² + 1) / kurtosis — values above 5/9 suggest bimodality
+  const multimodality: number[][] | null = (() => {
+    const result: number[][] = [];
+    for (let b = 0; b < numTimeBins; b++) {
+      const row: number[] = [];
+      const n = counts[b];
+      for (let d = 0; d < actionDim; d++) {
+        if (n < 4) { row.push(0); continue; }
+        const mean = sums[b][d] / n;
+        const m2 = sumsSq[b][d] / n - mean * mean;
+        if (m2 < 1e-12) { row.push(0); continue; }
+        const m3 = sumsCube[b][d] / n - 3 * mean * sumsSq[b][d] / n + 2 * mean * mean * mean;
+        const m4 = sumsFourth[b][d] / n - 4 * mean * sumsCube[b][d] / n
+          + 6 * mean * mean * sumsSq[b][d] / n - 3 * mean * mean * mean * mean;
+        const skew = m3 / Math.pow(m2, 1.5);
+        const kurt = m4 / (m2 * m2);
+        row.push(kurt > 0 ? (skew * skew + 1) / kurt : 0);
+      }
+      result.push(row);
+    }
+    return result.length > 0 ? result : null;
+  })();
+
+  // Trajectory clustering: time-normalize, PCA 2D, k-means, outlier detection
+  const trajectoryClustering: TrajectoryClustering | null = (() => {
+    if (episodeActions.length < 5) return null;
+    const clusterBins = 30;
+    const N = episodeActions.length;
+    const D = clusterBins * actionDim;
+
+    // Time-normalize each episode to a flat vector, standardize per action dim
+    const raw: number[][] = episodeActions.map(({ actions: ep }) => {
+      const vec: number[] = [];
+      for (let b = 0; b < clusterBins; b++) {
+        const srcIdx = Math.min(Math.round(b / (clusterBins - 1) * (ep.length - 1)), ep.length - 1);
+        for (let d = 0; d < actionDim; d++) vec.push(ep[srcIdx][d] ?? 0);
+      }
+      return vec;
+    });
+
+    const dimMean = new Float64Array(D), dimStd = new Float64Array(D);
+    for (const v of raw) for (let d = 0; d < D; d++) dimMean[d] += v[d];
+    for (let d = 0; d < D; d++) dimMean[d] /= N;
+    for (const v of raw) for (let d = 0; d < D; d++) dimStd[d] += (v[d] - dimMean[d]) ** 2;
+    for (let d = 0; d < D; d++) dimStd[d] = Math.sqrt(dimStd[d] / N) || 1;
+    const data = raw.map(v => v.map((x, d) => (x - dimMean[d]) / dimStd[d]));
+
+    // PCA via power iteration on centered data (already centered by standardization)
+    const powerIter = (rows: number[][], init: number[]): number[] => {
+      let v = [...init];
+      let norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0)) || 1;
+      v = v.map(x => x / norm);
+      for (let iter = 0; iter < 50; iter++) {
+        const w = new Float64Array(D);
+        for (const row of rows) {
+          const dot = row.reduce((s, x, d) => s + x * v[d], 0);
+          for (let d = 0; d < D; d++) w[d] += dot * row[d];
+        }
+        norm = Math.sqrt(w.reduce((s, x) => s + x * x, 0)) || 1;
+        v = Array.from(w, x => x / norm);
+      }
+      return v;
+    };
+
+    const ev1 = powerIter(data, data[0]);
+    const proj1 = data.map(row => row.reduce((s, x, d) => s + x * ev1[d], 0));
+    const deflated1 = data.map((row, i) => row.map((x, d) => x - proj1[i] * ev1[d]));
+    const ev2 = powerIter(deflated1, deflated1[1] ?? deflated1[0]);
+    const proj2 = data.map(row => row.reduce((s, x, d) => s + x * ev2[d], 0));
+    const deflated2 = deflated1.map((row, i) => row.map((x, d) => x - proj2[i] * ev2[d]));
+    const ev3 = powerIter(deflated2, deflated2[2] ?? deflated2[0]);
+    const proj3 = data.map(row => row.reduce((s, x, d) => s + x * ev3[d], 0));
+
+    // Precompute pairwise distances for silhouette
+    const dist = new Float64Array(N * N);
+    for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
+      let d2 = 0;
+      for (let d = 0; d < D; d++) d2 += (data[i][d] - data[j][d]) ** 2;
+      const d = Math.sqrt(d2);
+      dist[i * N + j] = d;
+      dist[j * N + i] = d;
+    }
+
+    // K-means
+    const runKmeans = (k: number): { labels: number[]; centroids: number[][] } => {
+      const centroids = Array.from({ length: k }, (_, c) => [...data[Math.floor(c * N / k)]]);
+      const labels = new Int32Array(N);
+      for (let iter = 0; iter < 30; iter++) {
+        for (let i = 0; i < N; i++) {
+          let minD = Infinity;
+          for (let c = 0; c < k; c++) {
+            let d2 = 0;
+            for (let d = 0; d < D; d++) d2 += (data[i][d] - centroids[c][d]) ** 2;
+            if (d2 < minD) { minD = d2; labels[i] = c; }
+          }
+        }
+        const sums = Array.from({ length: k }, () => new Float64Array(D));
+        const counts = new Uint32Array(k);
+        for (let i = 0; i < N; i++) {
+          counts[labels[i]]++;
+          for (let d = 0; d < D; d++) sums[labels[i]][d] += data[i][d];
+        }
+        for (let c = 0; c < k; c++) {
+          if (counts[c] === 0) continue;
+          for (let d = 0; d < D; d++) centroids[c][d] = sums[c][d] / counts[c];
+        }
+      }
+      return { labels: Array.from(labels), centroids };
+    };
+
+    // Silhouette score using precomputed distances
+    const silhouette = (labels: number[], k: number): number => {
+      let total = 0;
+      for (let i = 0; i < N; i++) {
+        let aSum = 0, aCount = 0;
+        for (let j = 0; j < N; j++) {
+          if (j === i || labels[j] !== labels[i]) continue;
+          aSum += dist[i * N + j]; aCount++;
+        }
+        const a = aCount > 0 ? aSum / aCount : 0;
+        let b = Infinity;
+        for (let c = 0; c < k; c++) {
+          if (c === labels[i]) continue;
+          let bSum = 0, bCount = 0;
+          for (let j = 0; j < N; j++) {
+            if (labels[j] !== c) continue;
+            bSum += dist[i * N + j]; bCount++;
+          }
+          if (bCount > 0) b = Math.min(b, bSum / bCount);
+        }
+        const denom = Math.max(a, b);
+        total += denom > 0 ? (b - a) / denom : 0;
+      }
+      return total / N;
+    };
+
+    // Try k = 2..maxK, pick best silhouette
+    const maxK = Math.min(5, Math.floor(N / 3));
+    let bestK = 2, bestSil = -Infinity, bestLabels: number[] = [], bestCentroids: number[][] = [];
+    for (let k = 2; k <= maxK; k++) {
+      const { labels, centroids } = runKmeans(k);
+      const sil = silhouette(labels, k);
+      if (sil > bestSil) { bestSil = sil; bestK = k; bestLabels = labels; bestCentroids = centroids; }
+    }
+
+    // Compute distance from cluster center and detect outliers
+    const centerDists = bestLabels.map((c, i) => {
+      let d2 = 0;
+      for (let d = 0; d < D; d++) d2 += (data[i][d] - bestCentroids[c][d]) ** 2;
+      return Math.sqrt(d2);
+    });
+    const clusterStats = Array.from({ length: bestK }, (_, c) => {
+      const ds = centerDists.filter((_, i) => bestLabels[i] === c);
+      const m = ds.reduce((a, b) => a + b, 0) / (ds.length || 1);
+      const s = Math.sqrt(ds.reduce((a, v) => a + (v - m) ** 2, 0) / (ds.length || 1));
+      return { mean: m, std: s };
+    });
+
+    const entries: ClusterEntry[] = episodeActions.map(({ index }, i) => {
+      const cs = clusterStats[bestLabels[i]];
+      const isOutlier = centerDists[i] > cs.mean + 2 * cs.std;
+      return {
+        episodeIndex: index, x: proj1[i], y: proj2[i], z: proj3[i],
+        cluster: bestLabels[i], distFromCenter: Math.round(centerDists[i] * 1000) / 1000,
+        isOutlier,
+      };
+    });
+
+    const clusterSizes = Array.from({ length: bestK }, (_, c) => bestLabels.filter(l => l === c).length);
+    const outlierCount = entries.filter(e => e.isOutlier).length;
+
+    return { entries, numClusters: bestK, clusterSizes, outlierCount };
+  })();
+
+  // Aggregated state-action alignment across episodes
+  const aggAlignment: AggAlignment | null = (() => {
+    if (!stateKey || stateDim === 0) return null;
+
+    let sNms: unknown = stateEntry![1].names;
+    while (typeof sNms === "object" && sNms !== null && !Array.isArray(sNms)) sNms = Object.values(sNms)[0];
+    const stateNames = Array.isArray(sNms)
+      ? (sNms as string[])
+      : Array.from({ length: stateDim }, (_, i) => `${i}`);
+    const actionSuffixes = actionNames.map(n => { const p = n.split(SERIES_NAME_DELIMITER); return p[p.length - 1]; });
+
+    // Match pairs by suffix, fall back to index
+    const pairs: [number, number][] = [];
+    for (let ai = 0; ai < actionDim; ai++) {
+      const si = stateNames.findIndex(s => s === actionSuffixes[ai]);
+      if (si >= 0) pairs.push([ai, si]);
+    }
+    if (pairs.length === 0) {
+      const count = Math.min(actionDim, stateDim);
+      for (let i = 0; i < count; i++) pairs.push([i, i]);
+    }
+    if (pairs.length === 0) return null;
+
+    const maxLag = 30;
+    const numLags = 2 * maxLag + 1;
+    const corrSums = pairs.map(() => new Float64Array(numLags));
+    const corrCounts = pairs.map(() => new Uint32Array(numLags));
+
+    for (let ei = 0; ei < episodeActions.length; ei++) {
+      const states = episodeStates[ei];
+      if (!states) continue;
+      const { actions } = episodeActions[ei];
+      const n = Math.min(actions.length, states.length);
+      if (n < 10) continue;
+
+      for (let pi = 0; pi < pairs.length; pi++) {
+        const [ai, si] = pairs[pi];
+        const aVals = actions.slice(0, n).map(r => r[ai] ?? 0);
+        const sDeltas = Array.from({ length: n - 1 }, (_, t) => (states[t + 1][si] ?? 0) - (states[t][si] ?? 0));
+        const effN = Math.min(aVals.length, sDeltas.length);
+        const aM = aVals.slice(0, effN).reduce((a, b) => a + b, 0) / effN;
+        const sM = sDeltas.slice(0, effN).reduce((a, b) => a + b, 0) / effN;
+
+        for (let li = 0; li < numLags; li++) {
+          const lag = -maxLag + li;
+          let sum = 0, aV = 0, sV = 0;
+          for (let t = 0; t < effN; t++) {
+            const sIdx = t + lag;
+            if (sIdx < 0 || sIdx >= sDeltas.length) continue;
+            const a = aVals[t] - aM, s = sDeltas[sIdx] - sM;
+            sum += a * s; aV += a * a; sV += s * s;
+          }
+          const d = Math.sqrt(aV * sV);
+          if (d > 0) { corrSums[pi][li] += sum / d; corrCounts[pi][li]++; }
+        }
+      }
+    }
+
+    const avgCorrs = pairs.map((_, pi) =>
+      Array.from({ length: numLags }, (_, li) =>
+        corrCounts[pi][li] > 0 ? corrSums[pi][li] / corrCounts[pi][li] : 0
+      )
+    );
+
+    const ccData = Array.from({ length: numLags }, (_, li) => {
+      const lag = -maxLag + li;
+      const vals = avgCorrs.map(pc => pc[li]);
+      return { lag, max: Math.max(...vals), mean: vals.reduce((a, b) => a + b, 0) / vals.length, min: Math.min(...vals) };
+    });
+
+    let meanPeakLag = 0, meanPeakCorr = -Infinity;
+    let maxPeakLag = 0, maxPeakCorr = -Infinity;
+    let minPeakLag = 0, minPeakCorr = -Infinity;
+    for (const row of ccData) {
+      if (row.max > maxPeakCorr) { maxPeakCorr = row.max; maxPeakLag = row.lag; }
+      if (row.mean > meanPeakCorr) { meanPeakCorr = row.mean; meanPeakLag = row.lag; }
+      if (row.min > minPeakCorr) { minPeakCorr = row.min; minPeakLag = row.lag; }
+    }
+
+    const perPairPeakLags = avgCorrs.map(pc => {
+      let best = -Infinity, bestLag = 0;
+      for (let li = 0; li < pc.length; li++) { if (pc[li] > best) { best = pc[li]; bestLag = -maxLag + li; } }
+      return bestLag;
+    });
+
+    return {
+      ccData, meanPeakLag, meanPeakCorr, maxPeakLag, maxPeakCorr, minPeakLag, minPeakCorr,
+      lagRangeMin: Math.min(...perPairPeakLags), lagRangeMax: Math.max(...perPairPeakLags), numPairs: pairs.length,
+    };
+  })();
+
+  return {
+    actionNames, timeBins, variance, numEpisodes: episodeActions.length,
+    lowMovementEpisodes, aggVelocity, aggAutocorrelation,
+    speedDistribution, multimodality, trajectoryClustering, aggAlignment,
+  };
 }
 
 // Load only flatChartData for a specific episode (used by URDF viewer episode switching)
