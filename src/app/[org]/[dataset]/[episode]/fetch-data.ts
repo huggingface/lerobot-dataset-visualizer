@@ -6,8 +6,19 @@ import {
 } from "@/utils/parquetUtils";
 import { pick } from "@/utils/pick";
 import { getDatasetVersionAndInfo, buildVersionedUrl } from "@/utils/versionUtils";
+import { PADDING, CHART_CONFIG, EXCLUDED_COLUMNS } from "@/utils/constants";
+import {
+  processChartDataGroups,
+  groupRowBySuffix,
+} from "@/utils/dataProcessing";
+import {
+  buildV3VideoPath,
+  buildV3DataPath,
+  buildV3EpisodesMetadataPath,
+} from "@/utils/stringFormatting";
+import { bigIntToNumber } from "@/utils/typeGuards";
 
-const SERIES_NAME_DELIMITER = " | ";
+const SERIES_NAME_DELIMITER = CHART_CONFIG.SERIES_NAME_DELIMITER;
 
 export type VideoInfo = {
   filename: string;
@@ -99,34 +110,10 @@ type ColumnDef = {
   value: string[];
 };
 
-function groupRowBySuffix(row: Record<string, number>): ChartRow {
-  const result: ChartRow = {};
-  const suffixGroups: Record<string, Record<string, number>> = {};
-  for (const [key, value] of Object.entries(row)) {
-    if (key === "timestamp") {
-      result["timestamp"] = value;
-      continue;
-    }
-    const parts = key.split(SERIES_NAME_DELIMITER);
-    if (parts.length === 2) {
-      const [prefix, suffix] = parts;
-      if (!suffixGroups[suffix]) suffixGroups[suffix] = {};
-      suffixGroups[suffix][prefix] = value;
-    } else {
-      result[key] = value;
-    }
-  }
-  for (const [suffix, group] of Object.entries(suffixGroups)) {
-    const keys = Object.keys(group);
-    if (keys.length === 1) {
-      const fullName = `${keys[0]}${SERIES_NAME_DELIMITER}${suffix}`;
-      result[fullName] = group[keys[0]];
-    } else {
-      result[suffix] = group;
-    }
-  }
-  return result;
-}
+type AdjacentEpisodeVideos = {
+  episodeId: number;
+  videosInfo: VideoInfo[];
+};
 
 export async function getEpisodeData(
   org: string,
@@ -141,7 +128,9 @@ export async function getEpisodeData(
     const info = rawInfo as unknown as DatasetMetadata;
 
     if (info.video_path === null) {
-      throw new Error("Only videos datasets are supported in this visualizer.\nPlease use Rerun visualizer for images datasets.");
+      throw new Error(
+        "Only videos datasets are supported in this visualizer.\nPlease use Rerun visualizer for images datasets.",
+      );
     }
 
     console.time(`[perf] getEpisodeData (${version})`);
@@ -176,14 +165,14 @@ export async function getAdjacentEpisodesVideoInfo(
   dataset: string,
   currentEpisodeId: number,
   radius: number = 2,
-) {
+): Promise<AdjacentEpisodeVideos[]> {
   const repoId = `${org}/${dataset}`;
   try {
     const { version, info: rawInfo } = await getDatasetVersionAndInfo(repoId);
     const info = rawInfo as unknown as DatasetMetadata;
     
     const totalEpisodes = info.total_episodes;
-    const adjacentVideos: Array<{episodeId: number; videosInfo: VideoInfo[]}> = [];
+    const adjacentVideos: AdjacentEpisodeVideos[] = [];
     
     // Calculate adjacent episode IDs
     for (let offset = -radius; offset <= radius; offset++) {
@@ -195,24 +184,39 @@ export async function getAdjacentEpisodesVideoInfo(
           let videosInfo: VideoInfo[] = [];
           
           if (version === "v3.0") {
-            const episodeMetadata = await loadEpisodeMetadataV3Simple(repoId, version, episodeId);
-            videosInfo = extractVideoInfoV3WithSegmentation(repoId, version, info, episodeMetadata);
+            const episodeMetadata = await loadEpisodeMetadataV3Simple(
+              repoId,
+              version,
+              episodeId,
+            );
+            videosInfo = extractVideoInfoV3WithSegmentation(
+              repoId,
+              version,
+              info,
+              episodeMetadata,
+            );
           } else {
             // For v2.x, use simpler video info extraction
+            if (info.video_path) {
             const episode_chunk = Math.floor(0 / 1000);
             videosInfo = Object.entries(info.features)
               .filter(([, value]) => value.dtype === "video")
               .map(([key]) => {
-                const videoPath = formatStringWithVars(info.video_path, {
+                  const videoPath = formatStringWithVars(info.video_path!, {
                   video_key: key,
-                  episode_chunk: episode_chunk.toString().padStart(3, "0"),
-                  episode_index: episodeId.toString().padStart(6, "0"),
+                    episode_chunk: episode_chunk
+                      .toString()
+                      .padStart(PADDING.CHUNK_INDEX, "0"),
+                    episode_index: episodeId
+                      .toString()
+                      .padStart(PADDING.EPISODE_INDEX, "0"),
                 });
                 return {
                   filename: key,
                   url: buildVersionedUrl(repoId, version, videoPath),
                 };
               });
+            }
           }
           
           adjacentVideos.push({ episodeId, videosInfo });
@@ -258,43 +262,42 @@ async function getEpisodeDataV2(
           // episode id starts from 0
           (_, i) => i,
         )
-      : process.env.EPISODES
-          .split(/\s+/)
+      : process.env.EPISODES.split(/\s+/)
           .map((x) => parseInt(x.trim(), 10))
           .filter((x) => !isNaN(x));
 
       // Videos information
-    const videosInfo = Object.entries(info.features)
+  const videosInfo =
+    info.video_path !== null
+      ? Object.entries(info.features)
       .filter(([, value]) => value.dtype === "video")
       .map(([key]) => {
-      const videoPath = formatStringWithVars(info.video_path, {
+            const videoPath = formatStringWithVars(info.video_path!, {
         video_key: key,
-        episode_chunk: episode_chunk.toString().padStart(3, "0"),
-        episode_index: episodeId.toString().padStart(6, "0"),
+              episode_chunk: episode_chunk
+                .toString()
+                .padStart(PADDING.CHUNK_INDEX, "0"),
+              episode_index: episodeId
+                .toString()
+                .padStart(PADDING.EPISODE_INDEX, "0"),
       });
       return {
         filename: key,
         url: buildVersionedUrl(repoId, version, videoPath),
       };
-    });
+          })
+      : [];
 
   // Column data
   const columnNames = Object.entries(info.features)
     .filter(
       ([, value]) =>
-        ["float32", "int32"].includes(value.dtype) &&
-        value.shape.length === 1,
+        ["float32", "int32"].includes(value.dtype) && value.shape.length === 1,
     )
     .map(([key, { shape }]) => ({ key, length: shape[0] }));
 
   // Exclude specific columns
-  const excludedColumns = [
-    "timestamp",
-    "frame_index",
-    "episode_index",
-    "index",
-    "task_index",
-  ];
+  const excludedColumns = EXCLUDED_COLUMNS.V2 as readonly string[];
   const filteredColumns = columnNames.filter(
     (column) => !excludedColumns.includes(column.key),
   );
@@ -315,7 +318,7 @@ async function getEpisodeDataV2(
         ? column_names.map((name: string) => `${key}${SERIES_NAME_DELIMITER}${name}`)
         : Array.from(
             { length: columnNames.find((c) => c.key === key)?.length ?? 1 },
-            (_, i) => `${key}${SERIES_NAME_DELIMITER}${i}`,
+            (_, i) => `${key}${CHART_CONFIG.SERIES_NAME_DELIMITER}${i}`,
           ),
     };
   });
@@ -324,9 +327,11 @@ async function getEpisodeDataV2(
     repoId,
     version,
     formatStringWithVars(info.data_path, {
-      episode_chunk: episode_chunk.toString().padStart(3, "0"),
-      episode_index: episodeId.toString().padStart(6, "0"),
-    })
+      episode_chunk: episode_chunk
+        .toString()
+        .padStart(PADDING.CHUNK_INDEX, "0"),
+      episode_index: episodeId.toString().padStart(PADDING.EPISODE_INDEX, "0"),
+    }),
   );
 
   const arrayBuffer = await fetchParquetFile(parquetUrl);
@@ -366,20 +371,20 @@ async function getEpisodeDataV2(
       if (tasksResponse.ok) {
         const tasksText = await tasksResponse.text();
         const tasksData = tasksText
-          .split('\n')
-          .filter(line => line.trim())
-          .map(line => JSON.parse(line));
+          .split("\n")
+          .filter((line) => line.trim())
+          .map((line) => JSON.parse(line));
         
         if (tasksData && tasksData.length > 0) {
           const taskIndex = allData[0].task_index;
           const taskIndexNum = typeof taskIndex === 'bigint' ? Number(taskIndex) : taskIndex;
-          const taskData = tasksData.find(t => t.task_index === taskIndexNum);
+          const taskData = tasksData.find((t: Record<string, unknown>) => t.task_index === taskIndexNum);
           if (taskData) {
             task = taskData.task;
           }
         }
       }
-    } catch (error) {
+    } catch {
       // No tasks metadata file for this v2.x dataset
     }
   }
@@ -414,86 +419,21 @@ async function getEpisodeDataV2(
     )
     .map(([key]) => key);
 
-  // 1. Group all numeric keys by suffix (excluding 'timestamp')
-  const numericKeys = seriesNames.filter((k) => k !== "timestamp");
-  const suffixGroupsMap: Record<string, string[]> = {};
-  for (const key of numericKeys) {
-    const parts = key.split(SERIES_NAME_DELIMITER);
-    const suffix = parts[1] || parts[0]; // fallback to key if no delimiter
-    if (!suffixGroupsMap[suffix]) suffixGroupsMap[suffix] = [];
-    suffixGroupsMap[suffix].push(key);
-  }
-  const suffixGroups = Object.values(suffixGroupsMap);
-
-  // 2. Compute min/max for each suffix group as a whole
-  const groupStats: Record<string, { min: number; max: number }> = {};
-  suffixGroups.forEach((group) => {
-    let min = Infinity,
-      max = -Infinity;
-    for (const row of chartData) {
-      for (const key of group) {
-        const v = row[key];
-        if (typeof v === "number" && !isNaN(v)) {
-          if (v < min) min = v;
-          if (v > max) max = v;
-        }
-      }
-    }
-    // Use the first key in the group as the group id
-    groupStats[group[0]] = { min, max };
-  });
-
-  // 3. Group suffix groups by similar scale (treat each suffix group as a unit)
-  const scaleGroups: Record<string, string[][]> = {};
-  const used = new Set<string>();
-  const SCALE_THRESHOLD = 2;
-  for (const group of suffixGroups) {
-    const groupId = group[0];
-    if (used.has(groupId)) continue;
-    const { min, max } = groupStats[groupId];
-    if (!isFinite(min) || !isFinite(max)) continue;
-    const logMin = Math.log10(Math.abs(min) + 1e-9);
-    const logMax = Math.log10(Math.abs(max) + 1e-9);
-    const unit: string[][] = [group];
-    used.add(groupId);
-    for (const other of suffixGroups) {
-      const otherId = other[0];
-      if (used.has(otherId) || otherId === groupId) continue;
-      const { min: omin, max: omax } = groupStats[otherId];
-      if (!isFinite(omin) || !isFinite(omax) || omin === omax) continue;
-      const ologMin = Math.log10(Math.abs(omin) + 1e-9);
-      const ologMax = Math.log10(Math.abs(omax) + 1e-9);
-      if (
-        Math.abs(logMin - ologMin) <= SCALE_THRESHOLD &&
-        Math.abs(logMax - ologMax) <= SCALE_THRESHOLD
-      ) {
-        unit.push(other);
-        used.add(otherId);
-      }
-    }
-    scaleGroups[groupId] = unit;
-  }
-
-  // 4. Flatten scaleGroups into chartGroups (array of arrays of keys)
-  const chartGroups: string[][] = Object.values(scaleGroups)
-    .sort((a, b) => b.length - a.length)
-    .flatMap((suffixGroupArr) => {
-      // suffixGroupArr is array of suffix groups (each is array of keys)
-      const merged = suffixGroupArr.flat();
-      if (merged.length > 6) {
-        const subgroups: string[][] = [];
-        for (let i = 0; i < merged.length; i += 6) {
-          subgroups.push(merged.slice(i, i + 6));
-        }
-        return subgroups;
-      }
-      return [merged];
-    });
+  // Process chart data into organized groups using utility function
+  const chartGroups = processChartDataGroups(seriesNames, chartData);
 
   const duration = chartData[chartData.length - 1].timestamp;
 
   const chartDataGroups = chartGroups.map((group) =>
-    chartData.map((row) => groupRowBySuffix(pick(row, [...group, "timestamp"])))
+    chartData.map((row) => {
+      const grouped = groupRowBySuffix(pick(row, [...group, "timestamp"]));
+      // Ensure timestamp is always a number at the top level
+      return {
+        ...grouped,
+        timestamp:
+          typeof grouped.timestamp === "number" ? grouped.timestamp : 0,
+      };
+    }),
   );
 
   return {
@@ -531,10 +471,19 @@ async function getEpisodeDataV3(
   const episodes = Array.from({ length: info.total_episodes }, (_, i) => i);
 
   // Load episode metadata to get timestamps for episode 0
-  const episodeMetadata = await loadEpisodeMetadataV3Simple(repoId, version, episodeId);
+  const episodeMetadata = await loadEpisodeMetadataV3Simple(
+    repoId,
+    version,
+    episodeId,
+  );
   
   // Create video info with segmentation using the metadata
-  const videosInfo = extractVideoInfoV3WithSegmentation(repoId, version, info, episodeMetadata);
+  const videosInfo = extractVideoInfoV3WithSegmentation(
+    repoId,
+    version,
+    info,
+    episodeMetadata,
+  );
 
   // Load episode data for charts
   const { chartDataGroups, flatChartData, ignoredColumns, task } = await loadEpisodeDataV3(repoId, version, info, episodeMetadata);
@@ -563,9 +512,9 @@ async function loadEpisodeDataV3(
   episodeMetadata: EpisodeMetadataV3,
 ): Promise<{ chartDataGroups: ChartRow[][]; flatChartData: Record<string, number>[]; ignoredColumns: string[]; task?: string }> {
   // Build data file path using chunk and file indices
-  const dataChunkIndex = episodeMetadata.data_chunk_index || 0;
-  const dataFileIndex = episodeMetadata.data_file_index || 0;
-  const dataPath = `data/chunk-${dataChunkIndex.toString().padStart(3, "0")}/file-${dataFileIndex.toString().padStart(3, "0")}.parquet`;
+  const dataChunkIndex = bigIntToNumber(episodeMetadata.data_chunk_index, 0);
+  const dataFileIndex = bigIntToNumber(episodeMetadata.data_file_index, 0);
+  const dataPath = buildV3DataPath(dataChunkIndex, dataFileIndex);
   
   try {
     const dataUrl = buildVersionedUrl(repoId, version, dataPath);
@@ -684,20 +633,20 @@ function processEpisodeDataForCharts(
   
   // Common feature order for v3.0 datasets (but only include if they exist)
   const expectedFeatureOrder = [
-    'observation.state',
-    'action', 
-    'timestamp',
-    'episode_index',
-    'frame_index',
-    'next.reward',
-    'next.done',
-    'index',
-    'task_index'
+    "observation.state",
+    "action",
+    "timestamp",
+    "episode_index",
+    "frame_index",
+    "next.reward",
+    "next.done",
+    "index",
+    "task_index",
   ];
   
   // Map indices to features that actually exist
   let currentIndex = 0;
-  expectedFeatureOrder.forEach(feature => {
+  expectedFeatureOrder.forEach((feature) => {
     if (featureKeys.includes(feature)) {
       v3IndexToFeatureMap[currentIndex.toString()] = feature;
       currentIndex++;
@@ -705,7 +654,7 @@ function processEpisodeDataForCharts(
   });
   
   // Columns to exclude from charts (note: 'task' is intentionally not excluded as we want to access it)
-  const excludedColumns = ['index', 'task_index', 'episode_index', 'frame_index', 'next.done'];
+  const excludedColumns = EXCLUDED_COLUMNS.V3 as readonly string[];
 
   // Create columns structure similar to V2.1 for proper hierarchical naming
   const columns: ColumnDef[] = Object.entries(info.features)
@@ -726,7 +675,7 @@ function processEpisodeDataForCharts(
           ? column_names.map((name: string) => `${key}${SERIES_NAME_DELIMITER}${name}`)
           : Array.from(
               { length: feature.shape[0] || 1 },
-              (_, i) => `${key}${SERIES_NAME_DELIMITER}${i}`,
+              (_, i) => `${key}${CHART_CONFIG.SERIES_NAME_DELIMITER}${i}`,
             ),
       };
     });
@@ -737,7 +686,7 @@ function processEpisodeDataForCharts(
     const allKeys: string[] = [];
     
     Object.entries(firstRow || {}).forEach(([key, value]) => {
-      if (key === 'timestamp') return; // Skip timestamp, we'll add it separately
+      if (key === "timestamp") return; // Skip timestamp, we'll add it separately
       
       // Map numeric key to feature name if available
       const featureName = v3IndexToFeatureMap[key] || key;
@@ -749,7 +698,7 @@ function processEpisodeDataForCharts(
       if (excludedColumns.includes(featureName)) return;
       
       // Find the matching column definition to get proper names
-      const columnDef = columns.find(col => col.key === featureName);
+      const columnDef = columns.find((col) => col.key === featureName);
       if (columnDef && Array.isArray(value) && value.length > 0) {
         // Use the proper hierarchical naming from column definition
         columnDef.value.forEach((seriesName, idx) => {
@@ -757,10 +706,10 @@ function processEpisodeDataForCharts(
             allKeys.push(seriesName);
           }
         });
-      } else if (typeof value === 'number' && !isNaN(value)) {
+      } else if (typeof value === "number" && !isNaN(value)) {
         // For scalar numeric values
         allKeys.push(featureName);
-      } else if (typeof value === 'bigint') {
+      } else if (typeof value === "bigint") {
         // For BigInt values
         allKeys.push(featureName);
       }
@@ -769,10 +718,7 @@ function processEpisodeDataForCharts(
     seriesNames = ["timestamp", ...allKeys];
   } else {
     // Fallback to column-based approach like V2.1
-    seriesNames = [
-      "timestamp",
-      ...columns.map(({ value }) => value).flat(),
-    ];
+    seriesNames = ["timestamp", ...columns.map(({ value }) => value).flat()];
   }
 
   const chartData = episodeData.map((row, index) => {
@@ -783,14 +729,17 @@ function processEpisodeDataForCharts(
     let videoDuration = episodeData.length; // Fallback to data length
     if (episodeMetadata) {
       // Use actual video segment duration if available
-      videoDuration = (episodeMetadata.video_to_timestamp || 30) - (episodeMetadata.video_from_timestamp || 0);
+      videoDuration =
+        (episodeMetadata.video_to_timestamp || 30) -
+        (episodeMetadata.video_from_timestamp || 0);
     }
-    obj["timestamp"] = (index / Math.max(episodeData.length - 1, 1)) * videoDuration;
+    obj["timestamp"] =
+      (index / Math.max(episodeData.length - 1, 1)) * videoDuration;
     
     // Add all data columns using hierarchical naming
-    if (row && typeof row === 'object') {
+    if (row && typeof row === "object") {
       Object.entries(row).forEach(([key, value]) => {
-        if (key === 'timestamp') {
+        if (key === "timestamp") {
           // Timestamp is already handled above
           return;
         }
@@ -805,21 +754,21 @@ function processEpisodeDataForCharts(
         if (excludedColumns.includes(featureName)) return;
         
         // Find the matching column definition to get proper series names
-        const columnDef = columns.find(col => col.key === featureName);
+        const columnDef = columns.find((col) => col.key === featureName);
         
         if (Array.isArray(value) && columnDef) {
           // For array values like observation.state and action, use proper hierarchical naming
           value.forEach((val, idx) => {
             if (idx < columnDef.value.length) {
               const seriesName = columnDef.value[idx];
-              obj[seriesName] = typeof val === 'number' ? val : Number(val);
+              obj[seriesName] = typeof val === "number" ? val : Number(val);
             }
           });
-        } else if (typeof value === 'number' && !isNaN(value)) {
+        } else if (typeof value === "number" && !isNaN(value)) {
           obj[featureName] = value;
-        } else if (typeof value === 'bigint') {
+        } else if (typeof value === "bigint") {
           obj[featureName] = Number(value);
-        } else if (typeof value === 'boolean') {
+        } else if (typeof value === "boolean") {
           // Convert boolean to number for charts
           obj[featureName] = value ? 1 : 0;
         }
@@ -837,91 +786,26 @@ function processEpisodeDataForCharts(
           ["float32", "int32"].includes(value.dtype) && value.shape.length > 2, // Only ignore 3D+ data
       )
       .map(([key]) => key),
-    ...excludedColumns // Also include the manually excluded columns
+    ...excludedColumns, // Also include the manually excluded columns
   ];
 
-  // Group processing logic (using SERIES_NAME_DELIMITER like v2.1)
-  const numericKeys = seriesNames.filter((k) => k !== "timestamp");
-  const suffixGroupsMap: Record<string, string[]> = {};
-  
-  for (const key of numericKeys) {
-    const parts = key.split(SERIES_NAME_DELIMITER);
-    const suffix = parts[1] || parts[0]; // fallback to key if no delimiter
-    if (!suffixGroupsMap[suffix]) suffixGroupsMap[suffix] = [];
-    suffixGroupsMap[suffix].push(key);
-  }
-  const suffixGroups = Object.values(suffixGroupsMap);
-  
-
-  // Compute min/max for each suffix group
-  const groupStats: Record<string, { min: number; max: number }> = {};
-  suffixGroups.forEach((group) => {
-    let min = Infinity, max = -Infinity;
-    for (const row of chartData) {
-      for (const key of group) {
-        const v = row[key];
-        if (typeof v === "number" && !isNaN(v)) {
-          if (v < min) min = v;
-          if (v > max) max = v;
-        }
-      }
-    }
-    groupStats[group[0]] = { min, max };
-  });
-
-  // Group by similar scale
-  const scaleGroups: Record<string, string[][]> = {};
-  const used = new Set<string>();
-  const SCALE_THRESHOLD = 2;
-  for (const group of suffixGroups) {
-    const groupId = group[0];
-    if (used.has(groupId)) continue;
-    const { min, max } = groupStats[groupId];
-    if (!isFinite(min) || !isFinite(max)) continue;
-    const logMin = Math.log10(Math.abs(min) + 1e-9);
-    const logMax = Math.log10(Math.abs(max) + 1e-9);
-    const unit: string[][] = [group];
-    used.add(groupId);
-    for (const other of suffixGroups) {
-      const otherId = other[0];
-      if (used.has(otherId) || otherId === groupId) continue;
-      const { min: omin, max: omax } = groupStats[otherId];
-      if (!isFinite(omin) || !isFinite(omax) || omin === omax) continue;
-      const ologMin = Math.log10(Math.abs(omin) + 1e-9);
-      const ologMax = Math.log10(Math.abs(omax) + 1e-9);
-      if (
-        Math.abs(logMin - ologMin) <= SCALE_THRESHOLD &&
-        Math.abs(logMax - ologMax) <= SCALE_THRESHOLD
-      ) {
-        unit.push(other);
-        used.add(otherId);
-      }
-    }
-    scaleGroups[groupId] = unit;
-  }
-
-  // Flatten into chartGroups
-  const chartGroups: string[][] = Object.values(scaleGroups)
-    .sort((a, b) => b.length - a.length)
-    .flatMap((suffixGroupArr) => {
-      const merged = suffixGroupArr.flat();
-      if (merged.length > 6) {
-        const subgroups = [];
-        for (let i = 0; i < merged.length; i += 6) {
-          subgroups.push(merged.slice(i, i + 6));
-        }
-        return subgroups;
-      }
-      return [merged];
-    });
+  // Process chart data into organized groups using utility function
+  const chartGroups = processChartDataGroups(seriesNames, chartData);
 
   const chartDataGroups = chartGroups.map((group) =>
-    chartData.map((row) => groupRowBySuffix(pick(row, [...group, "timestamp"])))
+    chartData.map((row) => {
+      const grouped = groupRowBySuffix(pick(row, [...group, "timestamp"]));
+      // Ensure timestamp is always a number at the top level
+      return {
+        ...grouped,
+        timestamp:
+          typeof grouped.timestamp === "number" ? grouped.timestamp : 0,
+      };
+    }),
   );
 
   return { chartDataGroups, flatChartData: chartData, ignoredColumns };
 }
-
 
 // Video info extraction with segmentation for v3.0
 function extractVideoInfoV3WithSegmentation(
@@ -931,13 +815,14 @@ function extractVideoInfoV3WithSegmentation(
   episodeMetadata: EpisodeMetadataV3,
 ): VideoInfo[] {
   // Get video features from dataset info
-  const videoFeatures = Object.entries(info.features)
-    .filter(([, value]) => value.dtype === "video");
+  const videoFeatures = Object.entries(info.features).filter(
+    ([, value]) => value.dtype === "video",
+  );
 
   const videosInfo = videoFeatures.map(([videoKey]) => {
     // Check if we have per-camera metadata in the episode row
-    const cameraSpecificKeys = Object.keys(episodeMetadata).filter(key => 
-      key.startsWith(`videos/${videoKey}/`)
+    const cameraSpecificKeys = Object.keys(episodeMetadata).filter((key) =>
+      key.startsWith(`videos/${videoKey}/`),
     );
     
     let chunkIndex: number, fileIndex: number, segmentStart: number, segmentEnd: number;
@@ -956,7 +841,15 @@ function extractVideoInfoV3WithSegmentation(
       segmentEnd = episodeMetadata.video_to_timestamp || 30;
     }
     
-    const videoPath = `videos/${videoKey}/chunk-${chunkIndex.toString().padStart(3, "0")}/file-${fileIndex.toString().padStart(3, "0")}.mp4`;
+    // Convert BigInt to number for timestamps
+    const startNum = bigIntToNumber(segmentStart);
+    const endNum = bigIntToNumber(segmentEnd);
+
+    const videoPath = buildV3VideoPath(
+      videoKey,
+      bigIntToNumber(chunkIndex, 0),
+      bigIntToNumber(fileIndex, 0),
+    );
     const fullUrl = buildVersionedUrl(repoId, version, videoPath);
     
     return {
@@ -964,9 +857,9 @@ function extractVideoInfoV3WithSegmentation(
       url: fullUrl,
       // Enable segmentation with timestamps from metadata
       isSegmented: true,
-      segmentStart: segmentStart,
-      segmentEnd: segmentEnd,
-      segmentDuration: segmentEnd - segmentStart,
+      segmentStart: startNum,
+      segmentEnd: endNum,
+      segmentDuration: endNum - startNum,
     };
   });
 
@@ -988,8 +881,15 @@ async function loadEpisodeMetadataV3Simple(
   
   // Try loading episode metadata files until we find the episode
   while (!episodeRow) {
-    const episodesMetadataPath = `meta/episodes/chunk-${chunkIndex.toString().padStart(3, "0")}/file-${fileIndex.toString().padStart(3, "0")}.parquet`;
-    const episodesMetadataUrl = buildVersionedUrl(repoId, version, episodesMetadataPath);
+    const episodesMetadataPath = buildV3EpisodesMetadataPath(
+      chunkIndex,
+      fileIndex,
+    );
+    const episodesMetadataUrl = buildVersionedUrl(
+      repoId,
+      version,
+      episodesMetadataPath,
+    );
 
     try {
       const arrayBuffer = await fetchParquetFile(episodesMetadataUrl);
@@ -1015,9 +915,11 @@ async function loadEpisodeMetadataV3Simple(
         // Not in this file, try the next one
         fileIndex++;
       }
-    } catch (error) {
+    } catch {
       // File doesn't exist - episode not found
-      throw new Error(`Episode ${episodeId} not found in metadata (searched up to file-${fileIndex.toString().padStart(3, "0")}.parquet)`);
+      throw new Error(
+        `Episode ${episodeId} not found in metadata (searched up to file-${fileIndex.toString().padStart(PADDING.CHUNK_INDEX, "0")}.parquet)`,
+      );
     }
   }
   
@@ -1028,9 +930,9 @@ async function loadEpisodeMetadataV3Simple(
 // Simple parser for episode row - focuses on key fields for episodes
 function parseEpisodeRowSimple(row: Record<string, unknown>): EpisodeMetadataV3 {
   // v3.0 uses named keys in the episode metadata
-  if (row && typeof row === 'object') {
+  if (row && typeof row === "object") {
     // Check if this is v3.0 format with named keys
-    if ('episode_index' in row) {
+    if ("episode_index" in row) {
       // v3.0 format - use named keys
       // Convert BigInt values to numbers
       const toBigIntSafe = (value: unknown): number => {
@@ -1079,7 +981,7 @@ function parseEpisodeRowSimple(row: Record<string, unknown>): EpisodeMetadataV3 
         }
       });
       
-      return episodeData;
+      return episodeData as EpisodeMetadataV3;
     } else {
       // Fallback to numeric keys for compatibility
       const toNum = (v: unknown, fallback = 0): number =>
@@ -1115,7 +1017,6 @@ function parseEpisodeRowSimple(row: Record<string, unknown>): EpisodeMetadataV3 
   
   return fallback;
 }
-
 
 
 

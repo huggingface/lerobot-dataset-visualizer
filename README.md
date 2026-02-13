@@ -1,3 +1,14 @@
+---
+title: Visualize Dataset (v2.0+ latest dataset format)
+emoji: 💻
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+license: apache-2.0
+---
+
 # LeRobot Dataset Visualizer
 
 LeRobot Dataset Tool and Visualizer is a web application for interactive exploration and visualization of robotics datasets, particularly those in the LeRobot format. It enables users to browse, view, and analyze episodes from large-scale robotics datasets, combining synchronized video playback with rich, interactive data graphs.
@@ -28,15 +39,28 @@ This tool is designed to help robotics researchers and practitioners quickly ins
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+This project uses [Bun](https://bun.sh) as its package manager. If you don't have it installed:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
+# Install Bun
+curl -fsSL https://bun.sh/install | bash
+```
+
+### Installation
+
+Install dependencies:
+
+```bash
+bun install
+```
+
+### Development
+
+Run the development server:
+
+```bash
 bun dev
 ```
 
@@ -44,13 +68,54 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `src/app/page.tsx` or other files in the `src/` directory. The app supports hot-reloading for rapid development.
 
+### Other Commands
+
+```bash
+# Build for production
+bun run build
+
+# Start production server
+bun start
+
+# Run linter
+bun run lint
+
+# Format code
+bun run format
+```
+
 ### Environment Variables
 
 - `DATASET_URL`: (optional) Base URL for dataset hosting (defaults to HuggingFace Datasets).
+
+## Docker Deployment
+
+This application can be deployed using Docker with bun for optimal performance and self-contained builds.
+
+### Build the Docker image
+
+```bash
+docker build -t lerobot-visualizer .
+```
+
+### Run the container
+
+```bash
+docker run -p 7860:7860 lerobot-visualizer
+```
+
+The application will be available at [http://localhost:7860](http://localhost:7860).
+
+### Run with custom environment variables
+
+```bash
+docker run -p 7860:7860 -e DATASET_URL=your-url lerobot-visualizer
+```
 
 ## Contributing
 
 Contributions, bug reports, and feature requests are welcome! Please open an issue or submit a pull request.
 
-### Acknowledgement 
+### Acknowledgement
+
 The app was orignally created by [@Mishig25](https://github.com/mishig25) and taken from this PR [#1055](https://github.com/huggingface/lerobot/pull/1055)
