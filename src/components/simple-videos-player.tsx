@@ -4,6 +4,12 @@ import React, { useEffect, useRef } from "react";
 import { useTime } from "../context/time-context";
 import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
 import type { VideoInfo } from "@/types";
+import { THRESHOLDS } from "@/utils/constants";
+
+// Augmented video element with custom event handlers for cleanup
+interface EnhancedVideoElement extends HTMLVideoElement {
+  _segmentHandlers?: () => void;
+}
 
 type VideoPlayerProps = {
   videosInfo: VideoInfo[];
@@ -53,7 +59,10 @@ export const SimpleVideosPlayer = ({
             const segmentEnd = info.segmentEnd || video.duration;
             const segmentStart = info.segmentStart || 0;
 
-            if (video.currentTime >= segmentEnd - 0.05) {
+            if (
+              video.currentTime >=
+              segmentEnd - THRESHOLDS.VIDEO_SEGMENT_BOUNDARY
+            ) {
               video.currentTime = segmentStart;
               // Also update the global time to reset to start
               if (index === firstVisibleIdx) {
@@ -71,7 +80,7 @@ export const SimpleVideosPlayer = ({
           video.addEventListener("loadeddata", handleLoadedData);
 
           // Store cleanup
-          (video as any)._segmentHandlers = () => {
+          (video as EnhancedVideoElement)._segmentHandlers = () => {
             video.removeEventListener("timeupdate", handleTimeUpdate);
             video.removeEventListener("loadeddata", handleLoadedData);
           };
@@ -88,7 +97,7 @@ export const SimpleVideosPlayer = ({
           video.addEventListener("canplaythrough", checkReady, { once: true });
 
           // Store cleanup
-          (video as any)._segmentHandlers = () => {
+          (video as EnhancedVideoElement)._segmentHandlers = () => {
             video.removeEventListener("ended", handleEnded);
           };
         }
@@ -97,8 +106,11 @@ export const SimpleVideosPlayer = ({
 
     return () => {
       videoRefs.current.forEach((video) => {
-        if (video && (video as any)._segmentHandlers) {
-          (video as any)._segmentHandlers();
+        if (video) {
+          const enhancedVideo = video as EnhancedVideoElement;
+          if (enhancedVideo._segmentHandlers) {
+            enhancedVideo._segmentHandlers();
+          }
         }
       });
     };
