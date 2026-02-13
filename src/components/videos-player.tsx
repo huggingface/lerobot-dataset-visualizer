@@ -151,12 +151,12 @@ export const VideosPlayer = ({
     videoRefs.current.forEach((video, index) => {
       if (video && Math.abs(video.currentTime - currentTime) > 0.2) {
         const videoInfo = videosInfo[index];
-        
+
         if (videoInfo?.isSegmented) {
           // For segmented videos, map the global time to segment time
           const segmentStart = videoInfo.segmentStart || 0;
           const segmentDuration = videoInfo.segmentDuration || 0;
-          
+
           if (segmentDuration > 0) {
             // Map currentTime (0 to segmentDuration) to video time (segmentStart to segmentEnd)
             const segmentTime = segmentStart + currentTime;
@@ -175,9 +175,9 @@ export const VideosPlayer = ({
     const video = e.target as HTMLVideoElement;
     if (video && video.duration) {
       // Find the video info for this video element
-      const videoIndex = videoRefs.current.findIndex(ref => ref === video);
+      const videoIndex = videoRefs.current.findIndex((ref) => ref === video);
       const videoInfo = videosInfo[videoIndex];
-      
+
       if (videoInfo?.isSegmented) {
         // For segmented videos, map the video time back to global time (0 to segmentDuration)
         const segmentStart = videoInfo.segmentStart || 0;
@@ -196,18 +196,20 @@ export const VideosPlayer = ({
     const onCanPlayThrough = (videoIndex: number) => {
       const video = videoRefs.current[videoIndex];
       const videoInfo = videosInfo[videoIndex];
-      
+
       // Setup video segmentation for v3.0 chunked videos
       if (video && videoInfo?.isSegmented) {
         const segmentStart = videoInfo.segmentStart || 0;
         const segmentEnd = videoInfo.segmentEnd || video.duration || 0;
-        
-        
+
         // Set initial time to segment start if not already set
-        if (video.currentTime < segmentStart || video.currentTime > segmentEnd) {
+        if (
+          video.currentTime < segmentStart ||
+          video.currentTime > segmentEnd
+        ) {
           video.currentTime = segmentStart;
         }
-        
+
         // Add event listener to handle segment boundaries
         const handleTimeUpdate = () => {
           if (video.currentTime > segmentEnd) {
@@ -217,15 +219,15 @@ export const VideosPlayer = ({
             }
           }
         };
-        
-        video.addEventListener('timeupdate', handleTimeUpdate);
-        
+
+        video.addEventListener("timeupdate", handleTimeUpdate);
+
         // Store cleanup function
         (video as any)._segmentCleanup = () => {
-          video.removeEventListener('timeupdate', handleTimeUpdate);
+          video.removeEventListener("timeupdate", handleTimeUpdate);
         };
       }
-      
+
       videosReadyCount += 1;
       if (videosReadyCount === videosInfo.length) {
         if (typeof onVideosReady === "function") {
@@ -253,7 +255,10 @@ export const VideosPlayer = ({
         if (video) {
           // Remove ready handler
           if ((video as any)._readyHandler) {
-            video.removeEventListener("canplaythrough", (video as any)._readyHandler);
+            video.removeEventListener(
+              "canplaythrough",
+              (video as any)._readyHandler,
+            );
           }
           // Remove segment handler
           if ((video as any)._segmentCleanup) {

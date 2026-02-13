@@ -24,11 +24,11 @@ export function formatStringWithVars(
 // Fetch and parse the Parquet file
 export async function fetchParquetFile(url: string): Promise<ArrayBuffer> {
   const res = await fetch(url);
-  
+
   if (!res.ok) {
     throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
   }
-  
+
   return res.arrayBuffer();
 }
 

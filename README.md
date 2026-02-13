@@ -116,5 +116,6 @@ docker run -p 7860:7860 -e DATASET_URL=your-url lerobot-visualizer
 
 Contributions, bug reports, and feature requests are welcome! Please open an issue or submit a pull request.
 
-### Acknowledgement 
+### Acknowledgement
+
 The app was orignally created by [@Mishig25](https://github.com/mishig25) and taken from this PR [#1055](https://github.com/huggingface/lerobot/pull/1055)

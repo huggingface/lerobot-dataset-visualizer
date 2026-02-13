@@ -13,7 +13,12 @@
       "Bash(bun run type-check:*)",
       "Bash(npx tsc:*)",
       "Bash(/Users/mishig/.bun/bin/bun run build:*)",
-      "Bash(gh run view:*)"
+      "Bash(gh run view:*)",
+      "Bash(/Users/mishig/.bun/bin/bun install:*)",
+      "Bash(/Users/mishig/.bun/bin/bun run type-check:*)",
+      "Bash(/Users/mishig/.bun/bin/bun run lint:*)",
+      "Bash(/Users/mishig/.bun/bin/bun run format:check:*)",
+      "Bash(/Users/mishig/.bun/bin/bun run format:*)"
     ]
   }
 }
