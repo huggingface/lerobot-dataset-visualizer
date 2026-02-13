@@ -13,6 +13,17 @@ import {
 } from "recharts";
 import type { ChartDataGroup } from "@/types";
 
+// Recharts event payload types
+interface ChartPayload {
+  timestamp: number;
+  [key: string]: number | Record<string, number>;
+}
+
+interface ChartEventData {
+  activePayload?: Array<{ payload: ChartPayload }>;
+  activeLabel?: string | number;
+}
+
 type DataGraphProps = {
   data: ChartDataGroup[];
   onChartsReady?: () => void;
@@ -146,8 +157,8 @@ const SingleDataGraph = React.memo(
       setHoveredTime(null);
     };
 
-    const handleClick = (data: any) => {
-      if (data && data.activePayload && data.activePayload.length) {
+    const handleClick = (data: ChartEventData) => {
+      if (data?.activePayload?.[0]) {
         const timeValue = data.activePayload[0].payload.timestamp;
         setCurrentTime(timeValue);
       }
@@ -302,11 +313,16 @@ const SingleDataGraph = React.memo(
               syncId="episode-sync"
               margin={{ top: 24, right: 16, left: 0, bottom: 16 }}
               onClick={handleClick}
-              onMouseMove={(state: any) => {
+              onMouseMove={(state: ChartEventData) => {
+                const timestamp = state?.activePayload?.[0]?.payload?.timestamp;
+                const label = state?.activeLabel;
                 setHoveredTime(
-                  state?.activePayload?.[0]?.payload?.timestamp ??
-                    state?.activeLabel ??
-                    null,
+                  timestamp ??
+                    (typeof label === "number"
+                      ? label
+                      : typeof label === "string"
+                        ? Number(label)
+                        : null),
                 );
               }}
               onMouseLeave={handleMouseLeave}
