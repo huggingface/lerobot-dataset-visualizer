@@ -11,9 +11,10 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
+import type { ChartDataGroup } from "@/types";
 
 type DataGraphProps = {
-  data: Array<Array<Record<string, number>>>;
+  data: ChartDataGroup[];
   onChartsReady?: () => void;
 };
 
@@ -27,13 +28,13 @@ export const DataRecharts = React.memo(
     // Shared hoveredTime for all graphs
     const [hoveredTime, setHoveredTime] = useState<number | null>(null);
 
-    if (!Array.isArray(data) || data.length === 0) return null;
-
     useEffect(() => {
       if (typeof onChartsReady === "function") {
         onChartsReady();
       }
     }, [onChartsReady]);
+
+    if (!Array.isArray(data) || data.length === 0) return null;
 
     return (
       <div className="grid md:grid-cols-2 grid-cols-1 gap-4">
@@ -50,19 +51,21 @@ export const DataRecharts = React.memo(
   },
 );
 
-
 const SingleDataGraph = React.memo(
   ({
     data,
     hoveredTime,
     setHoveredTime,
   }: {
-    data: Array<Record<string, number>>;
+    data: ChartDataGroup;
     hoveredTime: number | null;
     setHoveredTime: (t: number | null) => void;
   }) => {
     const { currentTime, setCurrentTime } = useTime();
-    function flattenRow(row: Record<string, any>, prefix = ""): Record<string, number> {
+    function flattenRow(
+      row: Record<string, number | Record<string, number>>,
+      prefix = "",
+    ): Record<string, number> {
       const result: Record<string, number> = {};
       for (const [key, value] of Object.entries(row)) {
         // Special case: if this is a group value that is a primitive, assign to prefix.key
@@ -72,20 +75,30 @@ const SingleDataGraph = React.memo(
           } else {
             result[key] = value;
           }
-        } else if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+        } else if (
+          value !== null &&
+          typeof value === "object" &&
+          !Array.isArray(value)
+        ) {
           // If it's an object, recurse
-          Object.assign(result, flattenRow(value, prefix ? `${prefix}${SERIES_NAME_DELIMITER}${key}` : key));
+          Object.assign(
+            result,
+            flattenRow(
+              value,
+              prefix ? `${prefix}${SERIES_NAME_DELIMITER}${key}` : key,
+            ),
+          );
         }
       }
       // Always keep timestamp at top level if present
-      if ("timestamp" in row) {
-        result["timestamp"] = row["timestamp"];
+      if ("timestamp" in row && typeof row.timestamp === "number") {
+        result.timestamp = row.timestamp;
       }
       return result;
     }
 
     // Flatten all rows for recharts
-    const chartData = useMemo(() => data.map(row => flattenRow(row)), [data]);
+    const chartData = useMemo(() => data.map((row) => flattenRow(row)), [data]);
     const [dataKeys, setDataKeys] = useState<string[]>([]);
     const [visibleKeys, setVisibleKeys] = useState<string[]>([]);
 
@@ -115,7 +128,8 @@ const SingleDataGraph = React.memo(
     const allGroups = [...Object.keys(groups), ...singles];
     const groupColorMap: Record<string, string> = {};
     allGroups.forEach((group, idx) => {
-      groupColorMap[group] = `hsl(${idx * (360 / allGroups.length)}, 100%, 50%)`;
+      groupColorMap[group] =
+        `hsl(${idx * (360 / allGroups.length)}, 100%, 50%)`;
     });
 
     // Find the closest data point to the current time for highlighting
@@ -164,25 +178,33 @@ const SingleDataGraph = React.memo(
       const allGroups = [...Object.keys(groups), ...singles];
       const groupColorMap: Record<string, string> = {};
       allGroups.forEach((group, idx) => {
-        groupColorMap[group] = `hsl(${idx * (360 / allGroups.length)}, 100%, 50%)`;
+        groupColorMap[group] =
+          `hsl(${idx * (360 / allGroups.length)}, 100%, 50%)`;
       });
 
-      const isGroupChecked = (group: string) => groups[group].every(k => visibleKeys.includes(k));
-      const isGroupIndeterminate = (group: string) => groups[group].some(k => visibleKeys.includes(k)) && !isGroupChecked(group);
+      const isGroupChecked = (group: string) =>
+        groups[group].every((k) => visibleKeys.includes(k));
+      const isGroupIndeterminate = (group: string) =>
+        groups[group].some((k) => visibleKeys.includes(k)) &&
+        !isGroupChecked(group);
 
       const handleGroupCheckboxChange = (group: string) => {
         if (isGroupChecked(group)) {
           // Uncheck all children
-          setVisibleKeys((prev) => prev.filter(k => !groups[group].includes(k)));
+          setVisibleKeys((prev) =>
+            prev.filter((k) => !groups[group].includes(k)),
+          );
         } else {
           // Check all children
-          setVisibleKeys((prev) => Array.from(new Set([...prev, ...groups[group]])));
+          setVisibleKeys((prev) =>
+            Array.from(new Set([...prev, ...groups[group]])),
+          );
         }
       };
 
       const handleCheckboxChange = (key: string) => {
         setVisibleKeys((prev) =>
-          prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+          prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
         );
       };
 
@@ -197,7 +219,9 @@ const SingleDataGraph = React.memo(
                   <input
                     type="checkbox"
                     checked={isGroupChecked(group)}
-                    ref={el => { if (el) el.indeterminate = isGroupIndeterminate(group); }}
+                    ref={(el) => {
+                      if (el) el.indeterminate = isGroupIndeterminate(group);
+                    }}
                     onChange={() => handleGroupCheckboxChange(group)}
                     className="size-3.5 mt-1"
                     style={{ accentColor: color }}
@@ -206,7 +230,10 @@ const SingleDataGraph = React.memo(
                 </label>
                 <div className="pl-7 flex flex-col gap-1 mt-1">
                   {children.map((key) => (
-                    <label key={key} className="flex gap-2 cursor-pointer select-none">
+                    <label
+                      key={key}
+                      className="flex gap-2 cursor-pointer select-none"
+                    >
                       <input
                         type="checkbox"
                         checked={visibleKeys.includes(key)}
@@ -214,9 +241,17 @@ const SingleDataGraph = React.memo(
                         className="size-3.5 mt-1"
                         style={{ accentColor: color }}
                       />
-                      <span className={`text-xs break-all w-36 ${visibleKeys.includes(key) ? "text-white" : "text-gray-400"}`}>{key.slice(group.length + 1)}</span>
-                      <span className={`text-xs font-mono ml-auto ${visibleKeys.includes(key) ? "text-orange-300" : "text-gray-500"}`}>
-                        {typeof currentData[key] === "number" ? currentData[key].toFixed(2) : "--"}
+                      <span
+                        className={`text-xs break-all w-36 ${visibleKeys.includes(key) ? "text-white" : "text-gray-400"}`}
+                      >
+                        {key.slice(group.length + 1)}
+                      </span>
+                      <span
+                        className={`text-xs font-mono ml-auto ${visibleKeys.includes(key) ? "text-orange-300" : "text-gray-500"}`}
+                      >
+                        {typeof currentData[key] === "number"
+                          ? currentData[key].toFixed(2)
+                          : "--"}
                       </span>
                     </label>
                   ))}
@@ -228,7 +263,10 @@ const SingleDataGraph = React.memo(
           {singles.map((key) => {
             const color = groupColorMap[key];
             return (
-              <label key={key} className="flex gap-2 cursor-pointer select-none">
+              <label
+                key={key}
+                className="flex gap-2 cursor-pointer select-none"
+              >
                 <input
                   type="checkbox"
                   checked={visibleKeys.includes(key)}
@@ -236,9 +274,17 @@ const SingleDataGraph = React.memo(
                   className="size-3.5 mt-1"
                   style={{ accentColor: color }}
                 />
-                <span className={`text-sm break-all w-40 ${visibleKeys.includes(key) ? "text-white" : "text-gray-400"}`}>{key}</span>
-                <span className={`text-sm font-mono ml-auto ${visibleKeys.includes(key) ? "text-orange-300" : "text-gray-500"}`}>
-                  {typeof currentData[key] === "number" ? currentData[key].toFixed(2) : "--"}
+                <span
+                  className={`text-sm break-all w-40 ${visibleKeys.includes(key) ? "text-white" : "text-gray-400"}`}
+                >
+                  {key}
+                </span>
+                <span
+                  className={`text-sm font-mono ml-auto ${visibleKeys.includes(key) ? "text-orange-300" : "text-gray-500"}`}
+                >
+                  {typeof currentData[key] === "number"
+                    ? currentData[key].toFixed(2)
+                    : "--"}
                 </span>
               </label>
             );
@@ -307,7 +353,9 @@ const SingleDataGraph = React.memo(
               {/* Render lines for visible dataKeys only */}
               {dataKeys.map((key) => {
                 // Use group color for all keys in a group
-                const group = key.includes(SERIES_NAME_DELIMITER) ? key.split(SERIES_NAME_DELIMITER)[0] : key;
+                const group = key.includes(SERIES_NAME_DELIMITER)
+                  ? key.split(SERIES_NAME_DELIMITER)[0]
+                  : key;
                 const color = groupColorMap[group];
                 let strokeDasharray: string | undefined = undefined;
                 if (groups[group] && groups[group].length > 1) {

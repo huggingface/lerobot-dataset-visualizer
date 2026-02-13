@@ -3,15 +3,7 @@
 import React, { useEffect, useRef } from "react";
 import { useTime } from "../context/time-context";
 import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
-
-type VideoInfo = {
-  filename: string;
-  url: string;
-  isSegmented?: boolean;
-  segmentStart?: number;
-  segmentEnd?: number;
-  segmentDuration?: number;
-};
+import type { VideoInfo } from "@/types";
 
 type VideoPlayerProps = {
   videosInfo: VideoInfo[];
@@ -28,9 +20,9 @@ export const SimpleVideosPlayer = ({
   const [enlargedVideo, setEnlargedVideo] = React.useState<string | null>(null);
   const [showHiddenMenu, setShowHiddenMenu] = React.useState(false);
   const [videosReady, setVideosReady] = React.useState(false);
-  
+
   const firstVisibleIdx = videosInfo.findIndex(
-    (video) => !hiddenVideos.includes(video.filename)
+    (video) => !hiddenVideos.includes(video.filename),
   );
 
   // Initialize video refs array
@@ -41,7 +33,7 @@ export const SimpleVideosPlayer = ({
   // Handle videos ready
   useEffect(() => {
     let readyCount = 0;
-    
+
     const checkReady = () => {
       readyCount++;
       if (readyCount === videosInfo.length && onVideosReady) {
@@ -54,13 +46,13 @@ export const SimpleVideosPlayer = ({
     videoRefs.current.forEach((video, index) => {
       if (video) {
         const info = videosInfo[index];
-        
+
         // Setup segment boundaries
         if (info.isSegmented) {
           const handleTimeUpdate = () => {
             const segmentEnd = info.segmentEnd || video.duration;
             const segmentStart = info.segmentStart || 0;
-            
+
             if (video.currentTime >= segmentEnd - 0.05) {
               video.currentTime = segmentStart;
               // Also update the global time to reset to start
@@ -69,19 +61,19 @@ export const SimpleVideosPlayer = ({
               }
             }
           };
-          
+
           const handleLoadedData = () => {
             video.currentTime = info.segmentStart || 0;
             checkReady();
           };
-          
-          video.addEventListener('timeupdate', handleTimeUpdate);
-          video.addEventListener('loadeddata', handleLoadedData);
-          
+
+          video.addEventListener("timeupdate", handleTimeUpdate);
+          video.addEventListener("loadeddata", handleLoadedData);
+
           // Store cleanup
           (video as any)._segmentHandlers = () => {
-            video.removeEventListener('timeupdate', handleTimeUpdate);
-            video.removeEventListener('loadeddata', handleLoadedData);
+            video.removeEventListener("timeupdate", handleTimeUpdate);
+            video.removeEventListener("loadeddata", handleLoadedData);
           };
         } else {
           // For non-segmented videos, handle end of video
@@ -91,13 +83,13 @@ export const SimpleVideosPlayer = ({
               setCurrentTime(0);
             }
           };
-          
-          video.addEventListener('ended', handleEnded);
-          video.addEventListener('canplaythrough', checkReady, { once: true });
-          
+
+          video.addEventListener("ended", handleEnded);
+          video.addEventListener("canplaythrough", checkReady, { once: true });
+
           // Store cleanup
           (video as any)._segmentHandlers = () => {
-            video.removeEventListener('ended', handleEnded);
+            video.removeEventListener("ended", handleEnded);
           };
         }
       }
@@ -110,17 +102,23 @@ export const SimpleVideosPlayer = ({
         }
       });
     };
-  }, [videosInfo, onVideosReady, setIsPlaying, firstVisibleIdx, setCurrentTime]);
+  }, [
+    videosInfo,
+    onVideosReady,
+    setIsPlaying,
+    firstVisibleIdx,
+    setCurrentTime,
+  ]);
 
   // Handle play/pause
   useEffect(() => {
     if (!videosReady) return;
-    
+
     videoRefs.current.forEach((video, idx) => {
       if (video && !hiddenVideos.includes(videosInfo[idx].filename)) {
         if (isPlaying) {
-          video.play().catch(e => {
-            if (e.name !== 'AbortError') {
+          video.play().catch((e) => {
+            if (e.name !== "AbortError") {
               console.error("Error playing video");
             }
           });
@@ -134,16 +132,16 @@ export const SimpleVideosPlayer = ({
   // Sync video times
   useEffect(() => {
     if (!videosReady) return;
-    
+
     videoRefs.current.forEach((video, index) => {
       if (video && !hiddenVideos.includes(videosInfo[index].filename)) {
         const info = videosInfo[index];
         let targetTime = currentTime;
-        
+
         if (info.isSegmented) {
           targetTime = (info.segmentStart || 0) + currentTime;
         }
-        
+
         if (Math.abs(video.currentTime - targetTime) > 0.2) {
           video.currentTime = targetTime;
         }
@@ -154,9 +152,9 @@ export const SimpleVideosPlayer = ({
   // Handle time update from first visible video
   const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.target as HTMLVideoElement;
-    const videoIndex = videoRefs.current.findIndex(ref => ref === video);
+    const videoIndex = videoRefs.current.findIndex((ref) => ref === video);
     const info = videosInfo[videoIndex];
-    
+
     if (info) {
       let globalTime = video.currentTime;
       if (info.isSegmented) {
@@ -171,7 +169,7 @@ export const SimpleVideosPlayer = ({
     if (info.isSegmented) {
       const segmentStart = info.segmentStart || 0;
       const segmentEnd = info.segmentEnd || video.duration;
-      
+
       if (video.currentTime < segmentStart || video.currentTime >= segmentEnd) {
         video.currentTime = segmentStart;
       }
@@ -199,7 +197,11 @@ export const SimpleVideosPlayer = ({
                 <button
                   key={filename}
                   className="block w-full text-left px-2 py-1 rounded hover:bg-slate-700 text-slate-100"
-                  onClick={() => setHiddenVideos(prev => prev.filter(v => v !== filename))}
+                  onClick={() =>
+                    setHiddenVideos((prev) =>
+                      prev.filter((v) => v !== filename),
+                    )
+                  }
                 >
                   {filename}
                 </button>
@@ -213,10 +215,10 @@ export const SimpleVideosPlayer = ({
       <div className="flex flex-wrap gap-x-2 gap-y-6">
         {videosInfo.map((info, idx) => {
           if (hiddenVideos.includes(info.filename)) return null;
-          
+
           const isEnlarged = enlargedVideo === info.filename;
           const isFirstVisible = idx === firstVisibleIdx;
-          
+
           return (
             <div
               key={info.filename}
@@ -232,22 +234,32 @@ export const SimpleVideosPlayer = ({
                   <button
                     title={isEnlarged ? "Minimize" : "Enlarge"}
                     className="ml-2 p-1 hover:bg-slate-700 rounded"
-                    onClick={() => setEnlargedVideo(isEnlarged ? null : info.filename)}
+                    onClick={() =>
+                      setEnlargedVideo(isEnlarged ? null : info.filename)
+                    }
                   >
                     {isEnlarged ? <FaCompress /> : <FaExpand />}
                   </button>
                   <button
                     title="Hide Video"
                     className="ml-1 p-1 hover:bg-slate-700 rounded"
-                    onClick={() => setHiddenVideos(prev => [...prev, info.filename])}
-                    disabled={videosInfo.filter(v => !hiddenVideos.includes(v.filename)).length === 1}
+                    onClick={() =>
+                      setHiddenVideos((prev) => [...prev, info.filename])
+                    }
+                    disabled={
+                      videosInfo.filter(
+                        (v) => !hiddenVideos.includes(v.filename),
+                      ).length === 1
+                    }
                   >
                     <FaTimes />
                   </button>
                 </span>
               </p>
               <video
-                ref={el => videoRefs.current[idx] = el}
+                ref={(el) => {
+                  videoRefs.current[idx] = el;
+                }}
                 className={`w-full object-contain ${
                   isEnlarged ? "max-h-[90vh] max-w-[90vw]" : ""
                 }`}

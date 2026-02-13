@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import React from "react";
+import type { DatasetInfo } from "@/types";
 
 interface SidebarProps {
-  datasetInfo: any;
-  paginatedEpisodes: any[];
-  episodeId: any;
+  datasetInfo: DatasetInfo;
+  paginatedEpisodes: number[];
+  episodeId: number;
   totalPages: number;
   currentPage: number;
   prevPage: () => void;

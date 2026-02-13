@@ -10,6 +10,7 @@ import { TimeProvider, useTime } from "@/context/time-context";
 import Sidebar from "@/components/side-nav";
 import Loading from "@/components/loading-component";
 import { getAdjacentEpisodesVideoInfo } from "./fetch-data";
+import type { EpisodeData } from "@/types";
 
 export default function EpisodeViewer({
   data,
@@ -17,7 +18,7 @@ export default function EpisodeViewer({
   org,
   dataset,
 }: {
-  data?: any;
+  data?: EpisodeData;
   error?: string;
   org?: string;
   dataset?: string;
@@ -32,6 +33,11 @@ export default function EpisodeViewer({
       </div>
     );
   }
+
+  if (!data) {
+    return null;
+  }
+
   return (
     <TimeProvider duration={data.duration}>
       <EpisodeViewerInner data={data} org={org} dataset={dataset} />
@@ -39,7 +45,15 @@ export default function EpisodeViewer({
   );
 }
 
-function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; dataset?: string; }) {
+function EpisodeViewerInner({
+  data,
+  org,
+  dataset,
+}: {
+  data: EpisodeData;
+  org?: string;
+  dataset?: string;
+}) {
   const {
     datasetInfo,
     episodeId,
@@ -68,11 +82,11 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
     (currentPage - 1) * pageSize,
     currentPage * pageSize,
   );
-  
+
   // Preload adjacent episodes' videos
   useEffect(() => {
     if (!org || !dataset) return;
-    
+
     const preloadAdjacent = async () => {
       try {
         await getAdjacentEpisodesVideoInfo(org, dataset, episodeId, 2);
@@ -81,7 +95,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
         // Skip preloading on error
       }
     };
-    
+
     preloadAdjacent();
   }, [org, dataset, episodeId]);
 
@@ -232,10 +246,12 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
         {task && (
           <div className="mb-6 p-4 bg-slate-800 rounded-lg border border-slate-600">
             <p className="text-slate-300">
-              <span className="font-semibold text-slate-100">Language Instruction:</span>
+              <span className="font-semibold text-slate-100">
+                Language Instruction:
+              </span>
             </p>
             <div className="mt-2 text-slate-300">
-              {task.split('\n').map((instruction, index) => (
+              {task.split("\n").map((instruction, index) => (
                 <p key={index} className="mb-1">
                   {instruction}
                 </p>
@@ -250,7 +266,6 @@ function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; d
             data={chartDataGroups}
             onChartsReady={() => setChartsReady(true)}
           />
-
         </div>
 
         <PlaybackBar />
