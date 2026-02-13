@@ -178,7 +178,7 @@ export const VideosPlayer = ({
     if (video && video.duration) {
       const videoIndex = videoRefs.current.findIndex(ref => ref === video);
       const videoInfo = videosInfo[videoIndex];
-      
+
       if (videoInfo?.isSegmented) {
         const segmentStart = videoInfo.segmentStart || 0;
         const globalTime = Math.max(0, video.currentTime - segmentStart);
@@ -197,18 +197,20 @@ export const VideosPlayer = ({
     const onCanPlayThrough = (videoIndex: number) => {
       const video = videoRefs.current[videoIndex];
       const videoInfo = videosInfo[videoIndex];
-      
+
       // Setup video segmentation for v3.0 chunked videos
       if (video && videoInfo?.isSegmented) {
         const segmentStart = videoInfo.segmentStart || 0;
         const segmentEnd = videoInfo.segmentEnd || video.duration || 0;
-        
-        
+
         // Set initial time to segment start if not already set
-        if (video.currentTime < segmentStart || video.currentTime > segmentEnd) {
+        if (
+          video.currentTime < segmentStart ||
+          video.currentTime > segmentEnd
+        ) {
           video.currentTime = segmentStart;
         }
-        
+
         // Add event listener to handle segment boundaries
         const handleTimeUpdate = () => {
           if (video.currentTime > segmentEnd) {
@@ -225,7 +227,7 @@ export const VideosPlayer = ({
           video.removeEventListener('timeupdate', handleTimeUpdate);
         });
       }
-      
+
       videosReadyCount += 1;
       if (videosReadyCount === videosInfo.length) {
         if (typeof onVideosReady === "function") {

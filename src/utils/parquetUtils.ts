@@ -36,19 +36,19 @@ export async function fetchJson<T>(url: string): Promise<T> {
 
 export function formatStringWithVars(
   format: string,
-  vars: Record<string, string>,
+  vars: Record<string, string | number>,
 ): string {
-  return format.replace(/{(\w+)(?::\d+d)?}/g, (_, key) => vars[key]);
+  return format.replace(/{(\w+)(?::\d+d)?}/g, (_, key) => String(vars[key]));
 }
 
 // Fetch and parse the Parquet file
 export async function fetchParquetFile(url: string): Promise<ArrayBuffer> {
   const res = await fetch(url);
-  
+
   if (!res.ok) {
     throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
   }
-  
+
   return res.arrayBuffer();
 }
 
@@ -64,7 +64,7 @@ export async function readParquetColumn(
         columns: columns.length > 0 ? columns : undefined,
         onComplete: (data: unknown[][]) => {
           resolve(data);
-        }
+        },
       });
     } catch (error) {
       reject(error);
@@ -94,12 +94,12 @@ export function getRows(currentFrameData: unknown[], columns: ColumnInfo[]) {
     return [];
   }
 
-  const rows = [];
+  const rows: Array<Array<{ isNull: true } | unknown>> = [];
   const nRows = Math.max(...columns.map((column) => column.value.length));
   let rowIndex = 0;
 
   while (rowIndex < nRows) {
-    const row = [];
+    const row: Array<{ isNull: true } | unknown> = [];
     // number of states may NOT match number of actions. In this case, we null-pad the 2D array
     const nullCell = { isNull: true };
     // row consists of [state value, action value]

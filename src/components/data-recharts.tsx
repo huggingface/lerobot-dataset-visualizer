@@ -54,13 +54,13 @@ export const DataRecharts = React.memo(
     const [hoveredTime, setHoveredTime] = useState<number | null>(null);
     const [expanded, setExpanded] = useState(false);
 
-    if (!Array.isArray(data) || data.length === 0) return null;
-
     useEffect(() => {
       if (typeof onChartsReady === "function") onChartsReady();
     }, [onChartsReady]);
 
     const combinedData = useMemo(() => expanded ? mergeGroups(data) : [], [data, expanded]);
+
+    if (!Array.isArray(data) || data.length === 0) return null;
 
     return (
       <div>
@@ -101,7 +101,6 @@ export const DataRecharts = React.memo(
   },
 );
 
-
 const SingleDataGraph = React.memo(
   ({
     data,
@@ -125,9 +124,19 @@ const SingleDataGraph = React.memo(
           } else {
             result[key] = value;
           }
-        } else if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+        } else if (
+          value !== null &&
+          typeof value === "object" &&
+          !Array.isArray(value)
+        ) {
           // If it's an object, recurse
-          Object.assign(result, flattenRow(value, prefix ? `${prefix}${SERIES_NAME_DELIMITER}${key}` : key));
+          Object.assign(
+            result,
+            flattenRow(
+              value,
+              prefix ? `${prefix}${SERIES_NAME_DELIMITER}${key}` : key,
+            ),
+          );
         }
       }
       if ("timestamp" in row && typeof row["timestamp"] === "number") {
@@ -137,7 +146,7 @@ const SingleDataGraph = React.memo(
     }
 
     // Flatten all rows for recharts
-    const chartData = useMemo(() => data.map(row => flattenRow(row)), [data]);
+    const chartData = useMemo(() => data.map((row) => flattenRow(row)), [data]);
     const [dataKeys, setDataKeys] = useState<string[]>([]);
     const [visibleKeys, setVisibleKeys] = useState<string[]>([]);
 
@@ -216,22 +225,29 @@ const SingleDataGraph = React.memo(
         groupColorMap[group] = CHART_COLORS[idx % CHART_COLORS.length];
       });
 
-      const isGroupChecked = (group: string) => groups[group].every(k => visibleKeys.includes(k));
-      const isGroupIndeterminate = (group: string) => groups[group].some(k => visibleKeys.includes(k)) && !isGroupChecked(group);
+      const isGroupChecked = (group: string) =>
+        groups[group].every((k) => visibleKeys.includes(k));
+      const isGroupIndeterminate = (group: string) =>
+        groups[group].some((k) => visibleKeys.includes(k)) &&
+        !isGroupChecked(group);
 
       const handleGroupCheckboxChange = (group: string) => {
         if (isGroupChecked(group)) {
           // Uncheck all children
-          setVisibleKeys((prev) => prev.filter(k => !groups[group].includes(k)));
+          setVisibleKeys((prev) =>
+            prev.filter((k) => !groups[group].includes(k)),
+          );
         } else {
           // Check all children
-          setVisibleKeys((prev) => Array.from(new Set([...prev, ...groups[group]])));
+          setVisibleKeys((prev) =>
+            Array.from(new Set([...prev, ...groups[group]])),
+          );
         }
       };
 
       const handleCheckboxChange = (key: string) => {
         setVisibleKeys((prev) =>
-          prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+          prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
         );
       };
 
@@ -245,7 +261,9 @@ const SingleDataGraph = React.memo(
                   <input
                     type="checkbox"
                     checked={isGroupChecked(group)}
-                    ref={el => { if (el) el.indeterminate = isGroupIndeterminate(group); }}
+                    ref={(el) => {
+                      if (el) el.indeterminate = isGroupIndeterminate(group);
+                    }}
                     onChange={() => handleGroupCheckboxChange(group)}
                     className="size-3"
                     style={{ accentColor: color }}

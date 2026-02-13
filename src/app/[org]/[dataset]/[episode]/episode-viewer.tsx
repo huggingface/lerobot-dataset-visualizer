@@ -51,6 +51,11 @@ export default function EpisodeViewer({
       </div>
     );
   }
+
+  if (!data) {
+    return null;
+  }
+
   return (
     <TimeProvider duration={data!.duration}>
       <FlaggedEpisodesProvider>
@@ -197,7 +202,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
             link.href = v.url;
             document.head.appendChild(link);
             links.push(link);
-      }
+          }
         }
       })
       .catch(() => {});

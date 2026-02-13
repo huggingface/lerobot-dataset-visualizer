@@ -2,7 +2,8 @@
  * Utility functions for checking dataset version compatibility
  */
 
-const DATASET_URL = process.env.DATASET_URL || "https://huggingface.co/datasets";
+const DATASET_URL =
+  process.env.DATASET_URL || "https://huggingface.co/datasets";
 
 /**
  * Dataset information structure from info.json
@@ -44,17 +45,18 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
 
   try {
     const testUrl = `${DATASET_URL}/${repoId}/resolve/main/meta/info.json`;
-    
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     
     const response = await fetch(testUrl, { 
       method: "GET",
-      signal: controller.signal
+      cache: "no-store",
+      signal: controller.signal,
     });
-    
+
     clearTimeout(timeoutId);
-    
+
     if (!response.ok) {
       throw new Error(`Failed to fetch dataset info: ${response.status}`);
     }
@@ -62,7 +64,9 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
     const data = await response.json();
     
     if (!data.features) {
-      throw new Error("Dataset info.json does not have the expected features structure");
+      throw new Error(
+        "Dataset info.json does not have the expected features structure",
+      );
     }
     
     datasetInfoCache.set(repoId, { data: data as DatasetInfo, expiry: Date.now() + CACHE_TTL_MS });
@@ -73,7 +77,7 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
     }
     throw new Error(
       `Dataset ${repoId} is not compatible with this visualizer. ` +
-      "Failed to read dataset information from the main revision."
+        "Failed to read dataset information from the main revision.",
     );
   }
 }
@@ -105,7 +109,10 @@ export async function getDatasetVersion(repoId: string): Promise<string> {
   return version;
 }
 
-export function buildVersionedUrl(repoId: string, version: string, path: string): string {
+export function buildVersionedUrl(
+  repoId: string,
+  version: string,
+  path: string,
+): string {
   return `${DATASET_URL}/${repoId}/resolve/main/${path}`;
 }
-
