@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import {
   LineChart,
   Line,
@@ -10,9 +11,98 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
-import type { CrossEpisodeVarianceData, LowMovementEpisode, AggVelocityStat, AggAutocorrelation, SpeedDistEntry, JerkyEpisode, TrajectoryClustering, AggAlignment } from "@/app/[org]/[dataset]/[episode]/fetch-data";
+import type { CrossEpisodeVarianceData, AggVelocityStat, AggAutocorrelation, SpeedDistEntry, JerkyEpisode, TrajectoryClustering, AggAlignment } from "@/app/[org]/[dataset]/[episode]/fetch-data";
+import { useFlaggedEpisodes } from "@/context/flagged-episodes-context";
 
 const DELIMITER = " | ";
+
+const FullscreenCtx = React.createContext(false);
+const useIsFullscreen = () => React.useContext(FullscreenCtx);
+
+function InfoToggle({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button onClick={() => setOpen(v => !v)} className="p-0.5 rounded-full text-slate-500 hover:text-slate-300 transition-colors shrink-0" title="Toggle description">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+      </button>
+      {open && <div className="mt-1">{children}</div>}
+    </>
+  );
+}
+
+function FullscreenWrapper({ children }: { children: React.ReactNode }) {
+  const [fs, setFs] = useState(false);
+
+  useEffect(() => {
+    if (!fs) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFs(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [fs]);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setFs(v => !v)}
+        className="absolute top-3 right-3 z-10 p-1.5 rounded bg-slate-700/60 hover:bg-slate-600 text-slate-400 hover:text-slate-200 transition-colors backdrop-blur-sm"
+        title={fs ? "Exit fullscreen" : "Fullscreen"}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          {fs ? (
+            <><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></>
+          ) : (
+            <><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></>
+          )}
+        </svg>
+      </button>
+      {fs ? (
+        <div className="fixed inset-0 z-50 bg-slate-950/95 overflow-auto p-6">
+          <button
+            onClick={() => setFs(false)}
+            className="fixed top-4 right-4 z-50 p-2 rounded bg-slate-700/80 hover:bg-slate-600 text-slate-300 hover:text-white transition-colors"
+            title="Exit fullscreen (Esc)"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>
+            </svg>
+          </button>
+          <div className="max-w-7xl mx-auto"><FullscreenCtx.Provider value={true}>{children}</FullscreenCtx.Provider></div>
+        </div>
+      ) : children}
+    </div>
+  );
+}
+
+function FlagBtn({ id }: { id: number }) {
+  const { has, toggle } = useFlaggedEpisodes();
+  const flagged = has(id);
+  return (
+    <button onClick={() => toggle(id)} title={flagged ? "Unflag episode" : "Flag for review"}
+      className={`p-0.5 rounded transition-colors ${flagged ? "text-orange-400" : "text-slate-600 hover:text-slate-400"}`}>
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill={flagged ? "currentColor" : "none"}
+        stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" />
+      </svg>
+    </button>
+  );
+}
+
+function FlagAllBtn({ ids, label }: { ids: number[]; label?: string }) {
+  const { addMany } = useFlaggedEpisodes();
+  return (
+    <button onClick={() => addMany(ids)}
+      className="text-xs text-slate-500 hover:text-orange-400 transition-colors flex items-center gap-1">
+      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" />
+      </svg>
+      {label ?? "Flag all"}
+    </button>
+  );
+}
 const COLORS = [
   "#f97316", "#3b82f6", "#22c55e", "#ef4444", "#a855f7",
   "#eab308", "#06b6d4", "#ec4899", "#14b8a6", "#f59e0b",
@@ -60,6 +150,7 @@ function findDecorrelationLag(acf: number[], threshold = 0.5): number | null {
 }
 
 function AutocorrelationSection({ data, fps, agg, numEpisodes }: { data: Record<string, number>[]; fps: number; agg?: AggAutocorrelation | null; numEpisodes?: number }) {
+  const isFs = useIsFullscreen();
   const actionKeys = useMemo(() => (data.length > 0 ? getActionKeys(data[0]) : []), [data]);
   const maxLag = useMemo(() => Math.min(Math.floor(data.length / 2), 100), [data]);
 
@@ -85,15 +176,29 @@ function AutocorrelationSection({ data, fps, agg, numEpisodes }: { data: Record<
   }, [data, actionKeys, maxLag, fps, agg]);
 
   const { chartData, suggestedChunk, shortKeys } = agg ?? fallback ?? { chartData: [], suggestedChunk: null, shortKeys: [] };
-  const numEpisodesLabel = agg ? ` (${numEpisodes} episodes sampled)` : " (current episode)";
+  const isAgg = !!agg;
+  const numEpisodesLabel = isAgg ? ` (${numEpisodes} episodes sampled)` : " (current episode)";
+
+  const yDomain = useMemo(() => {
+    if (chartData.length === 0 || shortKeys.length === 0) return [-0.2, 1] as [number, number];
+    let min = Infinity;
+    for (const row of chartData) for (const k of shortKeys) {
+      const v = row[k];
+      if (typeof v === "number" && v < min) min = v;
+    }
+    const lo = Math.floor(Math.min(min, 0) * 10) / 10;
+    return [lo, 1] as [number, number];
+  }, [chartData, shortKeys]);
 
   if (shortKeys.length === 0) return <p className="text-slate-500 italic">No action columns found.</p>;
 
   return (
     <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
       <div>
+        <div className="flex items-center gap-2">
         <h3 className="text-sm font-semibold text-slate-200">Action Autocorrelation<span className="text-xs text-slate-500 ml-2 font-normal">{numEpisodesLabel}</span></h3>
-        <p className="text-xs text-slate-400 mt-1">
+          <InfoToggle>
+            <p className="text-xs text-slate-400">
           Shows how correlated each action dimension is with itself over increasing time lags.
           Where autocorrelation drops below 0.5 suggests a <span className="text-orange-400 font-medium">natural action chunk boundary</span> — actions
           beyond this lag are essentially independent, so executing them open-loop offers diminishing returns.
@@ -103,6 +208,8 @@ function AutocorrelationSection({ data, fps, agg, numEpisodes }: { data: Record<
             (Zhang et al., 2025 — arXiv:2507.09061, Theorem 1).
           </span>
         </p>
+          </InfoToggle>
+        </div>
       </div>
 
       {suggestedChunk && (
@@ -117,16 +224,16 @@ function AutocorrelationSection({ data, fps, agg, numEpisodes }: { data: Record<
         </div>
       )}
 
-      <div className="h-64">
+      <div className={isFs ? "h-[500px]" : "h-64"}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 16 }}>
+          <LineChart key={isAgg ? "agg" : "ep"} data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 16 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
             <XAxis
               dataKey="lag"
               stroke="#94a3b8"
-              label={{ value: "Lag (steps)", position: "insideBottom", offset: -8, fill: "#94a3b8", fontSize: 11 }}
+              label={{ value: "Lag (steps)", position: "insideBottom", offset: -8, fill: "#94a3b8", fontSize: 13 }}
             />
-            <YAxis stroke="#94a3b8" domain={[-0.2, 1]} />
+            <YAxis stroke="#94a3b8" domain={yDomain} />
             <Tooltip
               contentStyle={{ background: "#1e293b", border: "1px solid #475569", borderRadius: 6 }}
               labelFormatter={(v) => `Lag ${v} (${(Number(v) / fps).toFixed(2)}s)`}
@@ -161,7 +268,7 @@ function AutocorrelationSection({ data, fps, agg, numEpisodes }: { data: Record<
         {shortKeys.map((name, i) => (
           <div key={name} className="flex items-center gap-1.5">
             <span className="w-3 h-[3px] rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
-            <span className="text-[11px] text-slate-400">{name}</span>
+            <span className="text-xs text-slate-400">{name}</span>
           </div>
         ))}
       </div>
@@ -244,8 +351,10 @@ function ActionVelocitySection({ data, agg, numEpisodes, jerkyEpisodes }: { data
   return (
     <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
       <div>
+        <div className="flex items-center gap-2">
         <h3 className="text-sm font-semibold text-slate-200">Action Velocity (Δa) — Smoothness Proxy<span className="text-xs text-slate-500 ml-2 font-normal">{isAgg ? `(${numEpisodes} episodes sampled)` : "(current episode)"}</span></h3>
-        <p className="text-xs text-slate-400 mt-1">
+          <InfoToggle>
+            <p className="text-xs text-slate-400">
           Shows the distribution of frame-to-frame action changes (Δa = a<sub>t+1</sub> − a<sub>t</sub>) for each dimension.
           A <span className="text-green-400">tight distribution around zero</span> means smooth, predictable control — the system
           is likely stable and benefits from longer action chunks.
@@ -257,6 +366,8 @@ function ActionVelocitySection({ data, agg, numEpisodes, jerkyEpisodes }: { data
             compounding error bounds (Assumptions 3.1, 4.1).
           </span>
         </p>
+          </InfoToggle>
+        </div>
       </div>
 
       {/* Per-dimension mini histograms + stats */}
@@ -265,8 +376,8 @@ function ActionVelocitySection({ data, agg, numEpisodes, jerkyEpisodes }: { data
           const barH = 28;
           return (
             <div key={s.name} className="bg-slate-900/50 rounded-md px-2.5 py-2 space-y-1">
-              <p className="text-[11px] font-medium text-slate-200 truncate" title={s.name}>{s.name}</p>
-              <div className="flex gap-2 text-[9px] text-slate-400 tabular-nums">
+              <p className="text-xs font-medium text-slate-200 truncate" title={s.name}>{s.name}</p>
+              <div className="flex gap-2 text-xs text-slate-400 tabular-nums">
                 <span>σ={s.std.toFixed(4)}</span>
                 <span>|Δ|<sub>max</sub>={s.maxAbs.toFixed(4)}</span>
               </div>
@@ -315,16 +426,20 @@ function JerkyEpisodesList({ episodes }: { episodes: JerkyEpisode[] }) {
         <p className="text-sm font-medium text-slate-200">
           Most Jerky Episodes <span className="text-xs text-slate-500 font-normal">sorted by mean |Δa|</span>
         </p>
-        {episodes.length > 15 && (
-          <button onClick={() => setShowAll(v => !v)} className="text-xs text-slate-400 hover:text-slate-200 transition-colors">
-            {showAll ? "Show top 15" : `Show all ${episodes.length}`}
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          <FlagAllBtn ids={display.map(e => e.episodeIndex)} />
+          {episodes.length > 15 && (
+            <button onClick={() => setShowAll(v => !v)} className="text-xs text-slate-400 hover:text-slate-200 transition-colors">
+              {showAll ? "Show top 15" : `Show all ${episodes.length}`}
+            </button>
+          )}
+        </div>
       </div>
       <div className="max-h-48 overflow-y-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="text-slate-500 border-b border-slate-700">
+              <th className="w-5 py-1" />
               <th className="text-left py-1 pr-3">Episode</th>
               <th className="text-right py-1">Mean |Δa|</th>
             </tr>
@@ -332,6 +447,7 @@ function JerkyEpisodesList({ episodes }: { episodes: JerkyEpisode[] }) {
           <tbody>
             {display.map(e => (
               <tr key={e.episodeIndex} className="border-b border-slate-800/40 text-slate-300">
+                <td className="py-1"><FlagBtn id={e.episodeIndex} /></td>
                 <td className="py-1 pr-3">ep {e.episodeIndex}</td>
                 <td className="py-1 text-right tabular-nums">{e.meanAbsDelta.toFixed(4)}</td>
               </tr>
@@ -370,19 +486,20 @@ function VarianceHeatmap({ data, loading }: { data: CrossEpisodeVarianceData | n
     );
   }
 
+  const isFs = useIsFullscreen();
   const { actionNames, timeBins, variance, numEpisodes } = data;
   const numDims = actionNames.length;
   const numBins = timeBins.length;
 
-  // Find global max variance for color scale
   const maxVar = Math.max(...variance.flat(), 1e-10);
 
-  // Heatmap dimensions
-  const cellW = Math.max(6, Math.min(14, Math.floor(560 / numBins)));
-  const cellH = Math.max(20, Math.min(36, Math.floor(300 / numDims)));
+  const baseW = isFs ? 1000 : 560;
+  const baseH = isFs ? 500 : 300;
+  const cellW = Math.max(6, Math.min(isFs ? 24 : 14, Math.floor(baseW / numBins)));
+  const cellH = Math.max(20, Math.min(isFs ? 56 : 36, Math.floor(baseH / numDims)));
   const labelW = 100;
-  const svgW = labelW + numBins * cellW + 60; // 60 for color bar
-  const svgH = numDims * cellH + 40; // 40 for x-axis label
+  const svgW = labelW + numBins * cellW + 60;
+  const svgH = numDims * cellH + 40;
 
   function varColor(v: number): string {
     const t = Math.sqrt(v / maxVar); // sqrt for better visual spread
@@ -396,11 +513,13 @@ function VarianceHeatmap({ data, loading }: { data: CrossEpisodeVarianceData | n
   return (
     <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
       <div>
+        <div className="flex items-center gap-2">
         <h3 className="text-sm font-semibold text-slate-200">
           Cross-Episode Action Variance
           <span className="text-xs text-slate-500 ml-2 font-normal">({numEpisodes} episodes sampled)</span>
         </h3>
-        <p className="text-xs text-slate-400 mt-1">
+          <InfoToggle>
+            <p className="text-xs text-slate-400">
           Shows how much each action dimension varies across episodes at each point in time (normalized 0–100%).
           <span className="text-orange-400"> High-variance regions</span> indicate multi-modal or inconsistent demonstrations —
           generative policies (diffusion, flow-matching) and action chunking help here by modeling multiple modes.
@@ -411,6 +530,8 @@ function VarianceHeatmap({ data, loading }: { data: CrossEpisodeVarianceData | n
             exploratory coverage needed to prevent compounding errors (Section 4).
           </span>
         </p>
+          </InfoToggle>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -514,48 +635,10 @@ function VarianceHeatmap({ data, loading }: { data: CrossEpisodeVarianceData | n
   );
 }
 
-// ─── Low-Movement Episodes ──────────────────────────────────────
-
-function LowMovementSection({ episodes }: { episodes: LowMovementEpisode[] }) {
-  if (episodes.length === 0) return null;
-
-  const maxMovement = Math.max(...episodes.map(e => e.totalMovement), 1e-10);
-
-  return (
-    <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-3">
-      <div>
-        <h3 className="text-sm font-semibold text-slate-200">Lowest-Movement Episodes</h3>
-        <p className="text-xs text-slate-400 mt-1">
-          Episodes with the lowest average action change per frame (mean ‖Δa<sub>t</sub>‖). Very low values may indicate the robot
-          was <span className="text-yellow-400">standing still</span> or the episode was recorded incorrectly.
-        </p>
-      </div>
-      <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
-        {episodes.map(ep => (
-          <div key={ep.episodeIndex} className="bg-slate-900/50 rounded-md px-3 py-2 flex items-center gap-3">
-            <span className="text-xs text-slate-300 font-medium shrink-0">ep {ep.episodeIndex}</span>
-            <div className="flex-1 min-w-0">
-              <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${Math.max(2, (ep.totalMovement / maxMovement) * 100)}%`,
-                    background: ep.totalMovement / maxMovement < 0.15 ? "#ef4444" : ep.totalMovement / maxMovement < 0.4 ? "#eab308" : "#22c55e",
-                  }}
-                />
-              </div>
-            </div>
-            <span className="text-[10px] text-slate-500 tabular-nums shrink-0">{ep.totalMovement.toFixed(2)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ─── Demonstrator Speed Variance ────────────────────────────────
 
 function SpeedVarianceSection({ distribution, numEpisodes }: { distribution: SpeedDistEntry[]; numEpisodes: number }) {
+  const isFs = useIsFullscreen();
   const { speeds, mean, std, cv, median, bins, lo, binW, maxBin, verdict } = useMemo(() => {
     const sp = distribution.map(d => d.speed).sort((a, b) => a - b);
     const m = sp.reduce((a, b) => a + b, 0) / sp.length;
@@ -579,27 +662,31 @@ function SpeedVarianceSection({ distribution, numEpisodes }: { distribution: Spe
 
   if (speeds.length < 3) return null;
 
-  const barH = 100;
-  const barW = Math.max(8, Math.floor(500 / bins.length));
+  const barH = isFs ? 250 : 100;
+  const barW = Math.max(8, Math.floor((isFs ? 900 : 500) / bins.length));
 
   return (
     <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
       <div>
-        <h3 className="text-sm font-semibold text-slate-200">
-          Demonstrator Speed Variance
-          <span className="text-xs text-slate-500 ml-2 font-normal">({numEpisodes} episodes)</span>
-        </h3>
-        <p className="text-xs text-slate-400 mt-1">
-          Distribution of average execution speed (mean ‖Δa<sub>t</sub>‖ per frame) across all episodes.
-          Different human demonstrators often execute at <span className="text-orange-400">different speeds</span>, creating
-          artificial multimodality in the action distribution that confuses the policy. A coefficient of variation (CV) above 0.3
-          strongly suggests normalizing trajectory speed before training.
-          <br />
-          <span className="text-slate-500">
-            Based on &quot;Is Diversity All You Need&quot; (AGI-Bot, 2025) which shows velocity normalization dramatically improves
-            fine-tuning success rate. Also relates to ACT (Zhao et al., 2023) and Pi0.5 (Physical Intelligence, 2025).
-          </span>
-        </p>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-slate-200">
+            Demonstrator Speed Variance
+            <span className="text-xs text-slate-500 ml-2 font-normal">({numEpisodes} episodes)</span>
+          </h3>
+          <InfoToggle>
+            <p className="text-xs text-slate-400">
+              Distribution of average execution speed (mean ‖Δa<sub>t</sub>‖ per frame) across all episodes.
+              Different human demonstrators often execute at <span className="text-orange-400">different speeds</span>, creating
+              artificial multimodality in the action distribution that confuses the policy. A coefficient of variation (CV) above 0.3
+              strongly suggests normalizing trajectory speed before training.
+              <br />
+              <span className="text-slate-500">
+                Based on &quot;Is Diversity All You Need&quot; (AGI-Bot, 2025) which shows velocity normalization dramatically improves
+                fine-tuning success rate. Also relates to ACT (Zhao et al., 2023) and Pi0.5 (Physical Intelligence, 2025).
+              </span>
+            </p>
+          </InfoToggle>
+      </div>
       </div>
 
       <div className="flex gap-4">
@@ -651,6 +738,7 @@ function SpeedVarianceSection({ distribution, numEpisodes }: { distribution: Spe
 // ─── State–Action Temporal Alignment ────────────────────────────
 
 function StateActionAlignmentSection({ data, fps, agg, numEpisodes }: { data: Record<string, number>[]; fps: number; agg?: AggAlignment | null; numEpisodes?: number }) {
+  const isFs = useIsFullscreen();
   const result = useMemo(() => {
     if (agg) return { ...agg, fromAgg: true };
     if (data.length < 10) return null;
@@ -739,23 +827,27 @@ function StateActionAlignmentSection({ data, fps, agg, numEpisodes }: { data: Re
   return (
     <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
       <div>
-        <h3 className="text-sm font-semibold text-slate-200">
-          State–Action Temporal Alignment
-          <span className="text-xs text-slate-500 ml-2 font-normal">({scopeLabel}, {numPairs} matched pair{numPairs !== 1 ? "s" : ""})</span>
-        </h3>
-        <p className="text-xs text-slate-400 mt-1">
-          Per-dimension cross-correlation between action<sub>d</sub>(t) and Δstate<sub>d</sub>(t+lag), aggregated as
-          <span className="text-orange-400"> max</span>, <span className="text-slate-200">mean</span>, and
-          <span className="text-blue-400"> min</span> across all matched action–state pairs.
-          The <span className="text-orange-400">peak lag</span> reveals the effective control delay — the time between
-          when an action is commanded and when the corresponding state changes.
-          <br />
-          <span className="text-slate-500">
-            Central to ACT (Zhao et al., 2023 — action chunking compensates for delay),
-            Real-Time Chunking (RTC, 2024), and Training-Time RTC (Biza et al., 2025) — all address
-            the timing mismatch between commanded actions and observed state changes.
-          </span>
-        </p>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-slate-200">
+            State–Action Temporal Alignment
+            <span className="text-xs text-slate-500 ml-2 font-normal">({scopeLabel}, {numPairs} matched pair{numPairs !== 1 ? "s" : ""})</span>
+          </h3>
+          <InfoToggle>
+            <p className="text-xs text-slate-400">
+              Per-dimension cross-correlation between action<sub>d</sub>(t) and Δstate<sub>d</sub>(t+lag), aggregated as
+              <span className="text-orange-400"> max</span>, <span className="text-slate-200">mean</span>, and
+              <span className="text-blue-400"> min</span> across all matched action–state pairs.
+              The <span className="text-orange-400">peak lag</span> reveals the effective control delay — the time between
+              when an action is commanded and when the corresponding state changes.
+              <br />
+              <span className="text-slate-500">
+                Central to ACT (Zhao et al., 2023 — action chunking compensates for delay),
+                Real-Time Chunking (RTC, 2024), and Training-Time RTC (Biza et al., 2025) — all address
+                the timing mismatch between commanded actions and observed state changes.
+              </span>
+            </p>
+          </InfoToggle>
+        </div>
       </div>
 
       {meanPeakLag !== 0 && (
@@ -775,12 +867,12 @@ function StateActionAlignmentSection({ data, fps, agg, numEpisodes }: { data: Re
         </div>
       )}
 
-      <div className="h-56">
+      <div className={isFs ? "h-[500px]" : "h-56"}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={ccData} margin={{ top: 8, right: 16, left: 0, bottom: 16 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
             <XAxis dataKey="lag" stroke="#94a3b8"
-              label={{ value: "Lag (steps)", position: "insideBottom", offset: -8, fill: "#94a3b8", fontSize: 11 }} />
+              label={{ value: "Lag (steps)", position: "insideBottom", offset: -8, fill: "#94a3b8", fontSize: 13 }} />
             <YAxis stroke="#94a3b8" domain={[-0.5, 1]} />
             <Tooltip
               contentStyle={{ background: "#1e293b", border: "1px solid #475569", borderRadius: 6 }}
@@ -793,20 +885,20 @@ function StateActionAlignmentSection({ data, fps, agg, numEpisodes }: { data: Re
             <Line dataKey={() => 0} stroke="#64748b" strokeDasharray="6 4" dot={false} name="zero" legendType="none" isAnimationActive={false} />
           </LineChart>
         </ResponsiveContainer>
-      </div>
+              </div>
 
       <div className="flex flex-wrap gap-x-4 gap-y-1 px-1">
         <div className="flex items-center gap-1.5">
           <span className="w-3 h-[3px] rounded-full shrink-0 bg-orange-500" />
-          <span className="text-[11px] text-slate-400">max (peak: lag {maxPeakLag}, r={maxPeakCorr.toFixed(3)})</span>
-        </div>
+          <span className="text-xs text-slate-400">max (peak: lag {maxPeakLag}, r={maxPeakCorr.toFixed(3)})</span>
+            </div>
         <div className="flex items-center gap-1.5">
           <span className="w-3 h-[3px] rounded-full shrink-0 bg-slate-400" />
-          <span className="text-[11px] text-slate-400">mean (peak: lag {meanPeakLag}, r={meanPeakCorr.toFixed(3)})</span>
-        </div>
+          <span className="text-xs text-slate-400">mean (peak: lag {meanPeakLag}, r={meanPeakCorr.toFixed(3)})</span>
+          </div>
         <div className="flex items-center gap-1.5">
           <span className="w-3 h-[3px] rounded-full shrink-0 bg-blue-500" />
-          <span className="text-[11px] text-slate-400">min (peak: lag {minPeakLag}, r={minPeakCorr.toFixed(3)})</span>
+          <span className="text-xs text-slate-400">min (peak: lag {minPeakLag}, r={minPeakCorr.toFixed(3)})</span>
         </div>
       </div>
 
@@ -824,6 +916,7 @@ function StateActionAlignmentSection({ data, fps, agg, numEpisodes }: { data: Re
 const BC_THRESHOLD = 5 / 9;
 
 function MultimodalitySection({ data }: { data: CrossEpisodeVarianceData }) {
+  const isFs = useIsFullscreen();
   const { actionNames, timeBins, multimodality, numEpisodes } = data;
   if (!multimodality || multimodality.length === 0) return null;
 
@@ -843,8 +936,10 @@ function MultimodalitySection({ data }: { data: CrossEpisodeVarianceData }) {
     return { bimodalPct: pct, verdict: v };
   }, [multimodality]);
 
-  const cellW = Math.max(6, Math.min(14, Math.floor(560 / numBins)));
-  const cellH = Math.max(20, Math.min(36, Math.floor(300 / numDims)));
+  const mBaseW = isFs ? 1000 : 560;
+  const mBaseH = isFs ? 500 : 300;
+  const cellW = Math.max(6, Math.min(isFs ? 24 : 14, Math.floor(mBaseW / numBins)));
+  const cellH = Math.max(20, Math.min(isFs ? 56 : 36, Math.floor(mBaseH / numDims)));
   const labelW = 100;
   const svgW = labelW + numBins * cellW + 60;
   const svgH = numDims * cellH + 40;
@@ -861,22 +956,26 @@ function MultimodalitySection({ data }: { data: CrossEpisodeVarianceData }) {
   return (
     <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
       <div>
-        <h3 className="text-sm font-semibold text-slate-200">
-          Multimodality Detection
-          <span className="text-xs text-slate-500 ml-2 font-normal">({numEpisodes} episodes sampled)</span>
-        </h3>
-        <p className="text-xs text-slate-400 mt-1">
-          Bimodality coefficient (BC) per action dimension over episode progress.
-          BC values above <span className="text-red-400">5/9 ≈ 0.556</span> suggest the action distribution at that point is bimodal —
-          meaning demonstrators use <span className="text-red-400">multiple distinct strategies</span>. This directly answers:
-          &quot;Do I need a generative policy (diffusion, flow-matching) or would MSE regression work?&quot;
-          <br />
-          <span className="text-slate-500">
-            Grounded in Diffusion Policy (Chi et al., 2023 — diffusion handles multimodality natively),
-            ACT (Zhao et al., 2023 — CVAE captures multiple modes). Extends the cross-episode variance heatmap above
-            by distinguishing true multimodality from mere noise.
-          </span>
-        </p>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-slate-200">
+            Multimodality Detection
+            <span className="text-xs text-slate-500 ml-2 font-normal">({numEpisodes} episodes sampled)</span>
+          </h3>
+          <InfoToggle>
+            <p className="text-xs text-slate-400">
+              Bimodality coefficient (BC) per action dimension over episode progress.
+              BC values above <span className="text-red-400">5/9 ≈ 0.556</span> suggest the action distribution at that point is bimodal —
+              meaning demonstrators use <span className="text-red-400">multiple distinct strategies</span>. This directly answers:
+              &quot;Do I need a generative policy (diffusion, flow-matching) or would MSE regression work?&quot;
+              <br />
+              <span className="text-slate-500">
+                Grounded in Diffusion Policy (Chi et al., 2023 — diffusion handles multimodality natively),
+                ACT (Zhao et al., 2023 — CVAE captures multiple modes). Extends the cross-episode variance heatmap above
+                by distinguishing true multimodality from mere noise.
+              </span>
+            </p>
+          </InfoToggle>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -936,17 +1035,23 @@ const CLUSTER_COLORS = ["#f97316", "#3b82f6", "#22c55e", "#a855f7", "#eab308"];
 
 function TrajectoryClusteringSection({ data, numEpisodes }: { data: TrajectoryClustering; numEpisodes: number }) {
   const { entries, numClusters, clusterSizes, outlierCount } = data;
+  const isFs = useIsFullscreen();
+  const router = useRouter();
+  const pathname = usePathname();
 
   const [showAll, setShowAll] = useState(false);
+  const [showLabels, setShowLabels] = useState(false);
+  const [hoveredEp, setHoveredEp] = useState<number | null>(null);
   const [rotX, setRotX] = useState(-0.4);
   const [rotY, setRotY] = useState(0.6);
   const dragRef = React.useRef<{ x: number; y: number; rx: number; ry: number } | null>(null);
+  const didDrag = useRef(false);
 
   const sorted = useMemo(() =>
     [...entries].sort((a, b) => b.distFromCenter - a.distFromCenter),
   [entries]);
 
-  const plotW = 500, plotH = 400;
+  const plotW = isFs ? 900 : 500, plotH = isFs ? 700 : 400;
   const cx = plotW / 2, cy = plotH / 2;
   const scale = Math.min(plotW, plotH) * 0.35;
 
@@ -984,13 +1089,22 @@ function TrajectoryClusteringSection({ data, numEpisodes }: { data: TrajectoryCl
 
   const onMouseDown = (ev: React.MouseEvent) => {
     dragRef.current = { x: ev.clientX, y: ev.clientY, rx: rotX, ry: rotY };
+    didDrag.current = false;
   };
   const onMouseMove = (ev: React.MouseEvent) => {
     if (!dragRef.current) return;
-    setRotY(dragRef.current.ry + (ev.clientX - dragRef.current.x) * 0.005);
-    setRotX(dragRef.current.rx + (ev.clientY - dragRef.current.y) * 0.005);
+    const dx = ev.clientX - dragRef.current.x;
+    const dy = ev.clientY - dragRef.current.y;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) didDrag.current = true;
+    setRotY(dragRef.current.ry + dx * 0.005);
+    setRotX(dragRef.current.rx + dy * 0.005);
   };
   const onMouseUp = () => { dragRef.current = null; };
+
+  const navigateToEpisode = useCallback((epIdx: number) => {
+    const base = pathname.replace(/\/episode_\d+$/, "");
+    router.push(`${base}/episode_${epIdx}`);
+  }, [pathname, router]);
 
   // Axis lines
   const axisLines = useMemo(() => {
@@ -1018,55 +1132,93 @@ function TrajectoryClusteringSection({ data, numEpisodes }: { data: TrajectoryCl
   return (
     <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
       <div>
-        <h3 className="text-sm font-semibold text-slate-200">
-          Trajectory Clustering & Outlier Detection
-          <span className="text-xs text-slate-500 ml-2 font-normal">({numEpisodes} episodes sampled)</span>
-        </h3>
-        <p className="text-xs text-slate-400 mt-1">
-          Episodes clustered by trajectory similarity: each episode&apos;s action trajectory is time-normalized, standardized,
-          and projected to 3D via PCA. K-means clustering (k selected by silhouette score) groups similar demonstrations.
-          <span className="text-red-400"> Outlier episodes</span> ({">"} 2σ from cluster center) may indicate recording errors,
-          failed demonstrations, or fundamentally different strategies worth reviewing.
-          <span className="text-yellow-400"> Imbalanced clusters</span> suggest multimodal demonstrations.
-          Drag to rotate.
-          <br />
-          <span className="text-slate-500">
-            Grounded in FAST-UMI-100K (Zhao et al., 2025 — automatic quality tools at scale),
-            &quot;Curating Demonstrations using Online Experience&quot; (Burns et al., 2025),
-            GVL (Mazzaglia et al., 2024), and SARM (Li et al., 2025).
-          </span>
-        </p>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-slate-200">
+            Trajectory Clustering & Outlier Detection
+            <span className="text-xs text-slate-500 ml-2 font-normal">({numEpisodes} episodes sampled)</span>
+          </h3>
+          <InfoToggle>
+            <p className="text-xs text-slate-400">
+              Episodes clustered by trajectory similarity: each episode&apos;s action trajectory is time-normalized, standardized,
+              and projected to 3D via PCA. K-means clustering (k selected by silhouette score) groups similar demonstrations.
+              <span className="text-red-400"> Outlier episodes</span> ({">"} 2σ from cluster center) may indicate recording errors,
+              failed demonstrations, or fundamentally different strategies worth reviewing.
+              <span className="text-yellow-400"> Imbalanced clusters</span> suggest multimodal demonstrations.
+              Drag to rotate.
+              <br />
+              <span className="text-slate-500">
+                Grounded in FAST-UMI-100K (Zhao et al., 2025 — automatic quality tools at scale),
+                &quot;Curating Demonstrations using Online Experience&quot; (Burns et al., 2025),
+                GVL (Mazzaglia et al., 2024), and SARM (Li et al., 2025).
+              </span>
+            </p>
+          </InfoToggle>
+        </div>
       </div>
 
       <div className="flex gap-4 flex-wrap">
         <div className="flex-1 min-w-[340px]">
+          <div className="flex justify-end mb-1">
+            <button onClick={() => setShowLabels(v => !v)}
+              className={`text-xs px-2 py-0.5 rounded transition-colors ${showLabels ? "bg-orange-500/20 text-orange-400 border border-orange-500/40" : "text-slate-500 hover:text-slate-300 border border-slate-700"}`}>
+              {showLabels ? "Hide episodes" : "Show episodes"}
+            </button>
+          </div>
           <svg
             width={plotW} height={plotH}
             className="block bg-slate-900/50 rounded cursor-grab active:cursor-grabbing select-none"
-            onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
+            onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}
+            onMouseLeave={(ev) => { onMouseUp(); setHoveredEp(null); }}
           >
-            {/* Axis lines */}
             {axisLines.map(a => (
               <React.Fragment key={a.label}>
                 <line x1={a.ox} y1={a.oy} x2={a.px} y2={a.py} stroke={a.color} strokeWidth={0.5} strokeDasharray="4 3" opacity={0.4} />
                 <text x={a.px} y={a.py} className="fill-slate-600" fontSize={9} textAnchor="middle" dominantBaseline="central">{a.label}</text>
               </React.Fragment>
             ))}
-            {/* Points sorted back→front */}
             {sortedByDepth.map(({ sx, sy, depth, entry: e }, i) => {
               const color = CLUSTER_COLORS[e.cluster % CLUSTER_COLORS.length];
               const depthFade = 0.3 + 0.7 * ((depth + 1) / 2);
-              const r = e.isOutlier ? 5 : 2.5 + depthFade * 2;
+              const isHovered = hoveredEp === e.episodeIndex;
+              const r = isHovered ? 7 : e.isOutlier ? 5 : 2.5 + depthFade * 2;
               return (
-                <circle key={i} cx={sx} cy={sy} r={r}
-                  fill={e.isOutlier ? "transparent" : color}
-                  stroke={e.isOutlier ? "#ef4444" : color}
-                  strokeWidth={e.isOutlier ? 2 : 0}
-                  opacity={e.isOutlier ? 1 : depthFade * 0.8}>
-                  <title>{`ep ${e.episodeIndex} — cluster ${e.cluster}${e.isOutlier ? " (outlier)" : ""}, dist=${e.distFromCenter.toFixed(2)}`}</title>
-                </circle>
+                <g key={i}
+                  onMouseEnter={() => setHoveredEp(e.episodeIndex)}
+                  onMouseLeave={() => setHoveredEp(null)}
+                  onClick={() => { if (!didDrag.current) navigateToEpisode(e.episodeIndex); }}
+                  className="cursor-pointer"
+                >
+                  <circle cx={sx} cy={sy} r={r}
+                    fill={e.isOutlier ? "transparent" : color}
+                    stroke={isHovered ? "#fff" : e.isOutlier ? "#ef4444" : color}
+                    strokeWidth={isHovered ? 2 : e.isOutlier ? 2 : 0}
+                    opacity={e.isOutlier ? 1 : isHovered ? 1 : depthFade * 0.8}
+                  />
+                  {(showLabels || isHovered) && (
+                    <text x={sx} y={sy - r - 3} textAnchor="middle" fontSize={isHovered ? 11 : 8}
+                      className={isHovered ? "fill-white font-semibold" : "fill-slate-400"} pointerEvents="none">
+                      {e.episodeIndex}
+                    </text>
+                  )}
+                </g>
               );
             })}
+            {hoveredEp !== null && (() => {
+              const p = sortedByDepth.find(p => p.entry.episodeIndex === hoveredEp);
+              if (!p) return null;
+              const e = p.entry;
+              return (
+                <g pointerEvents="none">
+                  <rect x={p.sx + 10} y={p.sy - 30} width={130} height={40} rx={4} fill="#0f172a" stroke="#334155" strokeWidth={1} opacity={0.95} />
+                  <text x={p.sx + 16} y={p.sy - 16} fontSize={10} className="fill-slate-200 font-medium">
+                    Episode {e.episodeIndex}
+                  </text>
+                  <text x={p.sx + 16} y={p.sy - 2} fontSize={9} className="fill-slate-400">
+                    cluster {e.cluster} · dist {e.distFromCenter.toFixed(2)}{e.isOutlier ? " · outlier" : ""}
+                  </text>
+                </g>
+              );
+            })()}
           </svg>
         </div>
 
@@ -1088,7 +1240,7 @@ function TrajectoryClusteringSection({ data, numEpisodes }: { data: TrajectoryCl
             </div>
           )}
           {imbalance > 0.5 && (
-            <p className="text-yellow-400 text-[11px]">
+            <p className="text-yellow-400 text-xs">
               Clusters are imbalanced ({(imbalance * 100).toFixed(0)}% size ratio) — the dataset may contain multiple distinct strategies.
             </p>
           )}
@@ -1100,14 +1252,18 @@ function TrajectoryClusteringSection({ data, numEpisodes }: { data: TrajectoryCl
           <p className="text-sm font-medium text-slate-200">
             {showAll ? "All Episodes" : "Most Anomalous Episodes"} <span className="text-xs text-slate-500 font-normal">sorted by distance from cluster center</span>
           </p>
-          <button onClick={() => setShowAll(v => !v)} className="text-xs text-slate-400 hover:text-slate-200 transition-colors">
-            {showAll ? "Show top 15" : `Show all ${entries.length}`}
-          </button>
+          <div className="flex items-center gap-3">
+            <FlagAllBtn ids={entries.filter(e => e.isOutlier).map(e => e.episodeIndex)} label="Flag outliers" />
+            <button onClick={() => setShowAll(v => !v)} className="text-xs text-slate-400 hover:text-slate-200 transition-colors">
+              {showAll ? "Show top 15" : `Show all ${entries.length}`}
+            </button>
+          </div>
         </div>
         <div className="max-h-48 overflow-y-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="text-slate-500 border-b border-slate-700">
+                <th className="w-5 py-1" />
                 <th className="text-left py-1 pr-3">Episode</th>
                 <th className="text-left py-1 pr-3">Cluster</th>
                 <th className="text-right py-1">Distance</th>
@@ -1116,6 +1272,7 @@ function TrajectoryClusteringSection({ data, numEpisodes }: { data: TrajectoryCl
             <tbody>
               {(showAll ? sorted : sorted.slice(0, 15)).map(e => (
                 <tr key={e.episodeIndex} className={`border-b border-slate-800/40 ${e.isOutlier ? "text-red-400" : "text-slate-300"}`}>
+                  <td className="py-1"><FlagBtn id={e.episodeIndex} /></td>
                   <td className="py-1 pr-3">ep {e.episodeIndex}{e.isOutlier ? " ⚠" : ""}</td>
                   <td className="py-1 pr-3">
                     <span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ background: CLUSTER_COLORS[e.cluster % CLUSTER_COLORS.length] }} />
@@ -1153,11 +1310,11 @@ const ActionInsightsPanel: React.FC<ActionInsightsPanelProps> = ({
   return (
     <div className="max-w-5xl mx-auto py-6 space-y-8">
       <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-100">Action Insights</h2>
-          <p className="text-sm text-slate-400 mt-1">
-            Data-driven analysis to guide action chunking, data quality assessment, and training configuration.
-          </p>
+      <div>
+        <h2 className="text-xl font-bold text-slate-100">Action Insights</h2>
+        <p className="text-sm text-slate-400 mt-1">
+          Data-driven analysis to guide action chunking, data quality assessment, and training configuration.
+        </p>
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <span className={`text-sm ${mode === "episode" ? "text-slate-100 font-medium" : "text-slate-500"}`}>Current Episode</span>
@@ -1174,24 +1331,18 @@ const ActionInsightsPanel: React.FC<ActionInsightsPanelProps> = ({
         </div>
       </div>
 
-      <AutocorrelationSection data={flatChartData} fps={fps} agg={showAgg ? crossEpisodeData?.aggAutocorrelation : null} numEpisodes={crossEpisodeData?.numEpisodes} />
-      <ActionVelocitySection data={flatChartData} agg={showAgg ? crossEpisodeData?.aggVelocity : undefined} numEpisodes={crossEpisodeData?.numEpisodes} jerkyEpisodes={showAgg ? crossEpisodeData?.jerkyEpisodes : undefined} />
+      <FullscreenWrapper><AutocorrelationSection data={flatChartData} fps={fps} agg={showAgg ? crossEpisodeData?.aggAutocorrelation : null} numEpisodes={crossEpisodeData?.numEpisodes} /></FullscreenWrapper>
+      <FullscreenWrapper><StateActionAlignmentSection data={flatChartData} fps={fps} agg={showAgg ? crossEpisodeData?.aggAlignment : null} numEpisodes={crossEpisodeData?.numEpisodes} /></FullscreenWrapper>
 
       {crossEpisodeData?.speedDistribution && crossEpisodeData.speedDistribution.length > 2 && (
-        <SpeedVarianceSection distribution={crossEpisodeData.speedDistribution} numEpisodes={crossEpisodeData.numEpisodes} />
+        <FullscreenWrapper><SpeedVarianceSection distribution={crossEpisodeData.speedDistribution} numEpisodes={crossEpisodeData.numEpisodes} /></FullscreenWrapper>
       )}
-      <StateActionAlignmentSection data={flatChartData} fps={fps} agg={showAgg ? crossEpisodeData?.aggAlignment : null} numEpisodes={crossEpisodeData?.numEpisodes} />
-      <VarianceHeatmap data={crossEpisodeData} loading={crossEpisodeLoading} />
-      {crossEpisodeData && <MultimodalitySection data={crossEpisodeData} />}
-      {crossEpisodeData?.trajectoryClustering && (
-        <TrajectoryClusteringSection data={crossEpisodeData.trajectoryClustering} numEpisodes={crossEpisodeData.numEpisodes} />
-      )}
-      {crossEpisodeData?.lowMovementEpisodes && (
-        <LowMovementSection episodes={crossEpisodeData.lowMovementEpisodes} />
-      )}
+      <FullscreenWrapper><VarianceHeatmap data={crossEpisodeData} loading={crossEpisodeLoading} /></FullscreenWrapper>
+      {crossEpisodeData && <FullscreenWrapper><MultimodalitySection data={crossEpisodeData} /></FullscreenWrapper>}
     </div>
   );
 };
 
 export default ActionInsightsPanel;
+export { ActionVelocitySection, TrajectoryClusteringSection, FullscreenWrapper };
 
