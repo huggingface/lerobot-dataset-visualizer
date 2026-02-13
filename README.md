@@ -1,3 +1,14 @@
+---
+title: Visualize Dataset (v2.0+ latest dataset format)
+emoji: 💻
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+license: apache-2.0
+---
+
 # LeRobot Dataset Visualizer
 
 LeRobot Dataset Visualizer is a web application for interactive exploration and visualization of robotics datasets, particularly those in the LeRobot format. It enables users to browse, view, and analyze episodes from large-scale robotics datasets, combining synchronized video playback with rich, interactive data graphs.
