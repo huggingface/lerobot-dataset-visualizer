@@ -20,31 +20,31 @@ function HomeInner() {
   useEffect(() => {
     // Redirect to the first episode of the dataset if REPO_ID is defined
     if (process.env.REPO_ID) {
-      const episodeN = process.env.EPISODES
-        ?.split(/\s+/)
-        .map((x) => parseInt(x.trim(), 10))
-        .filter((x) => !isNaN(x))[0] ?? 0;
+      const episodeN =
+        process.env.EPISODES?.split(/\s+/)
+          .map((x) => parseInt(x.trim(), 10))
+          .filter((x) => !isNaN(x))[0] ?? 0;
 
       router.push(`/${process.env.REPO_ID}/episode_${episodeN}`);
       return;
     }
-    
+
     // sync with hf.co/spaces URL params
-    if (searchParams.get('path')) {
-      router.push(searchParams.get('path')!);
+    if (searchParams.get("path")) {
+      router.push(searchParams.get("path")!);
       return;
     }
 
     // legacy sync with hf.co/spaces URL params
     let redirectUrl: string | null = null;
-    if (searchParams.get('dataset') && searchParams.get('episode')) {
-      redirectUrl = `/${searchParams.get('dataset')}/episode_${searchParams.get('episode')}`;
-    } else if (searchParams.get('dataset')) {
-      redirectUrl = `/${searchParams.get('dataset')}`;
+    if (searchParams.get("dataset") && searchParams.get("episode")) {
+      redirectUrl = `/${searchParams.get("dataset")}/episode_${searchParams.get("episode")}`;
+    } else if (searchParams.get("dataset")) {
+      redirectUrl = `/${searchParams.get("dataset")}`;
     }
 
-    if (redirectUrl && searchParams.get('t')) {
-      redirectUrl += `?t=${searchParams.get('t')}`;
+    if (redirectUrl && searchParams.get("t")) {
+      redirectUrl += `?t=${searchParams.get("t")}`;
     }
 
     if (redirectUrl) {

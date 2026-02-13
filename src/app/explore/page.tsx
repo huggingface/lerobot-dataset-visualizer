@@ -44,17 +44,19 @@ export default async function ExplorePage({
         try {
           const [org, dataset] = ds.id.split("/");
           const repoId = `${org}/${dataset}`;
-          
+
           // Try to get compatible version, but don't fail the entire page if incompatible
           let version: string;
           try {
             version = await getDatasetVersion(repoId);
           } catch (err) {
             // Dataset is not compatible, skip it silently
-            console.warn(`Skipping incompatible dataset ${repoId}: ${err instanceof Error ? err.message : err}`);
+            console.warn(
+              `Skipping incompatible dataset ${repoId}: ${err instanceof Error ? err.message : err}`,
+            );
             return null;
           }
-          
+
           const jsonUrl = buildVersionedUrl(repoId, version, "meta/info.json");
           const info = await fetchJson<DatasetMetadata>(jsonUrl);
           const videoEntry = Object.entries(info.features).find(
