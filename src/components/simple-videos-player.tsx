@@ -59,7 +59,10 @@ export const SimpleVideosPlayer = ({
             const segmentEnd = info.segmentEnd || video.duration;
             const segmentStart = info.segmentStart || 0;
 
-            if (video.currentTime >= segmentEnd - THRESHOLDS.VIDEO_SEGMENT_BOUNDARY) {
+            if (
+              video.currentTime >=
+              segmentEnd - THRESHOLDS.VIDEO_SEGMENT_BOUNDARY
+            ) {
               video.currentTime = segmentStart;
               // Also update the global time to reset to start
               if (index === firstVisibleIdx) {

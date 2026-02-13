@@ -150,7 +150,8 @@ export const VideosPlayer = ({
     videoRefs.current.forEach((video, index) => {
       if (
         video &&
-        Math.abs(video.currentTime - currentTime) > THRESHOLDS.VIDEO_SYNC_TOLERANCE
+        Math.abs(video.currentTime - currentTime) >
+          THRESHOLDS.VIDEO_SYNC_TOLERANCE
       ) {
         const videoInfo = videosInfo[index];
 

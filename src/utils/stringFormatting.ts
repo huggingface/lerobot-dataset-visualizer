@@ -79,10 +79,7 @@ export function buildV3VideoPath(
  * @param fileIndex - File index within chunk
  * @returns Formatted data path (e.g., "data/chunk-001/file-000.parquet")
  */
-export function buildV3DataPath(
-  chunkIndex: number,
-  fileIndex: number,
-): string {
+export function buildV3DataPath(chunkIndex: number, fileIndex: number): string {
   return `data/chunk-${formatChunkIndex(chunkIndex)}/file-${formatFileIndex(fileIndex)}.parquet`;
 }
 
