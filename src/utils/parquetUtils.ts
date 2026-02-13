@@ -1,28 +1,8 @@
 import { parquetRead, parquetReadObjects } from "hyparquet";
+import type { DatasetMetadata, SeriesColumn } from "@/types";
 
-export interface DatasetMetadata {
-  codebase_version: string;
-  robot_type: string;
-  total_episodes: number;
-  total_frames: number;
-  total_tasks: number;
-  total_videos: number;
-  total_chunks: number;
-  chunks_size: number;
-  fps: number;
-  splits: Record<string, string>;
-  data_path: string;
-  video_path: string;
-  features: Record<
-    string,
-    {
-      dtype: string;
-      shape: any[];
-      names: any[] | Record<string, any> | null;
-      info?: Record<string, any>;
-    }
-  >;
-}
+// Re-export DatasetMetadata for backward compatibility
+export type { DatasetMetadata };
 
 export async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -36,19 +16,19 @@ export async function fetchJson<T>(url: string): Promise<T> {
 
 export function formatStringWithVars(
   format: string,
-  vars: Record<string, any>,
+  vars: Record<string, string | number>,
 ): string {
-  return format.replace(/{(\w+)(?::\d+d)?}/g, (_, key) => vars[key]);
+  return format.replace(/{(\w+)(?::\d+d)?}/g, (_, key) => String(vars[key]));
 }
 
 // Fetch and parse the Parquet file
 export async function fetchParquetFile(url: string): Promise<ArrayBuffer> {
   const res = await fetch(url);
-  
+
   if (!res.ok) {
     throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
   }
-  
+
   return res.arrayBuffer();
 }
 
@@ -56,15 +36,15 @@ export async function fetchParquetFile(url: string): Promise<ArrayBuffer> {
 export async function readParquetColumn(
   fileBuffer: ArrayBuffer,
   columns: string[],
-): Promise<any[]> {
+): Promise<unknown[][]> {
   return new Promise((resolve, reject) => {
     try {
       parquetRead({
         file: fileBuffer,
         columns: columns.length > 0 ? columns : undefined, // Let hyparquet read all columns if empty array
-        onComplete: (data: any[]) => {
+        onComplete: (data: unknown[][]) => {
           resolve(data);
-        }
+        },
       });
     } catch (error) {
       reject(error);
@@ -76,7 +56,7 @@ export async function readParquetColumn(
 export async function readParquetAsObjects(
   fileBuffer: ArrayBuffer,
   columns: string[] = [],
-): Promise<Record<string, any>[]> {
+): Promise<Record<string, unknown>[]> {
   return parquetReadObjects({
     file: fileBuffer,
     columns: columns.length > 0 ? columns : undefined,
@@ -89,17 +69,20 @@ export function arrayToCSV(data: (number | string)[][]): string {
 }
 
 // Get rows from the current frame data
-export function getRows(currentFrameData: any[], columns: any[]) {
+export function getRows(
+  currentFrameData: Record<string, unknown>[],
+  columns: SeriesColumn[],
+): Array<Array<{ isNull: true } | unknown>> {
   if (!currentFrameData || currentFrameData.length === 0) {
     return [];
   }
 
-  const rows = [];
+  const rows: Array<Array<{ isNull: true } | unknown>> = [];
   const nRows = Math.max(...columns.map((column) => column.value.length));
   let rowIndex = 0;
 
   while (rowIndex < nRows) {
-    const row = [];
+    const row: Array<{ isNull: true } | unknown> = [];
     // number of states may NOT match number of actions. In this case, we null-pad the 2D array
     const nullCell = { isNull: true };
     // row consists of [state value, action value]
