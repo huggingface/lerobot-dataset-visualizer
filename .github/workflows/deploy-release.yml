@@ -19,4 +19,4 @@ jobs:
       - name: Push to hub
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: git push https://mishig:$HF_TOKEN@huggingface.co/spaces/lerobot/test-vis main -f
+        run: git push https://mishig:$HF_TOKEN@huggingface.co/spaces/lerobot/visualize_dataset main -f
