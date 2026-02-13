@@ -7,6 +7,7 @@ import { SimpleVideosPlayer } from "@/components/simple-videos-player";
 import DataRecharts from "@/components/data-recharts";
 import PlaybackBar from "@/components/playback-bar";
 import { TimeProvider, useTime } from "@/context/time-context";
+import { FlaggedEpisodesProvider } from "@/context/flagged-episodes-context";
 import Sidebar from "@/components/side-nav";
 import StatsPanel from "@/components/stats-panel";
 import OverviewPanel from "@/components/overview-panel";
@@ -25,8 +26,9 @@ import { fetchEpisodeLengthStats, fetchEpisodeFrames, fetchCrossEpisodeVariance 
 
 const URDFViewer = lazy(() => import("@/components/urdf-viewer"));
 const ActionInsightsPanel = lazy(() => import("@/components/action-insights-panel"));
+const FilteringPanel = lazy(() => import("@/components/filtering-panel"));
 
-type ActiveTab = "episodes" | "statistics" | "frames" | "insights" | "urdf";
+type ActiveTab = "episodes" | "statistics" | "frames" | "insights" | "filtering" | "urdf";
 
 export default function EpisodeViewer({
   data,
@@ -51,7 +53,9 @@ export default function EpisodeViewer({
   }
   return (
     <TimeProvider duration={data!.duration}>
-      <EpisodeViewerInner data={data!} org={org} dataset={dataset} />
+      <FlaggedEpisodesProvider>
+        <EpisodeViewerInner data={data!} org={org} dataset={dataset} />
+      </FlaggedEpisodesProvider>
     </TimeProvider>
   );
 }
@@ -81,7 +85,15 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
   const searchParams = useSearchParams();
 
   // Tab state & lazy stats
-  const [activeTab, setActiveTab] = useState<ActiveTab>("episodes");
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    if (typeof window !== "undefined") {
+      const stored = sessionStorage.getItem("activeTab");
+      if (stored && ["episodes", "statistics", "frames", "insights", "filtering", "urdf"].includes(stored)) {
+        return stored as ActiveTab;
+      }
+    }
+    return "episodes";
+  });
   const [columnMinMax, setColumnMinMax] = useState<ColumnMinMax[] | null>(null);
   const [episodeLengthStats, setEpisodeLengthStats] = useState<EpisodeLengthStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -89,9 +101,22 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
   const [episodeFramesData, setEpisodeFramesData] = useState<EpisodeFramesData | null>(null);
   const [framesLoading, setFramesLoading] = useState(false);
   const framesLoadedRef = useRef(false);
+  const [framesFlaggedOnly, setFramesFlaggedOnly] = useState(() => {
+    if (typeof window !== "undefined") return sessionStorage.getItem("framesFlaggedOnly") === "true";
+    return false;
+  });
+  const [sidebarFlaggedOnly, setSidebarFlaggedOnly] = useState(() => {
+    if (typeof window !== "undefined") return sessionStorage.getItem("sidebarFlaggedOnly") === "true";
+    return false;
+  });
   const [crossEpData, setCrossEpData] = useState<CrossEpisodeVarianceData | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const insightsLoadedRef = useRef(false);
+
+  // Persist UI state across episode navigations
+  useEffect(() => { sessionStorage.setItem("activeTab", activeTab); }, [activeTab]);
+  useEffect(() => { sessionStorage.setItem("sidebarFlaggedOnly", String(sidebarFlaggedOnly)); }, [sidebarFlaggedOnly]);
+  useEffect(() => { sessionStorage.setItem("framesFlaggedOnly", String(framesFlaggedOnly)); }, [framesFlaggedOnly]);
 
   const loadStats = () => {
     if (statsLoadedRef.current) return;
@@ -128,11 +153,21 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
       .finally(() => setInsightsLoading(false));
   };
 
+  // Re-trigger data loading for the restored tab on mount
+  useEffect(() => {
+    if (activeTab === "statistics") loadStats();
+    if (activeTab === "frames") loadFrames();
+    if (activeTab === "insights") loadInsights();
+    if (activeTab === "filtering") { loadStats(); loadInsights(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleTabChange = (tab: ActiveTab) => {
     setActiveTab(tab);
     if (tab === "statistics") loadStats();
     if (tab === "frames") loadFrames();
     if (tab === "insights") loadInsights();
+    if (tab === "filtering") { loadStats(); loadInsights(); }
   };
 
   // Use context for time sync
@@ -293,6 +328,19 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
         </button>
         <button
           className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
+            activeTab === "filtering"
+              ? "text-orange-400"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+          onClick={() => handleTabChange("filtering")}
+        >
+          Filtering
+          {activeTab === "filtering" && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
+          )}
+        </button>
+        <button
+          className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
             activeTab === "frames"
               ? "text-orange-400"
               : "text-slate-400 hover:text-slate-200"
@@ -346,6 +394,8 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
             currentPage={currentPage}
             prevPage={prevPage}
             nextPage={nextPage}
+            showFlaggedOnly={sidebarFlaggedOnly}
+            onShowFlaggedOnlyChange={setSidebarFlaggedOnly}
           />
         )}
 
@@ -431,7 +481,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
           )}
 
           {activeTab === "frames" && (
-            <OverviewPanel data={episodeFramesData} loading={framesLoading} />
+            <OverviewPanel data={episodeFramesData} loading={framesLoading} flaggedOnly={framesFlaggedOnly} onFlaggedOnlyChange={setFramesFlaggedOnly} />
           )}
 
           {activeTab === "insights" && (
@@ -441,6 +491,23 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
                 fps={datasetInfo.fps}
                 crossEpisodeData={crossEpData}
                 crossEpisodeLoading={insightsLoading}
+              />
+            </Suspense>
+          )}
+
+          {activeTab === "filtering" && (
+            <Suspense fallback={<Loading />}>
+              <FilteringPanel
+                repoId={datasetInfo.repoId}
+                crossEpisodeData={crossEpData}
+                crossEpisodeLoading={insightsLoading}
+                episodeLengthStats={episodeLengthStats}
+                flatChartData={data.flatChartData}
+                fps={datasetInfo.fps || 30}
+                onViewFlaggedEpisodes={() => {
+                  setSidebarFlaggedOnly(true);
+                  handleTabChange("episodes");
+                }}
               />
             </Suspense>
           )}

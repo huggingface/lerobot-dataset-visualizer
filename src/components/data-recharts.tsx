@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useTime } from "../context/time-context";
 import {
   LineChart,
@@ -30,29 +30,72 @@ const CHART_COLORS = [
   "#6366f1", "#84cc16",
 ];
 
+function mergeGroups(data: ChartRow[][]): ChartRow[] {
+  if (data.length <= 1) return data[0] ?? [];
+  const maxLen = Math.max(...data.map(g => g.length));
+  const merged: ChartRow[] = [];
+  for (let i = 0; i < maxLen; i++) {
+    const row: ChartRow = {};
+    for (const group of data) {
+      const src = group[i];
+      if (!src) continue;
+      for (const [k, v] of Object.entries(src)) {
+        if (k === "timestamp") { row[k] = v; continue; }
+        row[k] = v;
+      }
+    }
+    merged.push(row);
+  }
+  return merged;
+}
+
 export const DataRecharts = React.memo(
   ({ data, onChartsReady }: DataGraphProps) => {
-    // Shared hoveredTime for all graphs
     const [hoveredTime, setHoveredTime] = useState<number | null>(null);
+    const [expanded, setExpanded] = useState(false);
 
     if (!Array.isArray(data) || data.length === 0) return null;
 
     useEffect(() => {
-      if (typeof onChartsReady === "function") {
-        onChartsReady();
-      }
+      if (typeof onChartsReady === "function") onChartsReady();
     }, [onChartsReady]);
 
+    const combinedData = useMemo(() => expanded ? mergeGroups(data) : [], [data, expanded]);
+
     return (
-      <div className="grid md:grid-cols-2 grid-cols-1 gap-4">
-        {data.map((group, idx) => (
-          <SingleDataGraph
-            key={idx}
-            data={group}
-            hoveredTime={hoveredTime}
-            setHoveredTime={setHoveredTime}
-          />
-        ))}
+      <div>
+        {data.length > 1 && (
+          <div className="flex justify-end mb-2">
+            <button
+              onClick={() => setExpanded(v => !v)}
+              className={`text-xs px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 ${
+                expanded
+                  ? "bg-orange-500/20 text-orange-400 border border-orange-500/40"
+                  : "bg-slate-800/60 text-slate-400 hover:text-slate-200 border border-slate-700/50"
+              }`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {expanded ? (
+                  <><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></>
+                ) : (
+                  <><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></>
+                )}
+              </svg>
+              {expanded ? "Split charts" : "Combine all"}
+            </button>
+          </div>
+        )}
+
+        {expanded ? (
+          <SingleDataGraph data={combinedData} hoveredTime={hoveredTime} setHoveredTime={setHoveredTime} tall />
+        ) : (
+          <div className="grid md:grid-cols-2 grid-cols-1 gap-4">
+            {data.map((group, idx) => (
+              <SingleDataGraph key={idx} data={group} hoveredTime={hoveredTime} setHoveredTime={setHoveredTime} />
+            ))}
+          </div>
+        )}
       </div>
     );
   },
@@ -64,10 +107,12 @@ const SingleDataGraph = React.memo(
     data,
     hoveredTime,
     setHoveredTime,
+    tall,
   }: {
     data: ChartRow[];
     hoveredTime: number | null;
     setHoveredTime: (t: number | null) => void;
+    tall?: boolean;
   }) => {
     const { currentTime, setCurrentTime } = useTime();
     function flattenRow(row: Record<string, number | Record<string, number>>, prefix = ""): Record<string, number> {
@@ -205,7 +250,7 @@ const SingleDataGraph = React.memo(
                     className="size-3"
                     style={{ accentColor: color }}
                   />
-                  <span className="text-[11px] font-semibold text-slate-200">{group}</span>
+                  <span className="text-xs font-semibold text-slate-200">{group}</span>
                 </label>
                 <div className="pl-5 flex flex-col gap-0.5 mt-0.5">
                   {children.map((key) => {
@@ -219,8 +264,8 @@ const SingleDataGraph = React.memo(
                           className="size-2.5"
                           style={{ accentColor: color }}
                         />
-                        <span className={`text-[10px] ${visibleKeys.includes(key) ? "text-slate-300" : "text-slate-500"}`}>{label}</span>
-                        <span className={`text-[10px] font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-orange-300/80" : "text-slate-600"}`}>
+                        <span className={`text-xs ${visibleKeys.includes(key) ? "text-slate-300" : "text-slate-500"}`}>{label}</span>
+                        <span className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-orange-300/80" : "text-slate-600"}`}>
                           {typeof currentData[key] === "number" ? currentData[key].toFixed(2) : "–"}
                         </span>
                       </label>
@@ -241,8 +286,8 @@ const SingleDataGraph = React.memo(
                   className="size-3"
                   style={{ accentColor: color }}
                 />
-                <span className={`text-[11px] ${visibleKeys.includes(key) ? "text-slate-200" : "text-slate-500"}`}>{key}</span>
-                <span className={`text-[10px] font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-orange-300/80" : "text-slate-600"}`}>
+                <span className={`text-xs ${visibleKeys.includes(key) ? "text-slate-200" : "text-slate-500"}`}>{key}</span>
+                <span className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-orange-300/80" : "text-slate-600"}`}>
                   {typeof currentData[key] === "number" ? currentData[key].toFixed(2) : "–"}
                 </span>
               </label>
@@ -270,7 +315,7 @@ const SingleDataGraph = React.memo(
         {chartTitle && (
           <p className="text-xs font-medium text-slate-300 mb-1 px-1 truncate" title={chartTitle}>{chartTitle}</p>
         )}
-        <div className="w-full h-72" onMouseLeave={handleMouseLeave}>
+        <div className={`w-full ${tall ? "h-[500px]" : "h-72"}`} onMouseLeave={handleMouseLeave}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={chartData}
@@ -292,14 +337,14 @@ const SingleDataGraph = React.memo(
                 ]}
                 tickFormatter={(v: number) => `${v.toFixed(1)}s`}
                 stroke="#64748b"
-                tick={{ fontSize: 10, fill: "#94a3b8" }}
+                tick={{ fontSize: 12, fill: "#94a3b8" }}
                 minTickGap={30}
                 allowDataOverflow={true}
               />
               <YAxis
                 domain={["auto", "auto"]}
                 stroke="#64748b"
-                tick={{ fontSize: 10, fill: "#94a3b8" }}
+                tick={{ fontSize: 12, fill: "#94a3b8" }}
                 width={45}
                 allowDataOverflow={true}
               />
