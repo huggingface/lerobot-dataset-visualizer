@@ -28,21 +28,50 @@ This tool is designed to help robotics researchers and practitioners quickly ins
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+This project uses [Bun](https://bun.sh) as its package manager. If you don't have it installed:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
+# Install Bun
+curl -fsSL https://bun.sh/install | bash
+```
+
+### Installation
+
+Install dependencies:
+
+```bash
+bun install
+```
+
+### Development
+
+Run the development server:
+
+```bash
 bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
 You can start editing the page by modifying `src/app/page.tsx` or other files in the `src/` directory. The app supports hot-reloading for rapid development.
+
+### Other Commands
+
+```bash
+# Build for production
+bun run build
+
+# Start production server
+bun start
+
+# Run linter
+bun run lint
+
+# Format code
+bun run format
+```
 
 ### Environment Variables
 
