@@ -3,15 +3,7 @@
 import React, { useEffect, useRef } from "react";
 import { useTime } from "../context/time-context";
 import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
-
-type VideoInfo = {
-  filename: string;
-  url: string;
-  isSegmented?: boolean;
-  segmentStart?: number;
-  segmentEnd?: number;
-  segmentDuration?: number;
-};
+import type { VideoInfo } from "@/types";
 
 type VideoPlayerProps = {
   videosInfo: VideoInfo[];
@@ -247,7 +239,9 @@ export const SimpleVideosPlayer = ({
                 </span>
               </p>
               <video
-                ref={el => videoRefs.current[idx] = el}
+                ref={(el) => {
+                  videoRefs.current[idx] = el;
+                }}
                 className={`w-full object-contain ${
                   isEnlarged ? "max-h-[90vh] max-w-[90vw]" : ""
                 }`}

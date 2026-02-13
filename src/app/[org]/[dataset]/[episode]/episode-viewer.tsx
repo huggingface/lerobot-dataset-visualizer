@@ -10,6 +10,7 @@ import { TimeProvider, useTime } from "@/context/time-context";
 import Sidebar from "@/components/side-nav";
 import Loading from "@/components/loading-component";
 import { getAdjacentEpisodesVideoInfo } from "./fetch-data";
+import type { EpisodeData } from "@/types";
 
 export default function EpisodeViewer({
   data,
@@ -17,7 +18,7 @@ export default function EpisodeViewer({
   org,
   dataset,
 }: {
-  data?: any;
+  data?: EpisodeData;
   error?: string;
   org?: string;
   dataset?: string;
@@ -32,6 +33,11 @@ export default function EpisodeViewer({
       </div>
     );
   }
+
+  if (!data) {
+    return null;
+  }
+
   return (
     <TimeProvider duration={data.duration}>
       <EpisodeViewerInner data={data} org={org} dataset={dataset} />
@@ -39,7 +45,15 @@ export default function EpisodeViewer({
   );
 }
 
-function EpisodeViewerInner({ data, org, dataset }: { data: any; org?: string; dataset?: string; }) {
+function EpisodeViewerInner({
+  data,
+  org,
+  dataset,
+}: {
+  data: EpisodeData;
+  org?: string;
+  dataset?: string;
+}) {
   const {
     datasetInfo,
     episodeId,

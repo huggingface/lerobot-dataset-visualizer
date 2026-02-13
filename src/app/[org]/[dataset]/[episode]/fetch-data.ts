@@ -1,5 +1,4 @@
 import {
-  DatasetMetadata,
   fetchJson,
   fetchParquetFile,
   formatStringWithVars,
@@ -8,6 +7,16 @@ import {
 } from "@/utils/parquetUtils";
 import { pick } from "@/utils/pick";
 import { getDatasetVersion, buildVersionedUrl } from "@/utils/versionUtils";
+import type {
+  DatasetMetadata,
+  EpisodeData,
+  EpisodeMetadataV3,
+  VideoInfo,
+  AdjacentEpisodeVideos,
+  ChartDataGroup,
+  SeriesColumn,
+  ParquetDataRow,
+} from "@/types";
 
 const SERIES_NAME_DELIMITER = " | ";
 
@@ -15,7 +24,7 @@ export async function getEpisodeData(
   org: string,
   dataset: string,
   episodeId: number,
-) {
+): Promise<EpisodeData> {
   const repoId = `${org}/${dataset}`;
   try {
     // Check for compatible dataset version (v3.0, v2.1, or v2.0)
@@ -45,44 +54,46 @@ export async function getAdjacentEpisodesVideoInfo(
   dataset: string,
   currentEpisodeId: number,
   radius: number = 2,
-) {
+): Promise<AdjacentEpisodeVideos[]> {
   const repoId = `${org}/${dataset}`;
   try {
     const version = await getDatasetVersion(repoId);
     const jsonUrl = buildVersionedUrl(repoId, version, "meta/info.json");
     const info = await fetchJson<DatasetMetadata>(jsonUrl);
-    
+
     const totalEpisodes = info.total_episodes;
-    const adjacentVideos: Array<{episodeId: number; videosInfo: any[]}> = [];
-    
+    const adjacentVideos: AdjacentEpisodeVideos[] = [];
+
     // Calculate adjacent episode IDs
     for (let offset = -radius; offset <= radius; offset++) {
       if (offset === 0) continue; // Skip current episode
-      
+
       const episodeId = currentEpisodeId + offset;
       if (episodeId >= 0 && episodeId < totalEpisodes) {
         try {
-          let videosInfo: any[] = [];
+          let videosInfo: VideoInfo[] = [];
           
           if (version === "v3.0") {
             const episodeMetadata = await loadEpisodeMetadataV3Simple(repoId, version, episodeId);
             videosInfo = extractVideoInfoV3WithSegmentation(repoId, version, info, episodeMetadata);
           } else {
             // For v2.x, use simpler video info extraction
-            const episode_chunk = Math.floor(0 / 1000);
-            videosInfo = Object.entries(info.features)
-              .filter(([, value]) => value.dtype === "video")
-              .map(([key]) => {
-                const videoPath = formatStringWithVars(info.video_path, {
-                  video_key: key,
-                  episode_chunk: episode_chunk.toString().padStart(3, "0"),
-                  episode_index: episodeId.toString().padStart(6, "0"),
+            if (info.video_path) {
+              const episode_chunk = Math.floor(0 / 1000);
+              videosInfo = Object.entries(info.features)
+                .filter(([, value]) => value.dtype === "video")
+                .map(([key]) => {
+                  const videoPath = formatStringWithVars(info.video_path!, {
+                    video_key: key,
+                    episode_chunk: episode_chunk.toString().padStart(3, "0"),
+                    episode_index: episodeId.toString().padStart(6, "0"),
+                  });
+                  return {
+                    filename: key,
+                    url: buildVersionedUrl(repoId, version, videoPath),
+                  };
                 });
-                return {
-                  filename: key,
-                  url: buildVersionedUrl(repoId, version, videoPath),
-                };
-              });
+            }
           }
           
           adjacentVideos.push({ episodeId, videosInfo });
@@ -105,7 +116,7 @@ async function getEpisodeDataV2(
   version: string,
   info: DatasetMetadata,
   episodeId: number,
-) {
+): Promise<EpisodeData> {
   const episode_chunk = Math.floor(0 / 1000);
 
   // Dataset information
@@ -129,20 +140,23 @@ async function getEpisodeDataV2(
           .map((x) => parseInt(x.trim(), 10))
           .filter((x) => !isNaN(x));
 
-      // Videos information
-    const videosInfo = Object.entries(info.features)
-      .filter(([, value]) => value.dtype === "video")
-      .map(([key]) => {
-      const videoPath = formatStringWithVars(info.video_path, {
-        video_key: key,
-        episode_chunk: episode_chunk.toString().padStart(3, "0"),
-        episode_index: episodeId.toString().padStart(6, "0"),
-      });
-      return {
-        filename: key,
-        url: buildVersionedUrl(repoId, version, videoPath),
-      };
-    });
+  // Videos information
+  const videosInfo =
+    info.video_path !== null
+      ? Object.entries(info.features)
+          .filter(([, value]) => value.dtype === "video")
+          .map(([key]) => {
+            const videoPath = formatStringWithVars(info.video_path!, {
+              video_key: key,
+              episode_chunk: episode_chunk.toString().padStart(3, "0"),
+              episode_index: episodeId.toString().padStart(6, "0"),
+            });
+            return {
+              filename: key,
+              url: buildVersionedUrl(repoId, version, videoPath),
+            };
+          })
+      : [];
 
   // Column data
   const columnNames = Object.entries(info.features)
@@ -199,40 +213,50 @@ async function getEpisodeDataV2(
   
   // Extract task - first check for language instructions (preferred), then fallback to task field or tasks.jsonl
   let task: string | undefined;
-  let allData: any[] = [];
-  
+  let allData: Record<string, unknown>[] = [];
+
   // Load data first
   try {
     allData = await readParquetAsObjects(arrayBuffer, []);
   } catch (error) {
     // Could not read parquet data
   }
-  
+
   // First check for language_instruction fields in the data (preferred)
   if (allData.length > 0) {
     const firstRow = allData[0];
     const languageInstructions: string[] = [];
-    
+
     // Check for language_instruction field
-    if (firstRow.language_instruction) {
+    if (
+      "language_instruction" in firstRow &&
+      typeof firstRow.language_instruction === "string" &&
+      firstRow.language_instruction
+    ) {
       languageInstructions.push(firstRow.language_instruction);
     }
-    
+
     // Check for numbered language_instruction fields
     let instructionNum = 2;
-    while (firstRow[`language_instruction_${instructionNum}`]) {
-      languageInstructions.push(firstRow[`language_instruction_${instructionNum}`]);
+    const key = `language_instruction_${instructionNum}`;
+    while (key in firstRow && typeof firstRow[key] === "string") {
+      languageInstructions.push(firstRow[key] as string);
       instructionNum++;
     }
-    
+
     // Join all instructions with line breaks
     if (languageInstructions.length > 0) {
-      task = languageInstructions.join('\n');
+      task = languageInstructions.join("\n");
     }
   }
-  
+
   // If no language instructions found, try direct task field
-  if (!task && allData.length > 0 && allData[0].task) {
+  if (
+    !task &&
+    allData.length > 0 &&
+    typeof allData[0].task === "string" &&
+    allData[0].task
+  ) {
     task = allData[0].task;
   }
   
@@ -279,7 +303,8 @@ async function getEpisodeDataV2(
     const flatRow = row.flat();
     const obj: Record<string, number> = {};
     seriesNames.forEach((key, idx) => {
-      obj[key] = flatRow[idx];
+      const value = flatRow[idx];
+      obj[key] = typeof value === "number" ? value : Number(value) || 0;
     });
     return obj;
   });
@@ -402,7 +427,14 @@ async function getEpisodeDataV2(
   }
 
   const chartDataGroups = chartGroups.map((group) =>
-    chartData.map((row) => groupRowBySuffix(pick(row, [...group, "timestamp"])))
+    chartData.map((row) => {
+      const grouped = groupRowBySuffix(pick(row, [...group, "timestamp"]));
+      // Ensure timestamp is always a number at the top level
+      return {
+        ...grouped,
+        timestamp: grouped.timestamp || 0,
+      };
+    }),
   );
 
   return {
@@ -423,7 +455,7 @@ async function getEpisodeDataV3(
   version: string,
   info: DatasetMetadata,
   episodeId: number,
-) {
+): Promise<EpisodeData> {
   // Create dataset info structure (like v2.x)
   const datasetInfo = {
     repoId,
@@ -442,11 +474,21 @@ async function getEpisodeDataV3(
   const videosInfo = extractVideoInfoV3WithSegmentation(repoId, version, info, episodeMetadata);
 
   // Load episode data for charts
-  const { chartDataGroups, ignoredColumns, task } = await loadEpisodeDataV3(repoId, version, info, episodeMetadata);
+  const {
+    chartDataGroups,
+    ignoredColumns,
+    task,
+  } = await loadEpisodeDataV3(repoId, version, info, episodeMetadata);
 
   // Calculate duration from episode length and FPS if available
-  const duration = episodeMetadata.length ? episodeMetadata.length / info.fps : 
-                   (episodeMetadata.video_to_timestamp - episodeMetadata.video_from_timestamp);
+  const episodeLength =
+    typeof episodeMetadata.length === "bigint"
+      ? Number(episodeMetadata.length)
+      : episodeMetadata.length;
+  const duration = episodeLength
+    ? episodeLength / info.fps
+    : (episodeMetadata.video_to_timestamp || 0) -
+      (episodeMetadata.video_from_timestamp || 0);
   
   return {
     datasetInfo,
@@ -465,8 +507,12 @@ async function loadEpisodeDataV3(
   repoId: string,
   version: string,
   info: DatasetMetadata,
-  episodeMetadata: any,
-): Promise<{ chartDataGroups: any[]; ignoredColumns: string[]; task?: string }> {
+  episodeMetadata: EpisodeMetadataV3,
+): Promise<{
+  chartDataGroups: ChartDataGroup[];
+  ignoredColumns: string[];
+  task?: string;
+}> {
   // Build data file path using chunk and file indices
   const dataChunkIndex = episodeMetadata.data_chunk_index || 0;
   const dataFileIndex = episodeMetadata.data_file_index || 0;
@@ -509,15 +555,20 @@ async function loadEpisodeDataV3(
       const languageInstructions: string[] = [];
       
       // Check for language_instruction field
-      if (firstRow.language_instruction) {
+      if (
+        "language_instruction" in firstRow &&
+        typeof firstRow.language_instruction === "string"
+      ) {
         languageInstructions.push(firstRow.language_instruction);
       }
-      
+
       // Check for numbered language_instruction fields
       let instructionNum = 2;
-      while (firstRow[`language_instruction_${instructionNum}`]) {
-        languageInstructions.push(firstRow[`language_instruction_${instructionNum}`]);
+      let key = `language_instruction_${instructionNum}`;
+      while (key in firstRow && typeof firstRow[key] === "string") {
+        languageInstructions.push(firstRow[key] as string);
         instructionNum++;
+        key = `language_instruction_${instructionNum}`;
       }
       
       // If no instructions found in first row, check a few more rows
@@ -528,23 +579,27 @@ async function loadEpisodeDataV3(
         [middleIndex, lastIndex].forEach((idx) => {
           const row = episodeData[idx];
           
-          if (row.language_instruction && languageInstructions.length === 0) {
+          if (
+            "language_instruction" in row &&
+            typeof row.language_instruction === "string" &&
+            languageInstructions.length === 0
+          ) {
             // Use this row's instructions
-            if (row.language_instruction) {
-              languageInstructions.push(row.language_instruction);
-            }
+            languageInstructions.push(row.language_instruction);
             let num = 2;
-            while (row[`language_instruction_${num}`]) {
-              languageInstructions.push(row[`language_instruction_${num}`]);
+            let key = `language_instruction_${num}`;
+            while (key in row && typeof row[key] === "string") {
+              languageInstructions.push(row[key] as string);
               num++;
+              key = `language_instruction_${num}`;
             }
           }
         });
       }
-      
+
       // Join all instructions with line breaks
       if (languageInstructions.length > 0) {
-        task = languageInstructions.join('\n');
+        task = languageInstructions.join("\n");
       }
     }
     
@@ -556,17 +611,39 @@ async function loadEpisodeDataV3(
         const tasksArrayBuffer = await fetchParquetFile(tasksUrl);
         const tasksData = await readParquetAsObjects(tasksArrayBuffer, []);
         
-        if (episodeData.length > 0 && tasksData && tasksData.length > 0) {
+        if (
+          episodeData.length > 0 &&
+          tasksData &&
+          tasksData.length > 0 &&
+          "task_index" in episodeData[0]
+        ) {
           const taskIndex = episodeData[0].task_index;
-          
+
           // Convert BigInt to number for comparison
-          const taskIndexNum = typeof taskIndex === 'bigint' ? Number(taskIndex) : taskIndex;
-          
+          const taskIndexNum =
+            typeof taskIndex === "bigint"
+              ? Number(taskIndex)
+              : typeof taskIndex === "number"
+                ? taskIndex
+                : undefined;
+
           // Look up task by index
-          if (taskIndexNum !== undefined && taskIndexNum < tasksData.length) {
+          if (
+            taskIndexNum !== undefined &&
+            taskIndexNum >= 0 &&
+            taskIndexNum < tasksData.length
+          ) {
             const taskData = tasksData[taskIndexNum];
-            // Extract task from __index_level_0__ field
-            task = taskData.__index_level_0__ || taskData.task || taskData['task'] || taskData[0];
+            // Extract task from various possible fields
+            if (
+              taskData &&
+              "__index_level_0__" in taskData &&
+              typeof taskData.__index_level_0__ === "string"
+            ) {
+              task = taskData.__index_level_0__;
+            } else if (taskData && "task" in taskData && typeof taskData.task === "string") {
+              task = taskData.task;
+            }
           }
         }
       } catch (error) {
@@ -582,10 +659,10 @@ async function loadEpisodeDataV3(
 
 // Process episode data for charts (v3.0 compatible)
 function processEpisodeDataForCharts(
-  episodeData: any[],
+  episodeData: Record<string, unknown>[],
   info: DatasetMetadata,
-  episodeMetadata?: any,
-): { chartDataGroups: any[]; ignoredColumns: string[] } {
+  episodeMetadata?: EpisodeMetadataV3,
+): { chartDataGroups: ChartDataGroup[]; ignoredColumns: string[] } {
   
   // Get numeric column features
   const columnNames = Object.entries(info.features)
@@ -870,9 +947,15 @@ function processEpisodeDataForCharts(
   }
 
   const chartDataGroups = chartGroups.map((group) =>
-    chartData.map((row) => groupRowBySuffix(pick(row, [...group, "timestamp"])))
+    chartData.map((row) => {
+      const grouped = groupRowBySuffix(pick(row, [...group, "timestamp"]));
+      // Ensure timestamp is always a number at the top level
+      return {
+        ...grouped,
+        timestamp: grouped.timestamp || 0,
+      };
+    }),
   );
-
 
   return { chartDataGroups, ignoredColumns };
 }
@@ -883,8 +966,8 @@ function extractVideoInfoV3WithSegmentation(
   repoId: string,
   version: string,
   info: DatasetMetadata,
-  episodeMetadata: any,
-): any[] {
+  episodeMetadata: EpisodeMetadataV3,
+): VideoInfo[] {
   // Get video features from dataset info
   const videoFeatures = Object.entries(info.features)
     .filter(([, value]) => value.dtype === "video");
@@ -912,18 +995,24 @@ function extractVideoInfoV3WithSegmentation(
       segmentStart = episodeMetadata.video_from_timestamp || 0;
       segmentEnd = episodeMetadata.video_to_timestamp || 30;
     }
-    
+
+    // Convert BigInt to number for timestamps
+    const startNum =
+      typeof segmentStart === "bigint" ? Number(segmentStart) : Number(segmentStart);
+    const endNum =
+      typeof segmentEnd === "bigint" ? Number(segmentEnd) : Number(segmentEnd);
+
     const videoPath = `videos/${videoKey}/chunk-${chunkIndex.toString().padStart(3, "0")}/file-${fileIndex.toString().padStart(3, "0")}.mp4`;
     const fullUrl = buildVersionedUrl(repoId, version, videoPath);
-    
+
     return {
       filename: videoKey,
       url: fullUrl,
       // Enable segmentation with timestamps from metadata
       isSegmented: true,
-      segmentStart: segmentStart,
-      segmentEnd: segmentEnd,
-      segmentDuration: segmentEnd - segmentStart,
+      segmentStart: startNum,
+      segmentEnd: endNum,
+      segmentDuration: endNum - startNum,
     };
   });
 
@@ -935,7 +1024,7 @@ async function loadEpisodeMetadataV3Simple(
   repoId: string,
   version: string,
   episodeId: number,
-): Promise<any> {
+): Promise<EpisodeMetadataV3> {
   // Pattern: meta/episodes/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet
   // Most datasets have all episodes in chunk-000/file-000, but episodes can be split across files
   

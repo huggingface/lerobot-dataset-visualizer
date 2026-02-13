@@ -11,9 +11,10 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
+import type { ChartDataGroup } from "@/types";
 
 type DataGraphProps = {
-  data: Array<Array<Record<string, number>>>;
+  data: ChartDataGroup[];
   onChartsReady?: () => void;
 };
 
@@ -57,12 +58,15 @@ const SingleDataGraph = React.memo(
     hoveredTime,
     setHoveredTime,
   }: {
-    data: Array<Record<string, number>>;
+    data: ChartDataGroup;
     hoveredTime: number | null;
     setHoveredTime: (t: number | null) => void;
   }) => {
     const { currentTime, setCurrentTime } = useTime();
-    function flattenRow(row: Record<string, any>, prefix = ""): Record<string, number> {
+    function flattenRow(
+      row: Record<string, number | Record<string, number>>,
+      prefix = "",
+    ): Record<string, number> {
       const result: Record<string, number> = {};
       for (const [key, value] of Object.entries(row)) {
         // Special case: if this is a group value that is a primitive, assign to prefix.key
@@ -78,8 +82,8 @@ const SingleDataGraph = React.memo(
         }
       }
       // Always keep timestamp at top level if present
-      if ("timestamp" in row) {
-        result["timestamp"] = row["timestamp"];
+      if ("timestamp" in row && typeof row.timestamp === "number") {
+        result.timestamp = row.timestamp;
       }
       return result;
     }
