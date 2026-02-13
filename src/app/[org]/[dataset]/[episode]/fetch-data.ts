@@ -14,8 +14,6 @@ import type {
   VideoInfo,
   AdjacentEpisodeVideos,
   ChartDataGroup,
-  SeriesColumn,
-  ParquetDataRow,
 } from "@/types";
 
 const SERIES_NAME_DELIMITER = " | ";
@@ -218,7 +216,7 @@ async function getEpisodeDataV2(
   // Load data first
   try {
     allData = await readParquetAsObjects(arrayBuffer, []);
-  } catch (error) {
+  } catch {
     // Could not read parquet data
   }
 
@@ -287,7 +285,7 @@ async function getEpisodeDataV2(
           }
         }
       }
-    } catch (error) {
+    } catch {
       // No tasks metadata file for this v2.x dataset
     }
   }
@@ -646,7 +644,7 @@ async function loadEpisodeDataV3(
             }
           }
         }
-      } catch (error) {
+      } catch {
         // Could not load tasks metadata - dataset might not have language tasks
       }
     }
@@ -663,15 +661,15 @@ function processEpisodeDataForCharts(
   info: DatasetMetadata,
   episodeMetadata?: EpisodeMetadataV3,
 ): { chartDataGroups: ChartDataGroup[]; ignoredColumns: string[] } {
-  
-  // Get numeric column features
-  const columnNames = Object.entries(info.features)
-    .filter(
-      ([, value]) =>
-        ["float32", "int32"].includes(value.dtype) &&
-        value.shape.length === 1,
-    )
-    .map(([key, value]) => ({ key, value }));
+
+  // Get numeric column features (not currently used but kept for reference)
+  // const columnNames = Object.entries(info.features)
+  //   .filter(
+  //     ([, value]) =>
+  //       ["float32", "int32"].includes(value.dtype) &&
+  //       value.shape.length === 1,
+  //   )
+  //   .map(([key, value]) => ({ key, value }));
 
   // Convert parquet data to chart format
   let seriesNames: string[] = [];
@@ -916,12 +914,16 @@ function processEpisodeDataForCharts(
     });
 
   // Utility function to group row keys by suffix (same as V2.1)
-  function groupRowBySuffix(row: Record<string, number>): Record<string, any> {
-    const result: Record<string, any> = {};
+  function groupRowBySuffix(
+    row: Record<string, number>,
+  ): { timestamp: number; [key: string]: number | Record<string, number> } {
+    const result: { timestamp: number; [key: string]: number | Record<string, number> } = {
+      timestamp: 0,
+    };
     const suffixGroups: Record<string, Record<string, number>> = {};
     for (const [key, value] of Object.entries(row)) {
       if (key === "timestamp") {
-        result["timestamp"] = value;
+        result.timestamp = value;
         continue;
       }
       const parts = key.split(SERIES_NAME_DELIMITER);
@@ -1061,7 +1063,7 @@ async function loadEpisodeMetadataV3Simple(
         // Not in this file, try the next one
         fileIndex++;
       }
-    } catch (error) {
+    } catch {
       // File doesn't exist - episode not found
       throw new Error(`Episode ${episodeId} not found in metadata (searched up to file-${fileIndex.toString().padStart(3, "0")}.parquet)`);
     }

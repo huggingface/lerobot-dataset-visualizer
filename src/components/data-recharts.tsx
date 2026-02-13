@@ -28,13 +28,13 @@ export const DataRecharts = React.memo(
     // Shared hoveredTime for all graphs
     const [hoveredTime, setHoveredTime] = useState<number | null>(null);
 
-    if (!Array.isArray(data) || data.length === 0) return null;
-
     useEffect(() => {
       if (typeof onChartsReady === "function") {
         onChartsReady();
       }
     }, [onChartsReady]);
+
+    if (!Array.isArray(data) || data.length === 0) return null;
 
     return (
       <div className="grid md:grid-cols-2 grid-cols-1 gap-4">
