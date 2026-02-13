@@ -77,6 +77,30 @@ bun run format
 
 - `DATASET_URL`: (optional) Base URL for dataset hosting (defaults to HuggingFace Datasets).
 
+## Docker Deployment
+
+This application can be deployed using Docker with bun for optimal performance and self-contained builds.
+
+### Build the Docker image
+
+```bash
+docker build -t lerobot-visualizer .
+```
+
+### Run the container
+
+```bash
+docker run -p 7860:7860 lerobot-visualizer
+```
+
+The application will be available at [http://localhost:7860](http://localhost:7860).
+
+### Run with custom environment variables
+
+```bash
+docker run -p 7860:7860 -e DATASET_URL=your-url lerobot-visualizer
+```
+
 ## Contributing
 
 Contributions, bug reports, and feature requests are welcome! Please open an issue or submit a pull request.
