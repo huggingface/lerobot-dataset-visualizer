@@ -7,11 +7,7 @@ import {
 } from "@/utils/parquetUtils";
 import { pick } from "@/utils/pick";
 import { getDatasetVersion, buildVersionedUrl } from "@/utils/versionUtils";
-import {
-  PADDING,
-  CHART_CONFIG,
-  EXCLUDED_COLUMNS,
-} from "@/utils/constants";
+import { PADDING, CHART_CONFIG, EXCLUDED_COLUMNS } from "@/utils/constants";
 import {
   processChartDataGroups,
   groupRowBySuffix,
@@ -108,8 +104,12 @@ export async function getAdjacentEpisodesVideoInfo(
                 .map(([key]) => {
                   const videoPath = formatStringWithVars(info.video_path!, {
                     video_key: key,
-                    episode_chunk: episode_chunk.toString().padStart(PADDING.CHUNK_INDEX, "0"),
-                    episode_index: episodeId.toString().padStart(PADDING.EPISODE_INDEX, "0"),
+                    episode_chunk: episode_chunk
+                      .toString()
+                      .padStart(PADDING.CHUNK_INDEX, "0"),
+                    episode_index: episodeId
+                      .toString()
+                      .padStart(PADDING.EPISODE_INDEX, "0"),
                   });
                   return {
                     filename: key,
@@ -170,8 +170,12 @@ async function getEpisodeDataV2(
           .map(([key]) => {
             const videoPath = formatStringWithVars(info.video_path!, {
               video_key: key,
-              episode_chunk: episode_chunk.toString().padStart(PADDING.CHUNK_INDEX, "0"),
-              episode_index: episodeId.toString().padStart(PADDING.EPISODE_INDEX, "0"),
+              episode_chunk: episode_chunk
+                .toString()
+                .padStart(PADDING.CHUNK_INDEX, "0"),
+              episode_index: episodeId
+                .toString()
+                .padStart(PADDING.EPISODE_INDEX, "0"),
             });
             return {
               filename: key,
@@ -207,7 +211,9 @@ async function getEpisodeDataV2(
     return {
       key,
       value: Array.isArray(column_names)
-        ? column_names.map((name) => `${key}${CHART_CONFIG.SERIES_NAME_DELIMITER}${name}`)
+        ? column_names.map(
+            (name) => `${key}${CHART_CONFIG.SERIES_NAME_DELIMITER}${name}`,
+          )
         : Array.from(
             { length: columnNames.find((c) => c.key === key)?.length ?? 1 },
             (_, i) => `${key}${CHART_CONFIG.SERIES_NAME_DELIMITER}${i}`,
@@ -219,7 +225,9 @@ async function getEpisodeDataV2(
     repoId,
     version,
     formatStringWithVars(info.data_path, {
-      episode_chunk: episode_chunk.toString().padStart(PADDING.CHUNK_INDEX, "0"),
+      episode_chunk: episode_chunk
+        .toString()
+        .padStart(PADDING.CHUNK_INDEX, "0"),
       episode_index: episodeId.toString().padStart(PADDING.EPISODE_INDEX, "0"),
     }),
   );
@@ -409,10 +417,7 @@ async function loadEpisodeDataV3(
   task?: string;
 }> {
   // Build data file path using chunk and file indices
-  const dataChunkIndex = bigIntToNumber(
-    episodeMetadata.data_chunk_index,
-    0,
-  );
+  const dataChunkIndex = bigIntToNumber(episodeMetadata.data_chunk_index, 0);
   const dataFileIndex = bigIntToNumber(episodeMetadata.data_file_index, 0);
   const dataPath = buildV3DataPath(dataChunkIndex, dataFileIndex);
 
@@ -587,7 +592,9 @@ function processEpisodeDataForCharts(
       return {
         key,
         value: Array.isArray(column_names)
-          ? column_names.map((name) => `${key}${CHART_CONFIG.SERIES_NAME_DELIMITER}${name}`)
+          ? column_names.map(
+              (name) => `${key}${CHART_CONFIG.SERIES_NAME_DELIMITER}${name}`,
+            )
           : Array.from(
               { length: feature.shape[0] || 1 },
               (_, i) => `${key}${CHART_CONFIG.SERIES_NAME_DELIMITER}${i}`,
