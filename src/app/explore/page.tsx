@@ -1,17 +1,15 @@
 import React from "react";
 import ExploreGrid from "./explore-grid";
-import {
-  DatasetMetadata,
-  fetchJson,
-  formatStringWithVars,
-} from "@/utils/parquetUtils";
+import { fetchJson, formatStringWithVars } from "@/utils/parquetUtils";
 import { getDatasetVersion, buildVersionedUrl } from "@/utils/versionUtils";
+import type { DatasetMetadata } from "@/types";
 
 export default async function ExplorePage({
   searchParams,
 }: {
-  searchParams: { p?: string };
+  searchParams: Promise<{ p?: string }>;
 }) {
+  const params = await searchParams;
   let datasets: any[] = [];
   let currentPage = 1;
   let totalPages = 1;
@@ -25,8 +23,8 @@ export default async function ExplorePage({
     if (!res.ok) throw new Error("Failed to fetch datasets");
     const data = await res.json();
     const allDatasets = data.datasets || data;
-    // Use searchParams from props
-    const page = parseInt(searchParams?.p || "1", 10);
+    // Use params from props
+    const page = parseInt(params?.p || "1", 10);
     const perPage = 30;
 
     currentPage = page;
@@ -63,7 +61,7 @@ export default async function ExplorePage({
             ([, value]) => value.dtype === "video",
           );
           let videoUrl: string | null = null;
-          if (videoEntry) {
+          if (videoEntry && info.video_path) {
             const [key] = videoEntry;
             const videoPath = formatStringWithVars(info.video_path, {
               video_key: key,
