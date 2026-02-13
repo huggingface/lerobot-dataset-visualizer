@@ -3,15 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useTime } from "../context/time-context";
 import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
+import { THRESHOLDS } from "@/utils/constants";
+import type { VideoInfo } from "@/types";
 
-type VideoInfo = {
-  filename: string;
-  url: string;
-  isSegmented?: boolean;
-  segmentStart?: number;
-  segmentEnd?: number;
-  segmentDuration?: number;
-};
+// Augmented video element with custom event handlers for cleanup
+interface EnhancedVideoElement extends HTMLVideoElement {
+  _segmentCleanup?: () => void;
+  _readyHandler?: () => void;
+}
 
 type VideoPlayerProps = {
   videosInfo: VideoInfo[];
@@ -149,7 +148,11 @@ export const VideosPlayer = ({
   // Sync video times (with segment awareness)
   useEffect(() => {
     videoRefs.current.forEach((video, index) => {
-      if (video && Math.abs(video.currentTime - currentTime) > 0.2) {
+      if (
+        video &&
+        Math.abs(video.currentTime - currentTime) >
+          THRESHOLDS.VIDEO_SYNC_TOLERANCE
+      ) {
         const videoInfo = videosInfo[index];
 
         if (videoInfo?.isSegmented) {
@@ -223,7 +226,7 @@ export const VideosPlayer = ({
         video.addEventListener("timeupdate", handleTimeUpdate);
 
         // Store cleanup function
-        (video as any)._segmentCleanup = () => {
+        (video as EnhancedVideoElement)._segmentCleanup = () => {
           video.removeEventListener("timeupdate", handleTimeUpdate);
         };
       }
@@ -245,7 +248,7 @@ export const VideosPlayer = ({
         } else {
           const readyHandler = () => onCanPlayThrough(index);
           video.addEventListener("canplaythrough", readyHandler);
-          (video as any)._readyHandler = readyHandler;
+          (video as EnhancedVideoElement)._readyHandler = readyHandler;
         }
       }
     });
@@ -253,16 +256,17 @@ export const VideosPlayer = ({
     return () => {
       videoRefs.current.forEach((video) => {
         if (video) {
+          const enhancedVideo = video as EnhancedVideoElement;
           // Remove ready handler
-          if ((video as any)._readyHandler) {
+          if (enhancedVideo._readyHandler) {
             video.removeEventListener(
               "canplaythrough",
-              (video as any)._readyHandler,
+              enhancedVideo._readyHandler,
             );
           }
           // Remove segment handler
-          if ((video as any)._segmentCleanup) {
-            (video as any)._segmentCleanup();
+          if (enhancedVideo._segmentCleanup) {
+            enhancedVideo._segmentCleanup();
           }
         }
       });
