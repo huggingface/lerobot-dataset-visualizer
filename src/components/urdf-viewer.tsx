@@ -87,13 +87,10 @@ function autoMatchJoints(urdfJointNames: string[], columnKeys: string[]): Record
   return mapping;
 }
 
-// Tip link names to try (so101, so100, then openarm naming)
-const TIP_LINK_NAMES = [
-  "gripper_frame_link", "gripperframe", "gripper_link", "gripper",
-  "openarm_left_hand_tcp", "openarm_right_hand_tcp",
-];
-const TRAIL_DURATION = 1.0; // seconds
-const TRAIL_COLOR = new THREE.Color("#ff6600");
+const SINGLE_ARM_TIP_NAMES = ["gripper_frame_link", "gripperframe", "gripper_link", "gripper"];
+const DUAL_ARM_TIP_NAMES = ["openarm_left_hand_tcp", "openarm_right_hand_tcp"];
+const TRAIL_DURATION = 1.0;
+const TRAIL_COLORS = [new THREE.Color("#ff6600"), new THREE.Color("#00aaff")];
 const MAX_TRAIL_POINTS = 300;
 
 // ─── Robot scene (imperative, inside Canvas) ───
@@ -109,47 +106,47 @@ function RobotScene({
 }) {
   const { scene, size } = useThree();
   const robotRef = useRef<URDFRobot | null>(null);
-  const tipLinkRef = useRef<THREE.Object3D | null>(null);
+  const tipLinksRef = useRef<THREE.Object3D[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Trail state
-  const trailRef = useRef<{ positions: Float32Array; colors: Float32Array; times: number[]; count: number }>({
-    positions: new Float32Array(MAX_TRAIL_POINTS * 3),
-    colors: new Float32Array(MAX_TRAIL_POINTS * 3), // RGB, no alpha
-    times: [],
-    count: 0,
-  });
-  const lineRef = useRef<Line2 | null>(null);
-  const trailMatRef = useRef<LineMaterial | null>(null);
+  type TrailState = { positions: Float32Array; colors: Float32Array; times: number[]; count: number };
+  const trailsRef = useRef<TrailState[]>([]);
+  const linesRef = useRef<Line2[]>([]);
+  const trailMatsRef = useRef<LineMaterial[]>([]);
+  const trailCountRef = useRef(0);
 
-  // Reset trail when episode changes
+  // Reset trails when episode changes
   useEffect(() => {
-    trailRef.current.count = 0;
-    trailRef.current.times = [];
-    if (lineRef.current) lineRef.current.visible = false;
+    for (const t of trailsRef.current) { t.count = 0; t.times = []; }
+    for (const l of linesRef.current) l.visible = false;
   }, [trailResetKey]);
 
-  // Create trail Line2 object
-  useEffect(() => {
-    const geometry = new LineGeometry();
-    const material = new LineMaterial({
-      color: 0xffffff,
-      linewidth: 4, // pixels
-      vertexColors: true,
-      transparent: true,
-      worldUnits: false,
-    });
-    material.resolution.set(window.innerWidth, window.innerHeight);
-    trailMatRef.current = material;
-
-    const line = new Line2(geometry, material);
-    line.frustumCulled = false;
-    line.visible = false;
-    lineRef.current = line;
-    scene.add(line);
-
-    return () => { scene.remove(line); geometry.dispose(); material.dispose(); };
+  // Create/destroy trail Line2 objects when tip count changes
+  const ensureTrails = useCallback((count: number) => {
+    if (trailCountRef.current === count) return;
+    // Remove old
+    for (const l of linesRef.current) { scene.remove(l); l.geometry.dispose(); }
+    for (const m of trailMatsRef.current) m.dispose();
+    // Create new
+    const trails: TrailState[] = [];
+    const lines: Line2[] = [];
+    const mats: LineMaterial[] = [];
+    for (let i = 0; i < count; i++) {
+      trails.push({ positions: new Float32Array(MAX_TRAIL_POINTS * 3), colors: new Float32Array(MAX_TRAIL_POINTS * 3), times: [], count: 0 });
+      const mat = new LineMaterial({ color: 0xffffff, linewidth: 4, vertexColors: true, transparent: true, worldUnits: false });
+      mat.resolution.set(window.innerWidth, window.innerHeight);
+      mats.push(mat);
+      const line = new Line2(new LineGeometry(), mat);
+      line.frustumCulled = false;
+      line.visible = false;
+      lines.push(line);
+      scene.add(line);
+    }
+    trailsRef.current = trails;
+    linesRef.current = lines;
+    trailMatsRef.current = mats;
+    trailCountRef.current = count;
   }, [scene]);
 
   useEffect(() => {
@@ -162,8 +159,22 @@ function RobotScene({
       // DAE (Collada) files — load with embedded materials
       if (url.endsWith(".dae")) {
         const colladaLoader = new ColladaLoader(mgr);
-        colladaLoader.load(url, (collada) => onLoad(collada.scene), undefined,
-          (err) => onLoad(new THREE.Object3D(), err as Error));
+        colladaLoader.load(url, (collada) => {
+          if (isOpenArm) {
+            collada.scene.traverse((child) => {
+              if (child instanceof THREE.Mesh && child.material) {
+                const mat = child.material as THREE.MeshStandardMaterial;
+                if (mat.side !== undefined) mat.side = THREE.DoubleSide;
+                if (mat.color) {
+                  const hsl = { h: 0, s: 0, l: 0 };
+                  mat.color.getHSL(hsl);
+                  if (hsl.l > 0.7) mat.color.setHSL(hsl.h, hsl.s, 0.55);
+                }
+              }
+            });
+          }
+          onLoad(collada.scene);
+        }, undefined, (err) => onLoad(new THREE.Object3D(), err as Error));
         return;
       }
       // STL files — apply custom materials
@@ -180,7 +191,7 @@ function RobotScene({
             color = url.includes("body_link0") ? "#3a3a4a" : "#f5f5f5";
             metalness = 0.15; roughness = 0.6;
           }
-          const material = new THREE.MeshStandardMaterial({ color, metalness, roughness });
+          const material = new THREE.MeshStandardMaterial({ color, metalness, roughness, side: isOpenArm ? THREE.DoubleSide : THREE.FrontSide });
           onLoad(new THREE.Mesh(geometry, material));
         },
         undefined,
@@ -197,9 +208,14 @@ function RobotScene({
         robot.scale.set(scale, scale, scale);
         scene.add(robot);
 
-        for (const name of TIP_LINK_NAMES) {
-          if (robot.frames[name]) { tipLinkRef.current = robot.frames[name]; break; }
+        const tipNames = isOpenArm ? DUAL_ARM_TIP_NAMES : SINGLE_ARM_TIP_NAMES;
+        const tips: THREE.Object3D[] = [];
+        for (const name of tipNames) {
+          if (robot.frames[name]) tips.push(robot.frames[name]);
+          if (!isOpenArm && tips.length === 1) break;
         }
+        tipLinksRef.current = tips;
+        ensureTrails(tips.length);
 
         const movable = Object.values(robot.joints)
           .filter((j) => j.jointType === "revolute" || j.jointType === "continuous" || j.jointType === "prismatic")
@@ -212,9 +228,9 @@ function RobotScene({
     );
     return () => {
       if (robotRef.current) { scene.remove(robotRef.current); robotRef.current = null; }
-      tipLinkRef.current = null;
+      tipLinksRef.current = [];
     };
-  }, [urdfUrl, scale, scene, onJointsLoaded]);
+  }, [urdfUrl, scale, scene, onJointsLoaded, ensureTrails]);
 
   const tipWorldPos = useMemo(() => new THREE.Vector3(), []);
 
@@ -222,61 +238,58 @@ function RobotScene({
     const robot = robotRef.current;
     if (!robot) return;
 
-    // Apply joint values
     for (const [name, value] of Object.entries(jointValues)) {
       robot.setJointValue(name, value);
     }
     robot.updateMatrixWorld(true);
 
-    // Update trail
-    const line = lineRef.current;
-    const tip = tipLinkRef.current;
-    if (!line || !tip || !trailEnabled) {
-      if (line) line.visible = false;
+    const tips = tipLinksRef.current;
+    if (!trailEnabled || tips.length === 0) {
+      for (const l of linesRef.current) l.visible = false;
       return;
     }
 
-    // Keep resolution in sync with viewport
-    if (trailMatRef.current) trailMatRef.current.resolution.set(size.width, size.height);
-
-    tip.getWorldPosition(tipWorldPos);
     const now = performance.now() / 1000;
-    const trail = trailRef.current;
+    for (let ti = 0; ti < tips.length; ti++) {
+      const tip = tips[ti];
+      const trail = trailsRef.current[ti];
+      const line = linesRef.current[ti];
+      const mat = trailMatsRef.current[ti];
+      if (!trail || !line || !mat) continue;
 
-    // Add new point
-    if (trail.count < MAX_TRAIL_POINTS) {
-      trail.count++;
-    } else {
-      trail.positions.copyWithin(0, 3);
-      trail.colors.copyWithin(0, 3);
-      trail.times.shift();
+      mat.resolution.set(size.width, size.height);
+      tip.getWorldPosition(tipWorldPos);
+      const trailColor = TRAIL_COLORS[ti % TRAIL_COLORS.length];
+
+      if (trail.count < MAX_TRAIL_POINTS) {
+        trail.count++;
+      } else {
+        trail.positions.copyWithin(0, 3);
+        trail.colors.copyWithin(0, 3);
+        trail.times.shift();
+      }
+      const idx = trail.count - 1;
+      trail.positions[idx * 3] = tipWorldPos.x;
+      trail.positions[idx * 3 + 1] = tipWorldPos.y;
+      trail.positions[idx * 3 + 2] = tipWorldPos.z;
+      trail.times.push(now);
+
+      for (let i = 0; i < trail.count; i++) {
+        const t = Math.max(0, 1 - (now - trail.times[i]) / TRAIL_DURATION);
+        trail.colors[i * 3] = trailColor.r * t;
+        trail.colors[i * 3 + 1] = trailColor.g * t;
+        trail.colors[i * 3 + 2] = trailColor.b * t;
+      }
+
+      if (trail.count < 2) { line.visible = false; continue; }
+      const geo = new LineGeometry();
+      geo.setPositions(Array.from(trail.positions.subarray(0, trail.count * 3)));
+      geo.setColors(Array.from(trail.colors.subarray(0, trail.count * 3)));
+      line.geometry.dispose();
+      line.geometry = geo;
+      line.computeLineDistances();
+      line.visible = true;
     }
-    const idx = trail.count - 1;
-    trail.positions[idx * 3] = tipWorldPos.x;
-    trail.positions[idx * 3 + 1] = tipWorldPos.y;
-    trail.positions[idx * 3 + 2] = tipWorldPos.z;
-    trail.times.push(now);
-
-    // Update colors: fade from orange → black based on age
-    for (let i = 0; i < trail.count; i++) {
-      const age = now - trail.times[i];
-      const t = Math.max(0, 1 - age / TRAIL_DURATION);
-      trail.colors[i * 3] = TRAIL_COLOR.r * t;
-      trail.colors[i * 3 + 1] = TRAIL_COLOR.g * t;
-      trail.colors[i * 3 + 2] = TRAIL_COLOR.b * t;
-    }
-
-    // Need at least 2 points for Line2
-    if (trail.count < 2) { line.visible = false; return; }
-
-    // Rebuild geometry (Line2 requires this)
-    const geo = new LineGeometry();
-    geo.setPositions(Array.from(trail.positions.subarray(0, trail.count * 3)));
-    geo.setColors(Array.from(trail.colors.subarray(0, trail.count * 3)));
-    line.geometry.dispose();
-    line.geometry = geo;
-    line.computeLineDistances();
-    line.visible = true;
   });
 
   if (loading) return <Html center><span className="text-white text-lg">Loading robot…</span></Html>;
