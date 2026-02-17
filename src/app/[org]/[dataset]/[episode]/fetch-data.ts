@@ -301,11 +301,6 @@ async function getEpisodeDataV2(
   const filteredColumns = columnNames.filter(
     (column) => !excludedColumns.includes(column.key),
   );
-  const filteredColumnNames = [
-    "timestamp",
-    ...filteredColumns.map((column) => column.key),
-  ];
-
   const columns: ColumnDef[] = filteredColumns.map(({ key }) => {
     let column_names: unknown = info.features[key].names;
     while (typeof column_names === "object" && column_names !== null) {
@@ -613,15 +608,6 @@ function processEpisodeDataForCharts(
   episodeMetadata?: EpisodeMetadataV3,
 ): { chartDataGroups: ChartRow[][]; flatChartData: Record<string, number>[]; ignoredColumns: string[] } {
   
-  // Get numeric column features
-  const columnNames = Object.entries(info.features)
-    .filter(
-      ([, value]) =>
-        ["float32", "int32"].includes(value.dtype) &&
-        value.shape.length === 1,
-    )
-    .map(([key, value]) => ({ key, value }));
-
   // Convert parquet data to chart format
   let seriesNames: string[] = [];
   

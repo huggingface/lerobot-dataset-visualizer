@@ -13,7 +13,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import type { EpisodeData } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import { fetchEpisodeChartData } from "@/app/[org]/[dataset]/[episode]/actions";
-import { isOpenArmRobot } from "@/lib/so101-robot";
+
 
 const SERIES_DELIM = " | ";
 const DEG2RAD = Math.PI / 180;
@@ -21,12 +21,12 @@ const DEG2RAD = Math.PI / 180;
 function getRobotConfig(robotType: string | null) {
   const lower = (robotType ?? "").toLowerCase();
   if (lower.includes("openarm")) {
-    return { urdfUrl: "/urdf/openarm/openarm_bimanual.urdf", scale: 3, isDualArm: true };
+    return { urdfUrl: "/urdf/openarm/openarm_bimanual.urdf", scale: 3 };
   }
   if (lower.includes("so100") && !lower.includes("so101")) {
-    return { urdfUrl: "/urdf/so101/so100.urdf", scale: 10, isDualArm: false };
+    return { urdfUrl: "/urdf/so101/so100.urdf", scale: 10 };
   }
-  return { urdfUrl: "/urdf/so101/so101_new_calib.urdf", scale: 10, isDualArm: false };
+  return { urdfUrl: "/urdf/so101/so101_new_calib.urdf", scale: 10 };
 }
 
 // Detect unit: servo ticks (0-4096), degrees (>6.28), or radians
@@ -348,7 +348,7 @@ export default function URDFViewer({
   const { datasetInfo, episodes } = data;
   const fps = datasetInfo.fps || 30;
   const robotConfig = useMemo(() => getRobotConfig(datasetInfo.robot_type), [datasetInfo.robot_type]);
-  const { urdfUrl, scale, isDualArm } = robotConfig;
+  const { urdfUrl, scale } = robotConfig;
 
   // Episode selection & chart data
   const [selectedEpisode, setSelectedEpisode] = useState(data.episodeId);

@@ -302,15 +302,14 @@ function ActionVelocitySection({ data, agg, numEpisodes, jerkyEpisodes }: { data
     });
   }, [data, actionKeys, agg]);
 
-  const stats = (agg && agg.length > 0) ? agg : fallbackStats ?? [];
+  const stats = useMemo(() => (agg && agg.length > 0) ? agg : fallbackStats ?? [], [agg, fallbackStats]);
   const isAgg = agg && agg.length > 0;
 
-  if (stats.length === 0) return <p className="text-slate-500 italic">No action data for velocity analysis.</p>;
-
-  const maxBinCount = Math.max(...stats.flatMap(s => s.bins));
-  const maxStd = Math.max(...stats.map(s => s.std));
+  const maxBinCount = useMemo(() => stats.length > 0 ? Math.max(...stats.flatMap(s => s.bins)) : 0, [stats]);
+  const maxStd = useMemo(() => stats.length > 0 ? Math.max(...stats.map(s => s.std)) : 1, [stats]);
 
   const insight = useMemo(() => {
+    if (stats.length === 0) return null;
     const smooth = stats.filter(s => s.std / maxStd < 0.4);
     const moderate = stats.filter(s => s.std / maxStd >= 0.4 && s.std / maxStd < 0.7);
     const jerky = stats.filter(s => s.std / maxStd >= 0.7);
@@ -347,6 +346,8 @@ function ActionVelocitySection({ data, agg, numEpisodes, jerkyEpisodes }: { data
 
     return { verdict, lines, tip };
   }, [stats, maxStd]);
+
+  if (stats.length === 0) return <p className="text-slate-500 italic">No action data for velocity analysis.</p>;
 
   return (
     <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
@@ -462,6 +463,8 @@ function JerkyEpisodesList({ episodes }: { episodes: JerkyEpisode[] }) {
 // ─── Cross-Episode Variance Heatmap ──────────────────────────────
 
 function VarianceHeatmap({ data, loading }: { data: CrossEpisodeVarianceData | null; loading: boolean }) {
+  const isFs = useIsFullscreen();
+
   if (loading) {
     return (
       <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700">
@@ -485,8 +488,6 @@ function VarianceHeatmap({ data, loading }: { data: CrossEpisodeVarianceData | n
       </div>
     );
   }
-
-  const isFs = useIsFullscreen();
   const { actionNames, timeBins, variance, numEpisodes } = data;
   const numDims = actionNames.length;
   const numBins = timeBins.length;
@@ -918,14 +919,11 @@ const BC_THRESHOLD = 5 / 9;
 function MultimodalitySection({ data }: { data: CrossEpisodeVarianceData }) {
   const isFs = useIsFullscreen();
   const { actionNames, timeBins, multimodality, numEpisodes } = data;
-  if (!multimodality || multimodality.length === 0) return null;
-
-  const numDims = actionNames.length;
-  const numBins = timeBins.length;
 
   const { bimodalPct, verdict } = useMemo(() => {
+    if (!multimodality || multimodality.length === 0) return { bimodalPct: 0, verdict: { label: "", color: "" } };
     let bimodal = 0, total = 0;
-    for (const row of multimodality!) for (const v of row) { total++; if (v > BC_THRESHOLD) bimodal++; }
+    for (const row of multimodality) for (const v of row) { total++; if (v > BC_THRESHOLD) bimodal++; }
     const pct = total > 0 ? (bimodal / total * 100) : 0;
 
     let v: { label: string; color: string };
@@ -935,6 +933,8 @@ function MultimodalitySection({ data }: { data: CrossEpisodeVarianceData }) {
 
     return { bimodalPct: pct, verdict: v };
   }, [multimodality]);
+
+  if (!multimodality || multimodality.length === 0) return null;
 
   const mBaseW = isFs ? 1000 : 560;
   const mBaseH = isFs ? 500 : 300;
@@ -1168,7 +1168,7 @@ function TrajectoryClusteringSection({ data, numEpisodes }: { data: TrajectoryCl
             width={plotW} height={plotH}
             className="block bg-slate-900/50 rounded cursor-grab active:cursor-grabbing select-none"
             onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}
-            onMouseLeave={(ev) => { onMouseUp(); setHoveredEp(null); }}
+            onMouseLeave={() => { onMouseUp(); setHoveredEp(null); }}
           >
             {axisLines.map(a => (
               <React.Fragment key={a.label}>

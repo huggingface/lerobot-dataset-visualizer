@@ -16,7 +16,8 @@
 # next.js
 /.next/
 /out/
-/public
+/public/*
+!/public/urdf/
 
 # production
 /build

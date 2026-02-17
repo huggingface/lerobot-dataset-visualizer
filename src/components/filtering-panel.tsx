@@ -247,7 +247,6 @@ interface FilteringPanelProps {
   crossEpisodeLoading: boolean;
   episodeLengthStats: EpisodeLengthStats | null;
   flatChartData: Record<string, number>[];
-  fps: number;
   onViewFlaggedEpisodes?: () => void;
 }
 
@@ -315,7 +314,6 @@ const FilteringPanel: React.FC<FilteringPanelProps> = ({
   crossEpisodeLoading,
   episodeLengthStats,
   flatChartData,
-  fps,
   onViewFlaggedEpisodes,
 }) => {
   return (
