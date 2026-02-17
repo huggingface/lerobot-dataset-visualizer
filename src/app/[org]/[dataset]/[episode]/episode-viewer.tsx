@@ -99,7 +99,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
     }
     return "episodes";
   });
-  const [columnMinMax, setColumnMinMax] = useState<ColumnMinMax[] | null>(null);
+  const [, setColumnMinMax] = useState<ColumnMinMax[] | null>(null);
   const [episodeLengthStats, setEpisodeLengthStats] = useState<EpisodeLengthStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const statsLoadedRef = useRef(false);
@@ -478,8 +478,6 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
           {activeTab === "statistics" && (
             <StatsPanel
               datasetInfo={datasetInfo}
-              episodeId={episodeId}
-              columnMinMax={columnMinMax}
               episodeLengthStats={episodeLengthStats}
               loading={statsLoading}
             />
@@ -508,7 +506,6 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
                 crossEpisodeLoading={insightsLoading}
                 episodeLengthStats={episodeLengthStats}
                 flatChartData={data.flatChartData}
-                fps={datasetInfo.fps || 30}
                 onViewFlaggedEpisodes={() => {
                   setSidebarFlaggedOnly(true);
                   handleTabChange("episodes");

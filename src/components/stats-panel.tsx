@@ -1,17 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import type {
   DatasetDisplayInfo,
-  ColumnMinMax,
   EpisodeLengthStats,
   CameraInfo,
 } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 
 interface StatsPanelProps {
   datasetInfo: DatasetDisplayInfo;
-  episodeId: number;
-  columnMinMax: ColumnMinMax[] | null;
   episodeLengthStats: EpisodeLengthStats | null;
   loading: boolean;
 }
@@ -83,8 +80,6 @@ const Card: React.FC<{ label: string; value: string | number }> = ({ label, valu
 
 const StatsPanel: React.FC<StatsPanelProps> = ({
   datasetInfo,
-  episodeId,
-  columnMinMax,
   episodeLengthStats,
   loading,
 }) => {
