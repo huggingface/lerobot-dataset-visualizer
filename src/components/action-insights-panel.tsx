@@ -402,15 +402,17 @@ function ActionVelocitySection({ data, agg, numEpisodes, jerkyEpisodes }: { data
         })}
       </div>
 
-      <div className="bg-slate-900/60 rounded-md px-4 py-3 border border-slate-700/60 space-y-1.5">
-        <p className="text-sm font-medium text-slate-200">
-          Overall: <span className={insight.verdict.color}>{insight.verdict.label}</span>
-        </p>
-        <ul className="text-xs text-slate-400 space-y-0.5 list-disc list-inside">
-          {insight.lines.map((l, i) => <li key={i}>{l}</li>)}
-        </ul>
-        <p className="text-xs text-slate-500 pt-1">{insight.tip}</p>
-      </div>
+      {insight && (
+        <div className="bg-slate-900/60 rounded-md px-4 py-3 border border-slate-700/60 space-y-1.5">
+          <p className="text-sm font-medium text-slate-200">
+            Overall: <span className={insight.verdict.color}>{insight.verdict.label}</span>
+          </p>
+          <ul className="text-xs text-slate-400 space-y-0.5 list-disc list-inside">
+            {insight.lines.map((l, i) => <li key={i}>{l}</li>)}
+          </ul>
+          <p className="text-xs text-slate-500 pt-1">{insight.tip}</p>
+        </div>
+      )}
 
       {jerkyEpisodes && jerkyEpisodes.length > 0 && <JerkyEpisodesList episodes={jerkyEpisodes} />}
     </div>
