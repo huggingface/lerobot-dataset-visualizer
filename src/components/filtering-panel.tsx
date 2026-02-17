@@ -8,7 +8,7 @@ import type {
   EpisodeLengthStats,
   EpisodeLengthInfo,
 } from "@/app/[org]/[dataset]/[episode]/fetch-data";
-import { ActionVelocitySection, TrajectoryClusteringSection, FullscreenWrapper } from "@/components/action-insights-panel";
+import { ActionVelocitySection, FullscreenWrapper } from "@/components/action-insights-panel";
 
 // ─── Shared small components ─────────────────────────────────────
 
@@ -51,13 +51,9 @@ function AutoPruneSection({ data }: { data: CrossEpisodeVarianceData }) {
     const allIds = new Set<number>();
     const movementMap = new Map<number, number>();
     const jerkyMap = new Map<number, number>();
-    const clusterMap = new Map<number, number>();
 
-    for (const e of data.lowMovementEpisodes) { allIds.add(e.episodeIndex); movementMap.set(e.episodeIndex, e.totalMovement); }
+    for (const e of data.speedDistribution) { allIds.add(e.episodeIndex); movementMap.set(e.episodeIndex, e.speed); }
     for (const e of data.jerkyEpisodes) { allIds.add(e.episodeIndex); jerkyMap.set(e.episodeIndex, e.meanAbsDelta); }
-    if (data.trajectoryClustering) {
-      for (const e of data.trajectoryClustering.entries) { allIds.add(e.episodeIndex); clusterMap.set(e.episodeIndex, e.distFromCenter); }
-    }
     if (allIds.size === 0) return null;
 
     const normalize = (map: Map<number, number>, invert: boolean) => {
@@ -72,13 +68,11 @@ function AutoPruneSection({ data }: { data: CrossEpisodeVarianceData }) {
 
     const movNorm = normalize(movementMap, true);
     const jerkNorm = normalize(jerkyMap, false);
-    const clustNorm = normalize(clusterMap, false);
 
     const scored = [...allIds].map(id => {
       let score = 0, weights = 0;
       if (movNorm.has(id)) { score += movNorm.get(id)!; weights++; }
       if (jerkNorm.has(id)) { score += jerkNorm.get(id)!; weights++; }
-      if (clustNorm.has(id)) { score += clustNorm.get(id)!; weights++; }
       return { id, score: weights > 0 ? score / weights : 0 };
     }).sort((a, b) => b.score - a.score);
 
@@ -100,7 +94,7 @@ function AutoPruneSection({ data }: { data: CrossEpisodeVarianceData }) {
         <h3 className="text-sm font-semibold text-orange-400">Auto-Prune</h3>
         <p className="text-xs text-slate-400 mt-1">
           Automatically identify the worst episodes based on a composite score combining:
-          low movement (⅓), jerkiness (⅓), and cluster outlier distance (⅓).
+          low movement (½) and jerkiness (½).
           Each metric is min-max normalized to [0,1] and averaged.
         </p>
       </div>
@@ -347,12 +341,6 @@ const FilteringPanel: React.FC<FilteringPanelProps> = ({
 
       {crossEpisodeData?.lowMovementEpisodes && (
         <LowMovementSection episodes={crossEpisodeData.lowMovementEpisodes} />
-      )}
-
-      {crossEpisodeData?.trajectoryClustering && (
-        <FullscreenWrapper>
-          <TrajectoryClusteringSection data={crossEpisodeData.trajectoryClustering} numEpisodes={crossEpisodeData.numEpisodes} />
-        </FullscreenWrapper>
       )}
 
       <FullscreenWrapper>

@@ -1248,23 +1248,6 @@ export type SpeedDistEntry = {
   speed: number;
 };
 
-export type ClusterEntry = {
-  episodeIndex: number;
-  x: number;
-  y: number;
-  z: number;
-  cluster: number;
-  distFromCenter: number;
-  isOutlier: boolean;
-};
-
-export type TrajectoryClustering = {
-  entries: ClusterEntry[];
-  numClusters: number;
-  clusterSizes: number[];
-  outlierCount: number;
-};
-
 export type AggAlignment = {
   ccData: { lag: number; max: number; mean: number; min: number }[];
   meanPeakLag: number;
@@ -1293,8 +1276,6 @@ export type CrossEpisodeVarianceData = {
   aggAutocorrelation: AggAutocorrelation | null;
   speedDistribution: SpeedDistEntry[];
   jerkyEpisodes: JerkyEpisode[];
-  multimodality: number[][] | null;
-  trajectoryClustering: TrajectoryClustering | null;
   aggAlignment: AggAlignment | null;
 };
 
@@ -1458,12 +1439,10 @@ export async function loadCrossEpisodeActionVariance(
   }
   console.log(`[cross-ep] Loaded action data for ${episodeActions.length}/${sampled.length} episodes`);
 
-  // Resample each episode to numTimeBins and compute variance + higher moments for multimodality
+  // Resample each episode to numTimeBins and compute variance
   const timeBins = Array.from({ length: numTimeBins }, (_, i) => i / (numTimeBins - 1));
   const sums = Array.from({ length: numTimeBins }, () => new Float64Array(actionDim));
   const sumsSq = Array.from({ length: numTimeBins }, () => new Float64Array(actionDim));
-  const sumsCube = Array.from({ length: numTimeBins }, () => new Float64Array(actionDim));
-  const sumsFourth = Array.from({ length: numTimeBins }, () => new Float64Array(actionDim));
   const counts = new Uint32Array(numTimeBins);
 
   for (const { actions: epActions } of episodeActions) {
@@ -1473,11 +1452,8 @@ export async function loadCrossEpisodeActionVariance(
       const row = epActions[srcIdx];
       for (let d = 0; d < actionDim; d++) {
         const v = row[d] ?? 0;
-        const v2 = v * v;
         sums[b][d] += v;
-        sumsSq[b][d] += v2;
-        sumsCube[b][d] += v2 * v;
-        sumsFourth[b][d] += v2 * v2;
+        sumsSq[b][d] += v * v;
       }
       counts[b]++;
     }
@@ -1603,181 +1579,6 @@ export async function loadCrossEpisodeActionVariance(
     speed: s.totalMovement,
   }));
 
-  // Multimodality: bimodality coefficient per time-bin per dimension
-  // BC = (skewness² + 1) / kurtosis — values above 5/9 suggest bimodality
-  const multimodality: number[][] | null = (() => {
-    const result: number[][] = [];
-    for (let b = 0; b < numTimeBins; b++) {
-      const row: number[] = [];
-      const n = counts[b];
-      for (let d = 0; d < actionDim; d++) {
-        if (n < 4) { row.push(0); continue; }
-        const mean = sums[b][d] / n;
-        const m2 = sumsSq[b][d] / n - mean * mean;
-        if (m2 < 1e-12) { row.push(0); continue; }
-        const m3 = sumsCube[b][d] / n - 3 * mean * sumsSq[b][d] / n + 2 * mean * mean * mean;
-        const m4 = sumsFourth[b][d] / n - 4 * mean * sumsCube[b][d] / n
-          + 6 * mean * mean * sumsSq[b][d] / n - 3 * mean * mean * mean * mean;
-        const skew = m3 / Math.pow(m2, 1.5);
-        const kurt = m4 / (m2 * m2);
-        row.push(kurt > 0 ? (skew * skew + 1) / kurt : 0);
-      }
-      result.push(row);
-    }
-    return result.length > 0 ? result : null;
-  })();
-
-  // Trajectory clustering: time-normalize, PCA 2D, k-means, outlier detection
-  const trajectoryClustering: TrajectoryClustering | null = (() => {
-    if (episodeActions.length < 5) return null;
-    const clusterBins = 30;
-    const N = episodeActions.length;
-    const D = clusterBins * actionDim;
-
-    // Time-normalize each episode to a flat vector, standardize per action dim
-    const raw: number[][] = episodeActions.map(({ actions: ep }) => {
-      const vec: number[] = [];
-      for (let b = 0; b < clusterBins; b++) {
-        const srcIdx = Math.min(Math.round(b / (clusterBins - 1) * (ep.length - 1)), ep.length - 1);
-        for (let d = 0; d < actionDim; d++) vec.push(ep[srcIdx][d] ?? 0);
-      }
-      return vec;
-    });
-
-    const dimMean = new Float64Array(D), dimStd = new Float64Array(D);
-    for (const v of raw) for (let d = 0; d < D; d++) dimMean[d] += v[d];
-    for (let d = 0; d < D; d++) dimMean[d] /= N;
-    for (const v of raw) for (let d = 0; d < D; d++) dimStd[d] += (v[d] - dimMean[d]) ** 2;
-    for (let d = 0; d < D; d++) dimStd[d] = Math.sqrt(dimStd[d] / N) || 1;
-    const data = raw.map(v => v.map((x, d) => (x - dimMean[d]) / dimStd[d]));
-
-    // PCA via power iteration on centered data (already centered by standardization)
-    const powerIter = (rows: number[][], init: number[]): number[] => {
-      let v = [...init];
-      let norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0)) || 1;
-      v = v.map(x => x / norm);
-      for (let iter = 0; iter < 50; iter++) {
-        const w = new Float64Array(D);
-        for (const row of rows) {
-          const dot = row.reduce((s, x, d) => s + x * v[d], 0);
-          for (let d = 0; d < D; d++) w[d] += dot * row[d];
-        }
-        norm = Math.sqrt(w.reduce((s, x) => s + x * x, 0)) || 1;
-        v = Array.from(w, x => x / norm);
-      }
-      return v;
-    };
-
-    const ev1 = powerIter(data, data[0]);
-    const proj1 = data.map(row => row.reduce((s, x, d) => s + x * ev1[d], 0));
-    const deflated1 = data.map((row, i) => row.map((x, d) => x - proj1[i] * ev1[d]));
-    const ev2 = powerIter(deflated1, deflated1[1] ?? deflated1[0]);
-    const proj2 = data.map(row => row.reduce((s, x, d) => s + x * ev2[d], 0));
-    const deflated2 = deflated1.map((row, i) => row.map((x, d) => x - proj2[i] * ev2[d]));
-    const ev3 = powerIter(deflated2, deflated2[2] ?? deflated2[0]);
-    const proj3 = data.map(row => row.reduce((s, x, d) => s + x * ev3[d], 0));
-
-    // Precompute pairwise distances for silhouette
-    const dist = new Float64Array(N * N);
-    for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
-      let d2 = 0;
-      for (let d = 0; d < D; d++) d2 += (data[i][d] - data[j][d]) ** 2;
-      const d = Math.sqrt(d2);
-      dist[i * N + j] = d;
-      dist[j * N + i] = d;
-    }
-
-    // K-means
-    const runKmeans = (k: number): { labels: number[]; centroids: number[][] } => {
-      const centroids = Array.from({ length: k }, (_, c) => [...data[Math.floor(c * N / k)]]);
-      const labels = new Int32Array(N);
-      for (let iter = 0; iter < 30; iter++) {
-        for (let i = 0; i < N; i++) {
-          let minD = Infinity;
-          for (let c = 0; c < k; c++) {
-            let d2 = 0;
-            for (let d = 0; d < D; d++) d2 += (data[i][d] - centroids[c][d]) ** 2;
-            if (d2 < minD) { minD = d2; labels[i] = c; }
-          }
-        }
-        const sums = Array.from({ length: k }, () => new Float64Array(D));
-        const counts = new Uint32Array(k);
-        for (let i = 0; i < N; i++) {
-          counts[labels[i]]++;
-          for (let d = 0; d < D; d++) sums[labels[i]][d] += data[i][d];
-        }
-        for (let c = 0; c < k; c++) {
-          if (counts[c] === 0) continue;
-          for (let d = 0; d < D; d++) centroids[c][d] = sums[c][d] / counts[c];
-        }
-      }
-      return { labels: Array.from(labels), centroids };
-    };
-
-    // Silhouette score using precomputed distances
-    const silhouette = (labels: number[], k: number): number => {
-      let total = 0;
-      for (let i = 0; i < N; i++) {
-        let aSum = 0, aCount = 0;
-        for (let j = 0; j < N; j++) {
-          if (j === i || labels[j] !== labels[i]) continue;
-          aSum += dist[i * N + j]; aCount++;
-        }
-        const a = aCount > 0 ? aSum / aCount : 0;
-        let b = Infinity;
-        for (let c = 0; c < k; c++) {
-          if (c === labels[i]) continue;
-          let bSum = 0, bCount = 0;
-          for (let j = 0; j < N; j++) {
-            if (labels[j] !== c) continue;
-            bSum += dist[i * N + j]; bCount++;
-          }
-          if (bCount > 0) b = Math.min(b, bSum / bCount);
-        }
-        const denom = Math.max(a, b);
-        total += denom > 0 ? (b - a) / denom : 0;
-      }
-      return total / N;
-    };
-
-    // Try k = 2..maxK, pick best silhouette
-    const maxK = Math.min(5, Math.floor(N / 3));
-    let bestK = 2, bestSil = -Infinity, bestLabels: number[] = [], bestCentroids: number[][] = [];
-    for (let k = 2; k <= maxK; k++) {
-      const { labels, centroids } = runKmeans(k);
-      const sil = silhouette(labels, k);
-      if (sil > bestSil) { bestSil = sil; bestK = k; bestLabels = labels; bestCentroids = centroids; }
-    }
-
-    // Compute distance from cluster center and detect outliers
-    const centerDists = bestLabels.map((c, i) => {
-      let d2 = 0;
-      for (let d = 0; d < D; d++) d2 += (data[i][d] - bestCentroids[c][d]) ** 2;
-      return Math.sqrt(d2);
-    });
-    const clusterStats = Array.from({ length: bestK }, (_, c) => {
-      const ds = centerDists.filter((_, i) => bestLabels[i] === c);
-      const m = ds.reduce((a, b) => a + b, 0) / (ds.length || 1);
-      const s = Math.sqrt(ds.reduce((a, v) => a + (v - m) ** 2, 0) / (ds.length || 1));
-      return { mean: m, std: s };
-    });
-
-    const entries: ClusterEntry[] = episodeActions.map(({ index }, i) => {
-      const cs = clusterStats[bestLabels[i]];
-      const isOutlier = centerDists[i] > cs.mean + 2 * cs.std;
-      return {
-        episodeIndex: index, x: proj1[i], y: proj2[i], z: proj3[i],
-        cluster: bestLabels[i], distFromCenter: Math.round(centerDists[i] * 1000) / 1000,
-        isOutlier,
-      };
-    });
-
-    const clusterSizes = Array.from({ length: bestK }, (_, c) => bestLabels.filter(l => l === c).length);
-    const outlierCount = entries.filter(e => e.isOutlier).length;
-
-    return { entries, numClusters: bestK, clusterSizes, outlierCount };
-  })();
-
   // Aggregated state-action alignment across episodes
   const aggAlignment: AggAlignment | null = (() => {
     if (!stateKey || stateDim === 0) return null;
@@ -1872,7 +1673,7 @@ export async function loadCrossEpisodeActionVariance(
   return {
     actionNames, timeBins, variance, numEpisodes: episodeActions.length,
     lowMovementEpisodes, aggVelocity, aggAutocorrelation,
-    speedDistribution, jerkyEpisodes, multimodality, trajectoryClustering, aggAlignment,
+    speedDistribution, jerkyEpisodes, aggAlignment,
   };
 }
 

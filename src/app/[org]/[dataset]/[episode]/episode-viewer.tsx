@@ -370,7 +370,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
             <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
           )}
         </button>
-        {hasURDFSupport(datasetInfo.robot_type) && (
+        {hasURDFSupport(datasetInfo.robot_type) && datasetInfo.codebase_version >= "v3.0" && (
           <button
             className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
               activeTab === "urdf"
