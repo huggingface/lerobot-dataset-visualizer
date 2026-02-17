@@ -40,102 +40,6 @@ function FlagAllBtn({ ids, label }: { ids: number[]; label?: string }) {
   );
 }
 
-// ─── Auto-Prune ──────────────────────────────────────────────────
-
-function AutoPruneSection({ data }: { data: CrossEpisodeVarianceData }) {
-  const { addMany } = useFlaggedEpisodes();
-  const [pct, setPct] = useState(5);
-  const [copied, setCopied] = useState(false);
-
-  const result = useMemo(() => {
-    const allIds = new Set<number>();
-    const movementMap = new Map<number, number>();
-    const jerkyMap = new Map<number, number>();
-
-    for (const e of data.speedDistribution) { allIds.add(e.episodeIndex); movementMap.set(e.episodeIndex, e.speed); }
-    for (const e of data.jerkyEpisodes) { allIds.add(e.episodeIndex); jerkyMap.set(e.episodeIndex, e.meanAbsDelta); }
-    if (allIds.size === 0) return null;
-
-    const normalize = (map: Map<number, number>, invert: boolean) => {
-      const vals = [...map.values()];
-      if (vals.length === 0) return map;
-      const min = Math.min(...vals), max = Math.max(...vals);
-      const range = max - min || 1;
-      const out = new Map<number, number>();
-      for (const [k, v] of map) out.set(k, invert ? 1 - (v - min) / range : (v - min) / range);
-      return out;
-    };
-
-    const movNorm = normalize(movementMap, true);
-    const jerkNorm = normalize(jerkyMap, false);
-
-    const scored = [...allIds].map(id => {
-      let score = 0, weights = 0;
-      if (movNorm.has(id)) { score += movNorm.get(id)!; weights++; }
-      if (jerkNorm.has(id)) { score += jerkNorm.get(id)!; weights++; }
-      return { id, score: weights > 0 ? score / weights : 0 };
-    }).sort((a, b) => b.score - a.score);
-
-    const n = Math.max(1, Math.round(scored.length * pct / 100));
-    return { scored, pruneIds: scored.slice(0, n).map(s => s.id), total: scored.length };
-  }, [data, pct]);
-
-  if (!result) return null;
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(result.pruneIds.join(", "));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-
-  return (
-    <div className="bg-slate-800/60 rounded-lg p-5 border border-orange-500/30 space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold text-orange-400">Auto-Prune</h3>
-        <p className="text-xs text-slate-400 mt-1">
-          Automatically identify the worst episodes based on a composite score combining:
-          low movement (½) and jerkiness (½).
-          Each metric is min-max normalized to [0,1] and averaged.
-        </p>
-      </div>
-
-      <div className="flex items-center gap-4">
-        <label className="text-xs text-slate-400 shrink-0">Prune worst</label>
-        <input type="range" min={1} max={50} value={pct} onChange={e => setPct(Number(e.target.value))}
-          className="flex-1 h-1.5 rounded appearance-none bg-slate-700 accent-orange-500" />
-        <span className="text-sm font-bold text-orange-400 tabular-nums w-10 text-right">{pct}%</span>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-slate-400">
-          {result.pruneIds.length} episode{result.pruneIds.length !== 1 ? "s" : ""} out of {result.total} scored
-        </p>
-        <div className="flex items-center gap-2">
-          <button onClick={handleCopy}
-            className="text-xs text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1">
-            {copied ? (
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-green-400"><polyline points="20 6 9 17 4 12" /></svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-            )}
-            Copy IDs
-          </button>
-          <button onClick={() => addMany(result.pruneIds)}
-            className="text-xs bg-orange-500/20 text-orange-400 border border-orange-500/40 rounded px-2 py-1 hover:bg-orange-500/30 transition-colors">
-            Flag all {result.pruneIds.length}
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-slate-900/70 rounded-md border border-slate-700 p-3 max-h-32 overflow-y-auto">
-        <p className="text-xs text-slate-300 tabular-nums leading-relaxed">
-          {result.pruneIds.sort((a, b) => a - b).join(", ")}
-        </p>
-      </div>
-    </div>
-  );
-}
-
 // ─── Lowest-Movement Episodes ────────────────────────────────────
 
 function LowMovementSection({ episodes }: { episodes: LowMovementEpisode[] }) {
@@ -320,8 +224,6 @@ const FilteringPanel: React.FC<FilteringPanelProps> = ({
       </div>
 
       <FlaggedIdsCopyBar repoId={repoId} onViewEpisodes={onViewFlaggedEpisodes} />
-
-      {crossEpisodeData && <AutoPruneSection data={crossEpisodeData} />}
 
       {episodeLengthStats?.allEpisodeLengths && (
         <EpisodeLengthFilter episodes={episodeLengthStats.allEpisodeLengths} />
