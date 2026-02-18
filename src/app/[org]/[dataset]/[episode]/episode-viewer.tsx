@@ -112,25 +112,7 @@ function EpisodeViewerInner({
   const searchParams = useSearchParams();
 
   // Tab state & lazy stats
-  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
-    if (typeof window !== "undefined") {
-      const stored = sessionStorage.getItem("activeTab");
-      if (
-        stored &&
-        [
-          "episodes",
-          "statistics",
-          "frames",
-          "insights",
-          "filtering",
-          "urdf",
-        ].includes(stored)
-      ) {
-        return stored as ActiveTab;
-      }
-    }
-    return "episodes";
-  });
+  const [activeTab, setActiveTab] = useState<ActiveTab>("episodes");
   const [, setColumnMinMax] = useState<ColumnMinMax[] | null>(null);
   const [episodeLengthStats, setEpisodeLengthStats] =
     useState<EpisodeLengthStats | null>(null);
@@ -140,20 +122,25 @@ function EpisodeViewerInner({
     useState<EpisodeFramesData | null>(null);
   const [framesLoading, setFramesLoading] = useState(false);
   const framesLoadedRef = useRef(false);
-  const [framesFlaggedOnly, setFramesFlaggedOnly] = useState(() => {
-    if (typeof window !== "undefined")
-      return sessionStorage.getItem("framesFlaggedOnly") === "true";
-    return false;
-  });
-  const [sidebarFlaggedOnly, setSidebarFlaggedOnly] = useState(() => {
-    if (typeof window !== "undefined")
-      return sessionStorage.getItem("sidebarFlaggedOnly") === "true";
-    return false;
-  });
+  const [framesFlaggedOnly, setFramesFlaggedOnly] = useState(false);
+  const [sidebarFlaggedOnly, setSidebarFlaggedOnly] = useState(false);
   const [crossEpData, setCrossEpData] =
     useState<CrossEpisodeVarianceData | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const insightsLoadedRef = useRef(false);
+
+  // Hydrate UI state from sessionStorage after mount (avoids SSR/client mismatch)
+  useEffect(() => {
+    const stored = sessionStorage.getItem("activeTab");
+    if (
+      stored &&
+      ["episodes", "statistics", "frames", "insights", "filtering", "urdf"].includes(stored)
+    ) {
+      setActiveTab(stored as ActiveTab);
+    }
+    if (sessionStorage.getItem("framesFlaggedOnly") === "true") setFramesFlaggedOnly(true);
+    if (sessionStorage.getItem("sidebarFlaggedOnly") === "true") setSidebarFlaggedOnly(true);
+  }, []);
 
   // Persist UI state across episode navigations
   useEffect(() => {

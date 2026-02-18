@@ -11,17 +11,6 @@ import React, {
 
 const STORAGE_KEY = "flagged-episodes";
 
-function loadFromStorage(): Set<number> {
-  if (typeof window === "undefined") return new Set();
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (raw) return new Set(JSON.parse(raw) as number[]);
-  } catch {
-    /* ignore */
-  }
-  return new Set();
-}
-
 function saveToStorage(s: Set<number>) {
   try {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify([...s]));
@@ -55,7 +44,17 @@ export function useFlaggedEpisodes() {
 export const FlaggedEpisodesProvider: React.FC<{
   children: React.ReactNode;
 }> = ({ children }) => {
-  const [flagged, setFlagged] = useState<Set<number>>(() => loadFromStorage());
+  const [flagged, setFlagged] = useState<Set<number>>(new Set());
+
+  // Hydrate from sessionStorage after mount (avoids SSR/client mismatch)
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      if (raw) setFlagged(new Set(JSON.parse(raw) as number[]));
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     saveToStorage(flagged);
