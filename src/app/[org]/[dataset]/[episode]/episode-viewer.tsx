@@ -134,12 +134,21 @@ function EpisodeViewerInner({
     const stored = sessionStorage.getItem("activeTab");
     if (
       stored &&
-      ["episodes", "statistics", "frames", "insights", "filtering", "urdf"].includes(stored)
+      [
+        "episodes",
+        "statistics",
+        "frames",
+        "insights",
+        "filtering",
+        "urdf",
+      ].includes(stored)
     ) {
       setActiveTab(stored as ActiveTab);
     }
-    if (sessionStorage.getItem("framesFlaggedOnly") === "true") setFramesFlaggedOnly(true);
-    if (sessionStorage.getItem("sidebarFlaggedOnly") === "true") setSidebarFlaggedOnly(true);
+    if (sessionStorage.getItem("framesFlaggedOnly") === "true")
+      setFramesFlaggedOnly(true);
+    if (sessionStorage.getItem("sidebarFlaggedOnly") === "true")
+      setSidebarFlaggedOnly(true);
   }, []);
 
   // Persist UI state across episode navigations
