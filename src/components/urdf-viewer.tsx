@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from "react";
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { OrbitControls, Grid, Html } from "@react-three/drei";
 import * as THREE from "three";
@@ -50,23 +56,34 @@ function groupColumnsByPrefix(keys: string[]): Record<string, string[]> {
   return groups;
 }
 
-function autoMatchJoints(urdfJointNames: string[], columnKeys: string[]): Record<string, string> {
+function autoMatchJoints(
+  urdfJointNames: string[],
+  columnKeys: string[],
+): Record<string, string> {
   const mapping: Record<string, string> = {};
-  const suffixes = columnKeys.map((k) => (k.split(SERIES_DELIM).pop()?.trim() ?? k).toLowerCase());
+  const suffixes = columnKeys.map((k) =>
+    (k.split(SERIES_DELIM).pop()?.trim() ?? k).toLowerCase(),
+  );
 
   for (const jointName of urdfJointNames) {
     const lower = jointName.toLowerCase();
 
     // Exact match on column suffix
     const exactIdx = suffixes.findIndex((s) => s === lower);
-    if (exactIdx >= 0) { mapping[jointName] = columnKeys[exactIdx]; continue; }
+    if (exactIdx >= 0) {
+      mapping[jointName] = columnKeys[exactIdx];
+      continue;
+    }
 
     // OpenArm: openarm_(left|right)_joint(\d+) → (left|right)_joint_(\d+)
     const armMatch = lower.match(/^openarm_(left|right)_joint(\d+)$/);
     if (armMatch) {
       const pattern = `${armMatch[1]}_joint_${armMatch[2]}`;
       const idx = suffixes.findIndex((s) => s.includes(pattern));
-      if (idx >= 0) { mapping[jointName] = columnKeys[idx]; continue; }
+      if (idx >= 0) {
+        mapping[jointName] = columnKeys[idx];
+        continue;
+      }
     }
 
     // OpenArm: openarm_(left|right)_finger_joint1 → (left|right)_gripper
@@ -74,7 +91,10 @@ function autoMatchJoints(urdfJointNames: string[], columnKeys: string[]): Record
     if (fingerMatch) {
       const pattern = `${fingerMatch[1]}_gripper`;
       const idx = suffixes.findIndex((s) => s.includes(pattern));
-      if (idx >= 0) { mapping[jointName] = columnKeys[idx]; continue; }
+      if (idx >= 0) {
+        mapping[jointName] = columnKeys[idx];
+        continue;
+      }
     }
 
     // finger_joint2 is a mimic joint — skip
@@ -87,7 +107,12 @@ function autoMatchJoints(urdfJointNames: string[], columnKeys: string[]): Record
   return mapping;
 }
 
-const SINGLE_ARM_TIP_NAMES = ["gripper_frame_link", "gripperframe", "gripper_link", "gripper"];
+const SINGLE_ARM_TIP_NAMES = [
+  "gripper_frame_link",
+  "gripperframe",
+  "gripper_link",
+  "gripper",
+];
 const DUAL_ARM_TIP_NAMES = ["openarm_left_hand_tcp", "openarm_right_hand_tcp"];
 const TRAIL_DURATION = 1.0;
 const TRAIL_COLORS = [new THREE.Color("#ff6600"), new THREE.Color("#00aaff")];
@@ -95,7 +120,12 @@ const MAX_TRAIL_POINTS = 300;
 
 // ─── Robot scene (imperative, inside Canvas) ───
 function RobotScene({
-  urdfUrl, jointValues, onJointsLoaded, trailEnabled, trailResetKey, scale,
+  urdfUrl,
+  jointValues,
+  onJointsLoaded,
+  trailEnabled,
+  trailResetKey,
+  scale,
 }: {
   urdfUrl: string;
   jointValues: Record<string, number>;
@@ -110,7 +140,12 @@ function RobotScene({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  type TrailState = { positions: Float32Array; colors: Float32Array; times: number[]; count: number };
+  type TrailState = {
+    positions: Float32Array;
+    colors: Float32Array;
+    times: number[];
+    count: number;
+  };
   const trailsRef = useRef<TrailState[]>([]);
   const linesRef = useRef<Line2[]>([]);
   const trailMatsRef = useRef<LineMaterial[]>([]);
@@ -118,36 +153,56 @@ function RobotScene({
 
   // Reset trails when episode changes
   useEffect(() => {
-    for (const t of trailsRef.current) { t.count = 0; t.times = []; }
+    for (const t of trailsRef.current) {
+      t.count = 0;
+      t.times = [];
+    }
     for (const l of linesRef.current) l.visible = false;
   }, [trailResetKey]);
 
   // Create/destroy trail Line2 objects when tip count changes
-  const ensureTrails = useCallback((count: number) => {
-    if (trailCountRef.current === count) return;
-    // Remove old
-    for (const l of linesRef.current) { scene.remove(l); l.geometry.dispose(); }
-    for (const m of trailMatsRef.current) m.dispose();
-    // Create new
-    const trails: TrailState[] = [];
-    const lines: Line2[] = [];
-    const mats: LineMaterial[] = [];
-    for (let i = 0; i < count; i++) {
-      trails.push({ positions: new Float32Array(MAX_TRAIL_POINTS * 3), colors: new Float32Array(MAX_TRAIL_POINTS * 3), times: [], count: 0 });
-      const mat = new LineMaterial({ color: 0xffffff, linewidth: 4, vertexColors: true, transparent: true, worldUnits: false });
-      mat.resolution.set(window.innerWidth, window.innerHeight);
-      mats.push(mat);
-      const line = new Line2(new LineGeometry(), mat);
-      line.frustumCulled = false;
-      line.visible = false;
-      lines.push(line);
-      scene.add(line);
-    }
-    trailsRef.current = trails;
-    linesRef.current = lines;
-    trailMatsRef.current = mats;
-    trailCountRef.current = count;
-  }, [scene]);
+  const ensureTrails = useCallback(
+    (count: number) => {
+      if (trailCountRef.current === count) return;
+      // Remove old
+      for (const l of linesRef.current) {
+        scene.remove(l);
+        l.geometry.dispose();
+      }
+      for (const m of trailMatsRef.current) m.dispose();
+      // Create new
+      const trails: TrailState[] = [];
+      const lines: Line2[] = [];
+      const mats: LineMaterial[] = [];
+      for (let i = 0; i < count; i++) {
+        trails.push({
+          positions: new Float32Array(MAX_TRAIL_POINTS * 3),
+          colors: new Float32Array(MAX_TRAIL_POINTS * 3),
+          times: [],
+          count: 0,
+        });
+        const mat = new LineMaterial({
+          color: 0xffffff,
+          linewidth: 4,
+          vertexColors: true,
+          transparent: true,
+          worldUnits: false,
+        });
+        mat.resolution.set(window.innerWidth, window.innerHeight);
+        mats.push(mat);
+        const line = new Line2(new LineGeometry(), mat);
+        line.frustumCulled = false;
+        line.visible = false;
+        lines.push(line);
+        scene.add(line);
+      }
+      trailsRef.current = trails;
+      linesRef.current = lines;
+      trailMatsRef.current = mats;
+      trailCountRef.current = count;
+    },
+    [scene],
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -159,22 +214,27 @@ function RobotScene({
       // DAE (Collada) files — load with embedded materials
       if (url.endsWith(".dae")) {
         const colladaLoader = new ColladaLoader(mgr);
-        colladaLoader.load(url, (collada) => {
-          if (isOpenArm) {
-            collada.scene.traverse((child) => {
-              if (child instanceof THREE.Mesh && child.material) {
-                const mat = child.material as THREE.MeshStandardMaterial;
-                if (mat.side !== undefined) mat.side = THREE.DoubleSide;
-                if (mat.color) {
-                  const hsl = { h: 0, s: 0, l: 0 };
-                  mat.color.getHSL(hsl);
-                  if (hsl.l > 0.7) mat.color.setHSL(hsl.h, hsl.s, 0.55);
+        colladaLoader.load(
+          url,
+          (collada) => {
+            if (isOpenArm) {
+              collada.scene.traverse((child) => {
+                if (child instanceof THREE.Mesh && child.material) {
+                  const mat = child.material as THREE.MeshStandardMaterial;
+                  if (mat.side !== undefined) mat.side = THREE.DoubleSide;
+                  if (mat.color) {
+                    const hsl = { h: 0, s: 0, l: 0 };
+                    mat.color.getHSL(hsl);
+                    if (hsl.l > 0.7) mat.color.setHSL(hsl.h, hsl.s, 0.55);
+                  }
                 }
-              }
-            });
-          }
-          onLoad(collada.scene);
-        }, undefined, (err) => onLoad(new THREE.Object3D(), err as Error));
+              });
+            }
+            onLoad(collada.scene);
+          },
+          undefined,
+          (err) => onLoad(new THREE.Object3D(), err as Error),
+        );
         return;
       }
       // STL files — apply custom materials
@@ -186,12 +246,20 @@ function RobotScene({
           let metalness = 0.1;
           let roughness = 0.6;
           if (url.includes("sts3215")) {
-            color = "#1a1a1a"; metalness = 0.7; roughness = 0.3;
+            color = "#1a1a1a";
+            metalness = 0.7;
+            roughness = 0.3;
           } else if (isOpenArm) {
             color = url.includes("body_link0") ? "#3a3a4a" : "#f5f5f5";
-            metalness = 0.15; roughness = 0.6;
+            metalness = 0.15;
+            roughness = 0.6;
           }
-          const material = new THREE.MeshStandardMaterial({ color, metalness, roughness, side: isOpenArm ? THREE.DoubleSide : THREE.FrontSide });
+          const material = new THREE.MeshStandardMaterial({
+            color,
+            metalness,
+            roughness,
+            side: isOpenArm ? THREE.DoubleSide : THREE.FrontSide,
+          });
           onLoad(new THREE.Mesh(geometry, material));
         },
         undefined,
@@ -203,7 +271,9 @@ function RobotScene({
       (robot) => {
         robotRef.current = robot;
         robot.rotateOnAxis(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-        robot.traverse((c) => { c.castShadow = true; });
+        robot.traverse((c) => {
+          c.castShadow = true;
+        });
         robot.updateMatrixWorld(true);
         robot.scale.set(scale, scale, scale);
         scene.add(robot);
@@ -218,16 +288,28 @@ function RobotScene({
         ensureTrails(tips.length);
 
         const movable = Object.values(robot.joints)
-          .filter((j) => j.jointType === "revolute" || j.jointType === "continuous" || j.jointType === "prismatic")
+          .filter(
+            (j) =>
+              j.jointType === "revolute" ||
+              j.jointType === "continuous" ||
+              j.jointType === "prismatic",
+          )
           .map((j) => j.name);
         onJointsLoaded(movable);
         setLoading(false);
       },
       undefined,
-      (err) => { console.error("Error loading URDF:", err); setError(String(err)); setLoading(false); },
+      (err) => {
+        console.error("Error loading URDF:", err);
+        setError(String(err));
+        setLoading(false);
+      },
     );
     return () => {
-      if (robotRef.current) { scene.remove(robotRef.current); robotRef.current = null; }
+      if (robotRef.current) {
+        scene.remove(robotRef.current);
+        robotRef.current = null;
+      }
       tipLinksRef.current = [];
     };
   }, [urdfUrl, scale, scene, onJointsLoaded, ensureTrails]);
@@ -281,9 +363,14 @@ function RobotScene({
         trail.colors[i * 3 + 2] = trailColor.b * t;
       }
 
-      if (trail.count < 2) { line.visible = false; continue; }
+      if (trail.count < 2) {
+        line.visible = false;
+        continue;
+      }
       const geo = new LineGeometry();
-      geo.setPositions(Array.from(trail.positions.subarray(0, trail.count * 3)));
+      geo.setPositions(
+        Array.from(trail.positions.subarray(0, trail.count * 3)),
+      );
       geo.setColors(Array.from(trail.colors.subarray(0, trail.count * 3)));
       line.geometry.dispose();
       line.geometry = geo;
@@ -292,16 +379,32 @@ function RobotScene({
     }
   });
 
-  if (loading) return <Html center><span className="text-white text-lg">Loading robot…</span></Html>;
-  if (error) return <Html center><span className="text-red-400">Failed to load URDF</span></Html>;
+  if (loading)
+    return (
+      <Html center>
+        <span className="text-white text-lg">Loading robot…</span>
+      </Html>
+    );
+  if (error)
+    return (
+      <Html center>
+        <span className="text-red-400">Failed to load URDF</span>
+      </Html>
+    );
   return null;
 }
 
 // ─── Playback ticker ───
 function PlaybackDriver({
-  playing, fps, totalFrames, frameRef, setFrame,
+  playing,
+  fps,
+  totalFrames,
+  frameRef,
+  setFrame,
 }: {
-  playing: boolean; fps: number; totalFrames: number;
+  playing: boolean;
+  fps: number;
+  totalFrames: number;
   frameRef: React.MutableRefObject<number>;
   setFrame: React.Dispatch<React.SetStateAction<number>>;
 }) {
@@ -347,7 +450,10 @@ export default function URDFViewer({
 }) {
   const { datasetInfo, episodes } = data;
   const fps = datasetInfo.fps || 30;
-  const robotConfig = useMemo(() => getRobotConfig(datasetInfo.robot_type), [datasetInfo.robot_type]);
+  const robotConfig = useMemo(
+    () => getRobotConfig(datasetInfo.robot_type),
+    [datasetInfo.robot_type],
+  );
   const { urdfUrl, scale } = robotConfig;
 
   // Episode selection & chart data
@@ -358,33 +464,39 @@ export default function URDFViewer({
     [data.episodeId]: data.flatChartData,
   });
 
-  const handleEpisodeChange = useCallback((epId: number) => {
-    setSelectedEpisode(epId);
-    setFrame(0);
-    frameRef.current = 0;
-    setPlaying(false);
+  const handleEpisodeChange = useCallback(
+    (epId: number) => {
+      setSelectedEpisode(epId);
+      setFrame(0);
+      frameRef.current = 0;
+      setPlaying(false);
 
-    if (chartDataCache.current[epId]) {
-      setChartData(chartDataCache.current[epId]);
-      return;
-    }
+      if (chartDataCache.current[epId]) {
+        setChartData(chartDataCache.current[epId]);
+        return;
+      }
 
-    if (!org || !dataset) return;
-    setEpisodeLoading(true);
-    fetchEpisodeChartData(org, dataset, epId)
-      .then((result) => {
-        chartDataCache.current[epId] = result;
-        setChartData(result);
-      })
-      .catch((err) => console.error("Failed to load episode:", err))
-      .finally(() => setEpisodeLoading(false));
-  }, [org, dataset]);
+      if (!org || !dataset) return;
+      setEpisodeLoading(true);
+      fetchEpisodeChartData(org, dataset, epId)
+        .then((result) => {
+          chartDataCache.current[epId] = result;
+          setChartData(result);
+        })
+        .catch((err) => console.error("Failed to load episode:", err))
+        .finally(() => setEpisodeLoading(false));
+    },
+    [org, dataset],
+  );
 
   const totalFrames = chartData.length;
 
   // URDF joint names
   const [urdfJointNames, setUrdfJointNames] = useState<string[]>([]);
-  const onJointsLoaded = useCallback((names: string[]) => setUrdfJointNames(names), []);
+  const onJointsLoaded = useCallback(
+    (names: string[]) => setUrdfJointNames(names),
+    [],
+  );
 
   // Feature groups
   const columnGroups = useMemo(() => {
@@ -397,7 +509,8 @@ export default function URDFViewer({
     () =>
       groupNames.find((g) => g.toLowerCase().includes("state")) ??
       groupNames.find((g) => g.toLowerCase().includes("action")) ??
-      groupNames[0] ?? "",
+      groupNames[0] ??
+      "",
     [groupNames],
   );
 
@@ -422,15 +535,19 @@ export default function URDFViewer({
   const [playing, setPlaying] = useState(false);
   const frameRef = useRef(0);
 
-  const handleFrameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = parseInt(e.target.value);
-    setFrame(f);
-    frameRef.current = f;
-  }, []);
+  const handleFrameChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const f = parseInt(e.target.value);
+      setFrame(f);
+      frameRef.current = f;
+    },
+    [],
+  );
 
   // Filter out mimic joints (finger_joint2) from the UI list
   const displayJointNames = useMemo(
-    () => urdfJointNames.filter((n) => !n.toLowerCase().includes("finger_joint2")),
+    () =>
+      urdfJointNames.filter((n) => !n.toLowerCase().includes("finger_joint2")),
     [urdfJointNames],
   );
 
@@ -441,10 +558,14 @@ export default function URDFViewer({
       if (!jn.toLowerCase().includes("finger_joint1")) continue;
       const col = mapping[jn];
       if (!col) continue;
-      let min = Infinity, max = -Infinity;
+      let min = Infinity,
+        max = -Infinity;
       for (const row of chartData) {
         const v = row[col];
-        if (typeof v === "number") { if (v < min) min = v; if (v > max) max = v; }
+        if (typeof v === "number") {
+          if (v < min) min = v;
+          if (v > max) max = v;
+        }
       }
       if (min < max) ranges[jn] = { min, max };
     }
@@ -481,7 +602,9 @@ export default function URDFViewer({
     }
 
     const converted = detectAndConvert(revoluteValues);
-    revoluteNames.forEach((n, i) => { values[n] = converted[i]; });
+    revoluteNames.forEach((n, i) => {
+      values[n] = converted[i];
+    });
 
     // Copy finger_joint1 → finger_joint2 (mimic joints)
     for (const jn of urdfJointNames) {
@@ -497,7 +620,11 @@ export default function URDFViewer({
   const totalTime = (totalFrames / fps).toFixed(2);
 
   if (data.flatChartData.length === 0) {
-    return <div className="text-slate-400 p-8 text-center">No trajectory data available.</div>;
+    return (
+      <div className="text-slate-400 p-8 text-center">
+        No trajectory data available.
+      </div>
+    );
   }
 
   return (
@@ -506,22 +633,50 @@ export default function URDFViewer({
       <div className="flex-1 min-h-0 bg-slate-950 rounded-lg overflow-hidden border border-slate-700 relative">
         {episodeLoading && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/70">
-            <span className="text-white text-lg animate-pulse">Loading episode {selectedEpisode}…</span>
+            <span className="text-white text-lg animate-pulse">
+              Loading episode {selectedEpisode}…
+            </span>
           </div>
         )}
-        <Canvas camera={{ position: [0.3 * scale, 0.25 * scale, 0.3 * scale], fov: 45, near: 0.01, far: 100 }}>
+        <Canvas
+          camera={{
+            position: [0.3 * scale, 0.25 * scale, 0.3 * scale],
+            fov: 45,
+            near: 0.01,
+            far: 100,
+          }}
+        >
           <ambientLight intensity={0.7} />
           <directionalLight position={[3, 5, 4]} intensity={1.5} />
           <directionalLight position={[-2, 3, -2]} intensity={0.6} />
           <hemisphereLight args={["#b1e1ff", "#666666", 0.5]} />
-          <RobotScene urdfUrl={urdfUrl} jointValues={jointValues} onJointsLoaded={onJointsLoaded} trailEnabled={trailEnabled} trailResetKey={selectedEpisode} scale={scale} />
+          <RobotScene
+            urdfUrl={urdfUrl}
+            jointValues={jointValues}
+            onJointsLoaded={onJointsLoaded}
+            trailEnabled={trailEnabled}
+            trailResetKey={selectedEpisode}
+            scale={scale}
+          />
           <Grid
-            args={[10, 10]} cellSize={0.2} cellThickness={0.5} cellColor="#334155"
-            sectionSize={1} sectionThickness={1} sectionColor="#475569"
-            fadeDistance={10} position={[0, 0, 0]}
+            args={[10, 10]}
+            cellSize={0.2}
+            cellThickness={0.5}
+            cellColor="#334155"
+            sectionSize={1}
+            sectionThickness={1}
+            sectionColor="#475569"
+            fadeDistance={10}
+            position={[0, 0, 0]}
           />
           <OrbitControls target={[0, 0.8, 0]} />
-          <PlaybackDriver playing={playing} fps={fps} totalFrames={totalFrames} frameRef={frameRef} setFrame={setFrame} />
+          <PlaybackDriver
+            playing={playing}
+            fps={fps}
+            totalFrames={totalFrames}
+            frameRef={frameRef}
+            setFrame={setFrame}
+          />
         </Canvas>
       </div>
 
@@ -532,35 +687,55 @@ export default function URDFViewer({
           {/* Episode selector */}
           <div className="flex items-center gap-1.5 shrink-0">
             <button
-              onClick={() => { if (selectedEpisode > episodes[0]) handleEpisodeChange(selectedEpisode - 1); }}
+              onClick={() => {
+                if (selectedEpisode > episodes[0])
+                  handleEpisodeChange(selectedEpisode - 1);
+              }}
               disabled={selectedEpisode <= episodes[0]}
               className="w-6 h-6 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed text-xs"
-            >◀</button>
+            >
+              ◀
+            </button>
             <select
               value={selectedEpisode}
               onChange={(e) => handleEpisodeChange(Number(e.target.value))}
               className="bg-slate-900 text-slate-200 text-xs rounded px-1.5 py-1 border border-slate-600 w-28"
             >
               {episodes.map((ep) => (
-                <option key={ep} value={ep}>Episode {ep}</option>
+                <option key={ep} value={ep}>
+                  Episode {ep}
+                </option>
               ))}
             </select>
             <button
-              onClick={() => { if (selectedEpisode < episodes[episodes.length - 1]) handleEpisodeChange(selectedEpisode + 1); }}
+              onClick={() => {
+                if (selectedEpisode < episodes[episodes.length - 1])
+                  handleEpisodeChange(selectedEpisode + 1);
+              }}
               disabled={selectedEpisode >= episodes[episodes.length - 1]}
               className="w-6 h-6 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed text-xs"
-            >▶</button>
+            >
+              ▶
+            </button>
           </div>
 
           {/* Play/Pause */}
           <button
-            onClick={() => { setPlaying(!playing); if (!playing) frameRef.current = frame; }}
+            onClick={() => {
+              setPlaying(!playing);
+              if (!playing) frameRef.current = frame;
+            }}
             className="w-8 h-8 flex items-center justify-center rounded bg-orange-600 hover:bg-orange-500 text-white transition-colors shrink-0"
           >
             {playing ? (
-              <svg width="12" height="14" viewBox="0 0 12 14"><rect x="1" y="1" width="3" height="12" fill="white" /><rect x="8" y="1" width="3" height="12" fill="white" /></svg>
+              <svg width="12" height="14" viewBox="0 0 12 14">
+                <rect x="1" y="1" width="3" height="12" fill="white" />
+                <rect x="8" y="1" width="3" height="12" fill="white" />
+              </svg>
             ) : (
-              <svg width="12" height="14" viewBox="0 0 12 14"><polygon points="2,1 11,7 2,13" fill="white" /></svg>
+              <svg width="12" height="14" viewBox="0 0 12 14">
+                <polygon points="2,1 11,7 2,13" fill="white" />
+              </svg>
             )}
           </button>
 
@@ -568,16 +743,30 @@ export default function URDFViewer({
           <button
             onClick={() => setTrailEnabled((v) => !v)}
             className={`px-2 h-8 text-xs rounded transition-colors shrink-0 ${
-              trailEnabled ? "bg-orange-600/30 text-orange-400 border border-orange-500" : "bg-slate-700 text-slate-400 border border-slate-600"
+              trailEnabled
+                ? "bg-orange-600/30 text-orange-400 border border-orange-500"
+                : "bg-slate-700 text-slate-400 border border-slate-600"
             }`}
             title={trailEnabled ? "Hide trail" : "Show trail"}
-          >Trail</button>
+          >
+            Trail
+          </button>
 
           {/* Scrubber */}
-          <input type="range" min={0} max={Math.max(totalFrames - 1, 0)} value={frame}
-            onChange={handleFrameChange} className="flex-1 h-1.5 accent-orange-500 cursor-pointer" />
-          <span className="text-xs text-slate-400 tabular-nums w-28 text-right shrink-0">{currentTime}s / {totalTime}s</span>
-          <span className="text-xs text-slate-500 tabular-nums w-20 text-right shrink-0">F {frame}/{Math.max(totalFrames - 1, 0)}</span>
+          <input
+            type="range"
+            min={0}
+            max={Math.max(totalFrames - 1, 0)}
+            value={frame}
+            onChange={handleFrameChange}
+            className="flex-1 h-1.5 accent-orange-500 cursor-pointer"
+          />
+          <span className="text-xs text-slate-400 tabular-nums w-28 text-right shrink-0">
+            {currentTime}s / {totalTime}s
+          </span>
+          <span className="text-xs text-slate-500 tabular-nums w-20 text-right shrink-0">
+            F {frame}/{Math.max(totalFrames - 1, 0)}
+          </span>
         </div>
 
         {/* Collapsible joint mapping */}
@@ -585,9 +774,16 @@ export default function URDFViewer({
           onClick={() => setShowMapping((v) => !v)}
           className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
         >
-          <span className={`transition-transform ${showMapping ? "rotate-90" : ""}`}>▶</span>
+          <span
+            className={`transition-transform ${showMapping ? "rotate-90" : ""}`}
+          >
+            ▶
+          </span>
           Joint Mapping
-          <span className="text-slate-600">({Object.keys(mapping).filter((k) => mapping[k]).length}/{displayJointNames.length} mapped)</span>
+          <span className="text-slate-600">
+            ({Object.keys(mapping).filter((k) => mapping[k]).length}/
+            {displayJointNames.length} mapped)
+          </span>
         </button>
 
         {showMapping && (
@@ -596,10 +792,17 @@ export default function URDFViewer({
               <label className="text-xs text-slate-400">Data source</label>
               <div className="flex gap-1 flex-wrap">
                 {groupNames.map((name) => (
-                  <button key={name} onClick={() => setSelectedGroup(name)}
+                  <button
+                    key={name}
+                    onClick={() => setSelectedGroup(name)}
                     className={`px-2 py-1 text-xs rounded transition-colors ${
-                      selectedGroup === name ? "bg-orange-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-                    }`}>{name}</button>
+                      selectedGroup === name
+                        ? "bg-orange-600 text-white"
+                        : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                    }`}
+                  >
+                    {name}
+                  </button>
                 ))}
               </div>
             </div>
@@ -610,28 +813,48 @@ export default function URDFViewer({
                   <tr className="text-slate-500">
                     <th className="text-left font-normal px-1">URDF Joint</th>
                     <th className="text-left font-normal px-1">→</th>
-                    <th className="text-left font-normal px-1">Dataset Column</th>
+                    <th className="text-left font-normal px-1">
+                      Dataset Column
+                    </th>
                     <th className="text-right font-normal px-1">Value</th>
                   </tr>
                 </thead>
                 <tbody>
                   {displayJointNames.map((jointName) => (
-                    <tr key={jointName} className="border-t border-slate-700/50">
-                      <td className="px-1 py-0.5 text-slate-300 font-mono">{jointName}</td>
+                    <tr
+                      key={jointName}
+                      className="border-t border-slate-700/50"
+                    >
+                      <td className="px-1 py-0.5 text-slate-300 font-mono">
+                        {jointName}
+                      </td>
                       <td className="px-1 text-slate-600">→</td>
                       <td className="px-1 py-0.5">
-                        <select value={mapping[jointName] ?? ""}
-                          onChange={(e) => setMapping((m) => ({ ...m, [jointName]: e.target.value }))}
-                          className="bg-slate-900 text-slate-200 text-xs rounded px-1 py-0.5 border border-slate-600 w-full max-w-[200px]">
+                        <select
+                          value={mapping[jointName] ?? ""}
+                          onChange={(e) =>
+                            setMapping((m) => ({
+                              ...m,
+                              [jointName]: e.target.value,
+                            }))
+                          }
+                          className="bg-slate-900 text-slate-200 text-xs rounded px-1 py-0.5 border border-slate-600 w-full max-w-[200px]"
+                        >
                           <option value="">-- unmapped --</option>
                           {selectedColumns.map((col) => {
                             const label = col.split(SERIES_DELIM).pop() ?? col;
-                            return <option key={col} value={col}>{label}</option>;
+                            return (
+                              <option key={col} value={col}>
+                                {label}
+                              </option>
+                            );
                           })}
                         </select>
                       </td>
                       <td className="px-1 py-0.5 text-right tabular-nums text-slate-400 font-mono">
-                        {jointValues[jointName] !== undefined ? jointValues[jointName].toFixed(3) : "—"}
+                        {jointValues[jointName] !== undefined
+                          ? jointValues[jointName].toFixed(3)
+                          : "—"}
                       </td>
                     </tr>
                   ))}
