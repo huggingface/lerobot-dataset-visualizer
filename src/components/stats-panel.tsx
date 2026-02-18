@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import type {
   DatasetDisplayInfo,
   EpisodeLengthStats,
@@ -22,9 +21,11 @@ function formatTotalTime(totalFrames: number, fps: number): string {
 }
 
 /** SVG bar chart for the episode-length histogram */
-const EpisodeLengthHistogram: React.FC<{
+function EpisodeLengthHistogram({
+  data,
+}: {
   data: { binLabel: string; count: number }[];
-}> = ({ data }) => {
+}) {
   if (data.length === 0) return null;
   const maxCount = Math.max(...data.map((d) => d.count));
   if (maxCount === 0) return null;
@@ -99,23 +100,22 @@ const EpisodeLengthHistogram: React.FC<{
       </svg>
     </div>
   );
-};
+}
 
-const Card: React.FC<{ label: string; value: string | number }> = ({
-  label,
-  value,
-}) => (
-  <div className="bg-slate-800/60 rounded-lg p-4 border border-slate-700">
-    <p className="text-xs text-slate-400 uppercase tracking-wide">{label}</p>
-    <p className="text-xl font-bold tabular-nums mt-1">{value}</p>
-  </div>
-);
+function Card({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="bg-slate-800/60 rounded-lg p-4 border border-slate-700">
+      <p className="text-xs text-slate-400 uppercase tracking-wide">{label}</p>
+      <p className="text-xl font-bold tabular-nums mt-1">{value}</p>
+    </div>
+  );
+}
 
-const StatsPanel: React.FC<StatsPanelProps> = ({
+function StatsPanel({
   datasetInfo,
   episodeLengthStats,
   loading,
-}) => {
+}: StatsPanelProps) {
   const els = episodeLengthStats;
 
   return (
@@ -236,6 +236,6 @@ const StatsPanel: React.FC<StatsPanelProps> = ({
       )}
     </div>
   );
-};
+}
 
 export default StatsPanel;
