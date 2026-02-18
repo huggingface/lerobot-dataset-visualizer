@@ -10,6 +10,8 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
+import { useFlaggedEpisodes } from "@/context/flagged-episodes-context";
+import { CHART_CONFIG } from "@/utils/constants";
 import type {
   CrossEpisodeVarianceData,
   AggVelocityStat,
@@ -18,9 +20,6 @@ import type {
   JerkyEpisode,
   AggAlignment,
 } from "@/app/[org]/[dataset]/[episode]/fetch-data";
-import { useFlaggedEpisodes } from "@/context/flagged-episodes-context";
-
-const DELIMITER = " | ";
 
 const FullscreenCtx = React.createContext(false);
 const useIsFullscreen = () => React.useContext(FullscreenCtx);
@@ -207,7 +206,7 @@ const COLORS = [
 ];
 
 function shortName(key: string): string {
-  const parts = key.split(DELIMITER);
+  const parts = key.split(CHART_CONFIG.SERIES_NAME_DELIMITER);
   return parts.length > 1 ? parts[parts.length - 1] : key;
 }
 
@@ -1452,12 +1451,12 @@ interface ActionInsightsPanelProps {
   crossEpisodeLoading: boolean;
 }
 
-const ActionInsightsPanel: React.FC<ActionInsightsPanelProps> = ({
+function ActionInsightsPanel({
   flatChartData,
   fps,
   crossEpisodeData,
   crossEpisodeLoading,
-}) => {
+}: ActionInsightsPanelProps) {
   const [mode, setMode] = useState<"episode" | "dataset">("dataset");
   const showAgg = mode === "dataset" && !!crossEpisodeData;
 
@@ -1531,7 +1530,7 @@ const ActionInsightsPanel: React.FC<ActionInsightsPanelProps> = ({
       </FullscreenWrapper>
     </div>
   );
-};
+}
 
 export default ActionInsightsPanel;
 export { ActionVelocitySection, FullscreenWrapper };

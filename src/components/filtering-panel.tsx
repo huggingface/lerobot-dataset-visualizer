@@ -349,14 +349,14 @@ function FlaggedIdsCopyBar({
   );
 }
 
-const FilteringPanel: React.FC<FilteringPanelProps> = ({
+function FilteringPanel({
   repoId,
   crossEpisodeData,
   crossEpisodeLoading,
   episodeLengthStats,
   flatChartData,
   onViewFlaggedEpisodes,
-}) => {
+}: FilteringPanelProps) {
   return (
     <div className="max-w-5xl mx-auto py-6 space-y-8">
       <div>
@@ -417,6 +417,6 @@ const FilteringPanel: React.FC<FilteringPanelProps> = ({
       </FullscreenWrapper>
     </div>
   );
-};
+}
 
 export default FilteringPanel;
