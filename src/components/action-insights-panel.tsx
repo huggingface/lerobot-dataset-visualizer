@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   LineChart,
   Line,
