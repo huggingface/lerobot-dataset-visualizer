@@ -13,9 +13,9 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import type { EpisodeData } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import { fetchEpisodeChartData } from "@/app/[org]/[dataset]/[episode]/actions";
+import { CHART_CONFIG } from "@/utils/constants";
 
-
-const SERIES_DELIM = " | ";
+const SERIES_DELIM = CHART_CONFIG.SERIES_NAME_DELIMITER;
 const DEG2RAD = Math.PI / 180;
 
 function getRobotConfig(robotType: string | null) {
