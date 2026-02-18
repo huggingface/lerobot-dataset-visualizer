@@ -22,13 +22,25 @@ import {
   type EpisodeFramesData,
   type CrossEpisodeVarianceData,
 } from "./fetch-data";
-import { fetchEpisodeLengthStats, fetchEpisodeFrames, fetchCrossEpisodeVariance } from "./actions";
+import {
+  fetchEpisodeLengthStats,
+  fetchEpisodeFrames,
+  fetchCrossEpisodeVariance,
+} from "./actions";
 
 const URDFViewer = lazy(() => import("@/components/urdf-viewer"));
-const ActionInsightsPanel = lazy(() => import("@/components/action-insights-panel"));
+const ActionInsightsPanel = lazy(
+  () => import("@/components/action-insights-panel"),
+);
 const FilteringPanel = lazy(() => import("@/components/filtering-panel"));
 
-type ActiveTab = "episodes" | "statistics" | "frames" | "insights" | "filtering" | "urdf";
+type ActiveTab =
+  | "episodes"
+  | "statistics"
+  | "frames"
+  | "insights"
+  | "filtering"
+  | "urdf";
 
 export default function EpisodeViewer({
   data,
@@ -65,7 +77,15 @@ export default function EpisodeViewer({
   );
 }
 
-function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: string; dataset?: string }) {
+function EpisodeViewerInner({
+  data,
+  org,
+  dataset,
+}: {
+  data: EpisodeData;
+  org?: string;
+  dataset?: string;
+}) {
   const {
     datasetInfo,
     episodeId,
@@ -82,7 +102,9 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
   const loadStartRef = useRef(performance.now());
   useEffect(() => {
     if (!isLoading) {
-      console.log(`[perf] Loading complete in ${(performance.now() - loadStartRef.current).toFixed(0)}ms (videos: ${videosReady ? '✓' : '…'}, charts: ${chartsReady ? '✓' : '…'})`);
+      console.log(
+        `[perf] Loading complete in ${(performance.now() - loadStartRef.current).toFixed(0)}ms (videos: ${videosReady ? "✓" : "…"}, charts: ${chartsReady ? "✓" : "…"})`,
+      );
     }
   }, [isLoading]);
 
@@ -93,35 +115,56 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     if (typeof window !== "undefined") {
       const stored = sessionStorage.getItem("activeTab");
-      if (stored && ["episodes", "statistics", "frames", "insights", "filtering", "urdf"].includes(stored)) {
+      if (
+        stored &&
+        [
+          "episodes",
+          "statistics",
+          "frames",
+          "insights",
+          "filtering",
+          "urdf",
+        ].includes(stored)
+      ) {
         return stored as ActiveTab;
       }
     }
     return "episodes";
   });
   const [, setColumnMinMax] = useState<ColumnMinMax[] | null>(null);
-  const [episodeLengthStats, setEpisodeLengthStats] = useState<EpisodeLengthStats | null>(null);
+  const [episodeLengthStats, setEpisodeLengthStats] =
+    useState<EpisodeLengthStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const statsLoadedRef = useRef(false);
-  const [episodeFramesData, setEpisodeFramesData] = useState<EpisodeFramesData | null>(null);
+  const [episodeFramesData, setEpisodeFramesData] =
+    useState<EpisodeFramesData | null>(null);
   const [framesLoading, setFramesLoading] = useState(false);
   const framesLoadedRef = useRef(false);
   const [framesFlaggedOnly, setFramesFlaggedOnly] = useState(() => {
-    if (typeof window !== "undefined") return sessionStorage.getItem("framesFlaggedOnly") === "true";
+    if (typeof window !== "undefined")
+      return sessionStorage.getItem("framesFlaggedOnly") === "true";
     return false;
   });
   const [sidebarFlaggedOnly, setSidebarFlaggedOnly] = useState(() => {
-    if (typeof window !== "undefined") return sessionStorage.getItem("sidebarFlaggedOnly") === "true";
+    if (typeof window !== "undefined")
+      return sessionStorage.getItem("sidebarFlaggedOnly") === "true";
     return false;
   });
-  const [crossEpData, setCrossEpData] = useState<CrossEpisodeVarianceData | null>(null);
+  const [crossEpData, setCrossEpData] =
+    useState<CrossEpisodeVarianceData | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const insightsLoadedRef = useRef(false);
 
   // Persist UI state across episode navigations
-  useEffect(() => { sessionStorage.setItem("activeTab", activeTab); }, [activeTab]);
-  useEffect(() => { sessionStorage.setItem("sidebarFlaggedOnly", String(sidebarFlaggedOnly)); }, [sidebarFlaggedOnly]);
-  useEffect(() => { sessionStorage.setItem("framesFlaggedOnly", String(framesFlaggedOnly)); }, [framesFlaggedOnly]);
+  useEffect(() => {
+    sessionStorage.setItem("activeTab", activeTab);
+  }, [activeTab]);
+  useEffect(() => {
+    sessionStorage.setItem("sidebarFlaggedOnly", String(sidebarFlaggedOnly));
+  }, [sidebarFlaggedOnly]);
+  useEffect(() => {
+    sessionStorage.setItem("framesFlaggedOnly", String(framesFlaggedOnly));
+  }, [framesFlaggedOnly]);
 
   const loadStats = () => {
     if (statsLoadedRef.current) return;
@@ -163,7 +206,10 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
     if (activeTab === "statistics") loadStats();
     if (activeTab === "frames") loadFrames();
     if (activeTab === "insights") loadInsights();
-    if (activeTab === "filtering") { loadStats(); loadInsights(); }
+    if (activeTab === "filtering") {
+      loadStats();
+      loadInsights();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -172,7 +218,10 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
     if (tab === "statistics") loadStats();
     if (tab === "frames") loadFrames();
     if (tab === "insights") loadInsights();
-    if (tab === "filtering") { loadStats(); loadInsights(); }
+    if (tab === "filtering") {
+      loadStats();
+      loadInsights();
+    }
   };
 
   // Use context for time sync
@@ -186,7 +235,7 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
     (currentPage - 1) * pageSize,
     currentPage * pageSize,
   );
-  
+
   // Preload adjacent episodes' videos via <link rel="preload"> tags
   useEffect(() => {
     if (!org || !dataset) return;
@@ -370,21 +419,22 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
             <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
           )}
         </button>
-        {hasURDFSupport(datasetInfo.robot_type) && datasetInfo.codebase_version >= "v3.0" && (
-          <button
-            className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
-              activeTab === "urdf"
-                ? "text-orange-400"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-            onClick={() => handleTabChange("urdf")}
-          >
-            3D Replay
-            {activeTab === "urdf" && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
-            )}
-          </button>
-        )}
+        {hasURDFSupport(datasetInfo.robot_type) &&
+          datasetInfo.codebase_version >= "v3.0" && (
+            <button
+              className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
+                activeTab === "urdf"
+                  ? "text-orange-400"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+              onClick={() => handleTabChange("urdf")}
+            >
+              3D Replay
+              {activeTab === "urdf" && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
+              )}
+            </button>
+          )}
       </div>
 
       {/* Body: sidebar + content */}
@@ -430,7 +480,9 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
                     href={`https://huggingface.co/datasets/${datasetInfo.repoId}`}
                     target="_blank"
                   >
-                    <p className="text-lg font-semibold">{datasetInfo.repoId}</p>
+                    <p className="text-lg font-semibold">
+                      {datasetInfo.repoId}
+                    </p>
                   </a>
 
                   <p className="font-mono text-lg font-semibold">
@@ -451,14 +503,18 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
               {task && (
                 <div className="mb-6 p-4 bg-slate-800 rounded-lg border border-slate-600">
                   <p className="text-slate-300">
-                    <span className="font-semibold text-slate-100">Language Instruction:</span>
+                    <span className="font-semibold text-slate-100">
+                      Language Instruction:
+                    </span>
                   </p>
                   <div className="mt-2 text-slate-300">
-                    {task.split('\n').map((instruction: string, index: number) => (
-                      <p key={index} className="mb-1">
-                        {instruction}
-                      </p>
-                    ))}
+                    {task
+                      .split("\n")
+                      .map((instruction: string, index: number) => (
+                        <p key={index} className="mb-1">
+                          {instruction}
+                        </p>
+                      ))}
                   </div>
                 </div>
               )}
@@ -484,7 +540,12 @@ function EpisodeViewerInner({ data, org, dataset }: { data: EpisodeData; org?: s
           )}
 
           {activeTab === "frames" && (
-            <OverviewPanel data={episodeFramesData} loading={framesLoading} flaggedOnly={framesFlaggedOnly} onFlaggedOnlyChange={setFramesFlaggedOnly} />
+            <OverviewPanel
+              data={episodeFramesData}
+              loading={framesLoading}
+              flaggedOnly={framesFlaggedOnly}
+              onFlaggedOnlyChange={setFramesFlaggedOnly}
+            />
           )}
 
           {activeTab === "insights" && (
