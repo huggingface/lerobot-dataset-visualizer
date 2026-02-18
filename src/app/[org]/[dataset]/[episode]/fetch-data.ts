@@ -17,17 +17,9 @@ import {
   buildV3EpisodesMetadataPath,
 } from "@/utils/stringFormatting";
 import { bigIntToNumber } from "@/utils/typeGuards";
+import type { VideoInfo, AdjacentEpisodeVideos } from "@/types";
 
 const SERIES_NAME_DELIMITER = CHART_CONFIG.SERIES_NAME_DELIMITER;
-
-export type VideoInfo = {
-  filename: string;
-  url: string;
-  isSegmented?: boolean;
-  segmentStart?: number;
-  segmentEnd?: number;
-  segmentDuration?: number;
-};
 
 export type CameraInfo = { name: string; width: number; height: number };
 
@@ -108,11 +100,6 @@ type EpisodeMetadataV3 = {
 type ColumnDef = {
   key: string;
   value: string[];
-};
-
-type AdjacentEpisodeVideos = {
-  episodeId: number;
-  videosInfo: VideoInfo[];
 };
 
 export async function getEpisodeData(
@@ -517,9 +504,8 @@ async function loadEpisodeDataV3(
     const fullData = await readParquetAsObjects(arrayBuffer, []);
     
     // Extract the episode-specific data slice
-    // Convert BigInt to number if needed
-    const fromIndex = Number(episodeMetadata.dataset_from_index || 0);
-    const toIndex = Number(episodeMetadata.dataset_to_index || fullData.length);
+    const fromIndex = bigIntToNumber(episodeMetadata.dataset_from_index, 0);
+    const toIndex = bigIntToNumber(episodeMetadata.dataset_to_index, fullData.length);
     
     // Find the starting index of this parquet file by checking the first row's index
     // This handles the case where episodes are split across multiple parquet files
@@ -580,11 +566,9 @@ async function loadEpisodeDataV3(
         const tasksData = await readParquetAsObjects(tasksArrayBuffer, []);
         
         if (tasksData.length > 0) {
-          const taskIndex = episodeData[0].task_index;
-          const taskIndexNum = typeof taskIndex === 'bigint' ? Number(taskIndex) : 
-                               typeof taskIndex === 'number' ? taskIndex : undefined;
-          
-          if (taskIndexNum !== undefined && taskIndexNum < tasksData.length) {
+          const taskIndexNum = bigIntToNumber(episodeData[0].task_index, -1);
+
+          if (taskIndexNum >= 0 && taskIndexNum < tasksData.length) {
             const taskData = tasksData[taskIndexNum];
             const rawTask = taskData.__index_level_0__ ?? taskData.task;
             task = typeof rawTask === 'string' ? rawTask : undefined;

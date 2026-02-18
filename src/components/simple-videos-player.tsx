@@ -3,7 +3,7 @@
 import React, { useEffect, useRef } from "react";
 import { useTime } from "../context/time-context";
 import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
-import type { VideoInfo } from "@/app/[org]/[dataset]/[episode]/fetch-data";
+import type { VideoInfo } from "@/types";
 
 const THRESHOLDS = {
   VIDEO_SYNC_TOLERANCE: 0.2,
