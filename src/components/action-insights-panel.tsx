@@ -396,7 +396,7 @@ function AutocorrelationSection({
                 fontSize: 13,
               }}
             />
-            <YAxis stroke="#94a3b8" domain={yDomain} />
+            <YAxis stroke="#94a3b8" domain={yDomain} tickFormatter={(v) => Number(v.toFixed(2)).toString()} />
             <Tooltip
               contentStyle={{
                 background: "#1e293b",
@@ -1362,7 +1362,7 @@ function StateActionAlignmentSection({
                 fontSize: 13,
               }}
             />
-            <YAxis stroke="#94a3b8" domain={[-0.5, 1]} />
+            <YAxis stroke="#94a3b8" domain={[-0.5, 1]} tickFormatter={(v) => Number(v.toFixed(2)).toString()} />
             <Tooltip
               contentStyle={{
                 background: "#1e293b",
