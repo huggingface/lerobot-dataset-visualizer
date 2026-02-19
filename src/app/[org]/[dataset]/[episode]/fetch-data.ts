@@ -1341,6 +1341,7 @@ export type AggVelocityStat = {
   hi: number; // normalized by motor range
   motorRange: number;
   inactive?: boolean; // true if p95(|Δa|) < 1% of motor range
+  discrete?: boolean; // true if motor has very few unique values (e.g. open/close gripper)
 };
 
 export type AggAutocorrelation = {
@@ -1659,19 +1660,24 @@ export async function loadCrossEpisodeActionVariance(
   movementScores.sort((a, b) => a.totalMovement - b.totalMovement);
   const lowMovementEpisodes = movementScores.slice(0, 10);
 
-  // Precompute per-dimension normalization: motor range (max − min)
+  // Precompute per-dimension normalization: motor range (max − min) and unique value count
   const motorRanges: number[] = new Array(actionDim);
+  const motorUniqueCount: number[] = new Array(actionDim);
+  const DISCRETE_THRESHOLD = 4; // ≤ this many unique values → discrete motor
   for (let d = 0; d < actionDim; d++) {
     let lo = Infinity,
       hi = -Infinity;
+    const uniqueVals = new Set<number>();
     for (const { actions: ep } of episodeActions) {
       for (let t = 0; t < ep.length; t++) {
         const v = ep[t][d] ?? 0;
         if (v < lo) lo = v;
         if (v > hi) hi = v;
+        if (uniqueVals.size <= DISCRETE_THRESHOLD) uniqueVals.add(v);
       }
     }
     motorRanges[d] = hi - lo || 1;
+    motorUniqueCount[d] = uniqueVals.size;
   }
 
   // Per-episode, per-dimension activity: p95(|Δa|) >= 1% of motor range
@@ -1725,6 +1731,8 @@ export async function loadCrossEpisodeActionVariance(
         }
       }
       const deltas = activeDeltas.length > 0 ? activeDeltas : allDeltas;
+      const nUnique = motorUniqueCount[d];
+      const discrete = nUnique <= DISCRETE_THRESHOLD;
       if (deltas.length === 0) {
         results.push({
           name: shortName(actionNames[d]),
@@ -1735,6 +1743,7 @@ export async function loadCrossEpisodeActionVariance(
           hi: 0,
           motorRange,
           inactive,
+          discrete,
         });
         continue;
       }
@@ -1775,6 +1784,7 @@ export async function loadCrossEpisodeActionVariance(
         hi,
         motorRange,
         inactive,
+        discrete,
       });
     }
     return results;
