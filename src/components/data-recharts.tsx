@@ -450,8 +450,14 @@ const SingleDataGraph = React.memo(
                 domain={["auto", "auto"]}
                 stroke="#64748b"
                 tick={{ fontSize: 12, fill: "#94a3b8" }}
-                width={45}
+                width={55}
                 allowDataOverflow={true}
+                tickFormatter={(v: number) => {
+                  if (v === 0) return "0";
+                  const abs = Math.abs(v);
+                  if (abs < 0.01 || abs >= 10000) return v.toExponential(1);
+                  return Number(v.toFixed(2)).toString();
+                }}
               />
 
               <Tooltip
