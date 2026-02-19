@@ -351,8 +351,8 @@ function AutocorrelationSection({
               <br />
               <span className="text-slate-500">
                 Grounded in the theoretical result that chunk length should
-                scale logarithmically with system stability constants (Zhang et
-                al., 2025 — arXiv:2507.09061, Theorem 1).
+                scale logarithmically with system stability constants (<a href="https://arxiv.org/abs/2507.09061" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-300">Zhang et
+                al., 2025</a>, Theorem 1).
               </span>
             </p>
           </InfoToggle>
@@ -616,7 +616,7 @@ function ActionVelocitySection({
               <br />
               <span className="text-slate-500">
                 Relates to the Lipschitz constant L<sub>π</sub> and smoothness C
-                <sub>π</sub> in Zhang et al. (2025), which govern compounding
+                <sub>π</sub> in <a href="https://arxiv.org/abs/2507.09061" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-300">Zhang et al. (2025)</a>, which govern compounding
                 error bounds (Assumptions 3.1, 4.1).
               </span>
             </p>
@@ -881,8 +881,8 @@ function VarianceHeatmap({
               indicate consistent behavior across demonstrations.
               <br />
               <span className="text-slate-500">
-                Relates to the &quot;coverage&quot; discussion in Zhang et al.
-                (2025) — regions with low variance may lack the exploratory
+                Relates to the &quot;coverage&quot; discussion in <a href="https://arxiv.org/abs/2507.09061" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-300">Zhang et al.
+                (2025)</a> — regions with low variance may lack the exploratory
                 coverage needed to prevent compounding errors (Section 4).
               </span>
             </p>
@@ -1343,9 +1343,9 @@ function StateActionAlignmentSection({
               commanded and when the corresponding state changes.
               <br />
               <span className="text-slate-500">
-                Central to ACT (Zhao et al., 2023 — action chunking compensates
-                for delay), Real-Time Chunking (RTC, 2024), and Training-Time
-                RTC (Biza et al., 2025) — all address the timing mismatch
+                Central to ACT (<a href="https://arxiv.org/abs/2304.13705" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-300">Zhao et al., 2023</a> — action chunking compensates
+                for delay), Real-Time Chunking (RTC, <a href="https://arxiv.org/abs/2506.07339" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-300">Black et al., 2025</a>), and Training-Time
+                RTC (<a href="https://arxiv.org/abs/2512.05964" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-300">Black et al., 2025</a>) — all address the timing mismatch
                 between commanded actions and observed state changes.
               </span>
             </p>
