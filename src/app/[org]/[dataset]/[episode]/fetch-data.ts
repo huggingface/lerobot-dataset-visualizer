@@ -1334,11 +1334,13 @@ export type LowMovementEpisode = {
 
 export type AggVelocityStat = {
   name: string;
-  std: number;
-  maxAbs: number;
+  std: number; // normalized by motor range
+  maxAbs: number; // normalized by motor range
   bins: number[];
-  lo: number;
-  hi: number;
+  lo: number; // normalized by motor range
+  hi: number; // normalized by motor range
+  motorRange: number;
+  inactive?: boolean; // true if p95(|Δa|) < 1% of motor range
 };
 
 export type AggAutocorrelation = {
@@ -1657,7 +1659,45 @@ export async function loadCrossEpisodeActionVariance(
   movementScores.sort((a, b) => a.totalMovement - b.totalMovement);
   const lowMovementEpisodes = movementScores.slice(0, 10);
 
-  // Aggregated velocity stats: pool deltas from all episodes
+  // Precompute per-dimension normalization: motor range (max − min)
+  const motorRanges: number[] = new Array(actionDim);
+  for (let d = 0; d < actionDim; d++) {
+    let lo = Infinity,
+      hi = -Infinity;
+    for (const { actions: ep } of episodeActions) {
+      for (let t = 0; t < ep.length; t++) {
+        const v = ep[t][d] ?? 0;
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+    }
+    motorRanges[d] = (hi - lo) || 1;
+  }
+
+  // Per-episode, per-dimension activity: p95(|Δa|) >= 1% of motor range
+  const ACTIVITY_THRESHOLD = 0.001; // 0.1% of motor range
+  // activeMap[episodeIdx][dimIdx] = true if motor d is active in that episode
+  const activeMap: boolean[][] = episodeActions.map(({ actions: ep }) => {
+    const flags: boolean[] = new Array(actionDim);
+    for (let d = 0; d < actionDim; d++) {
+      if (ep.length < 2) { flags[d] = false; continue; }
+      const absDeltas: number[] = [];
+      for (let t = 1; t < ep.length; t++) {
+        absDeltas.push(Math.abs((ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0)));
+      }
+      absDeltas.sort((a, b) => a - b);
+      const p95 = absDeltas[Math.floor(absDeltas.length * 0.95)];
+      flags[d] = p95 >= motorRanges[d] * ACTIVITY_THRESHOLD;
+    }
+    return flags;
+  });
+  // A motor is globally inactive only if inactive in all episodes
+  const globallyActive: boolean[] = new Array(actionDim);
+  for (let d = 0; d < actionDim; d++) {
+    globallyActive[d] = activeMap.some((flags) => flags[d]);
+  }
+
+  // Aggregated velocity stats: pool deltas from all episodes, normalized by motor range
   const shortName = (k: string) => {
     const p = k.split(SERIES_NAME_DELIMITER);
     return p.length > 1 ? p[p.length - 1] : k;
@@ -1665,47 +1705,63 @@ export async function loadCrossEpisodeActionVariance(
 
   const aggVelocity: AggVelocityStat[] = (() => {
     const binCount = 30;
-    return Array.from({ length: actionDim }, (_, d) => {
+    const results: AggVelocityStat[] = [];
+    for (let d = 0; d < actionDim; d++) {
+      const motorRange = motorRanges[d];
+      const inactive = !globallyActive[d];
       const deltas: number[] = [];
-      for (const { actions: ep } of episodeActions) {
+      for (let ei = 0; ei < episodeActions.length; ei++) {
+        // Skip deltas from episodes where this motor is inactive
+        if (!activeMap[ei][d]) continue;
+        const ep = episodeActions[ei].actions;
         for (let t = 1; t < ep.length; t++) {
           deltas.push((ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0));
         }
       }
-      if (deltas.length === 0)
-        return {
+      if (deltas.length === 0) {
+        results.push({
           name: shortName(actionNames[d]),
           std: 0,
           maxAbs: 0,
           bins: [],
           lo: 0,
           hi: 0,
-        };
+          motorRange,
+          inactive,
+        });
+        continue;
+      }
       let sum = 0,
-        maxAbs = 0,
-        lo = Infinity,
-        hi = -Infinity;
+        maxAbsRaw = 0,
+        loRaw = Infinity,
+        hiRaw = -Infinity;
       for (const v of deltas) {
         sum += v;
         const a = Math.abs(v);
-        if (a > maxAbs) maxAbs = a;
-        if (v < lo) lo = v;
-        if (v > hi) hi = v;
+        if (a > maxAbsRaw) maxAbsRaw = a;
+        if (v < loRaw) loRaw = v;
+        if (v > hiRaw) hiRaw = v;
       }
       const mean = sum / deltas.length;
       let varSum = 0;
       for (const v of deltas) varSum += (v - mean) ** 2;
-      const std = Math.sqrt(varSum / deltas.length);
+      const rawStd = Math.sqrt(varSum / deltas.length);
+      const std = rawStd / motorRange;
+      const maxAbs = maxAbsRaw / motorRange;
+      const lo = loRaw / motorRange;
+      const hi = hiRaw / motorRange;
       const range = hi - lo || 1;
       const binW = range / binCount;
       const bins = new Array(binCount).fill(0);
       for (const v of deltas) {
-        let b = Math.floor((v - lo) / binW);
+        const normV = v / motorRange;
+        let b = Math.floor((normV - lo) / binW);
         if (b >= binCount) b = binCount - 1;
         bins[b]++;
       }
-      return { name: shortName(actionNames[d]), std, maxAbs, bins, lo, hi };
-    });
+      results.push({ name: shortName(actionNames[d]), std, maxAbs, bins, lo, hi, motorRange, inactive });
+    }
+    return results;
   })();
 
   // Aggregated autocorrelation: average per-episode ACFs
@@ -1776,14 +1832,15 @@ export async function loadCrossEpisodeActionVariance(
     return { chartData, suggestedChunk, shortKeys };
   })();
 
-  // Per-episode jerkiness: mean |Δa| across all dimensions
+  // Per-episode jerkiness: mean |Δa| across dimensions active in that episode, normalized by motor range
   const jerkyEpisodes: JerkyEpisode[] = episodeActions
-    .map(({ index, actions: ep }) => {
+    .map(({ index, actions: ep }, ei) => {
       let sum = 0,
         count = 0;
       for (let t = 1; t < ep.length; t++) {
         for (let d = 0; d < actionDim; d++) {
-          sum += Math.abs((ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0));
+          if (!activeMap[ei][d]) continue; // skip motors inactive in this episode
+          sum += Math.abs((ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0)) / motorRanges[d];
           count++;
         }
       }

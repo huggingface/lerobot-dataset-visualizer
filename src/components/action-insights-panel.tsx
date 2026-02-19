@@ -470,27 +470,44 @@ function ActionVelocitySection({
     if (agg && agg.length > 0) return null;
     if (actionKeys.length === 0 || data.length < 2) return [];
 
-    return actionKeys.map((key) => {
-      const values = data.map((row) => row[key] ?? 0);
-      const deltas = values.slice(1).map((v, i) => v - values[i]);
-      const mean = deltas.reduce((a, b) => a + b, 0) / deltas.length;
-      const std = Math.sqrt(
-        deltas.reduce((a, d) => a + (d - mean) ** 2, 0) / deltas.length,
-      );
-      const maxAbs = Math.max(...deltas.map(Math.abs));
-      const binCount = 30;
-      const lo = Math.min(...deltas);
-      const hi = Math.max(...deltas);
-      const range = hi - lo || 1;
-      const binW = range / binCount;
-      const bins: number[] = new Array(binCount).fill(0);
-      for (const d of deltas) {
-        let b = Math.floor((d - lo) / binW);
-        if (b >= binCount) b = binCount - 1;
-        bins[b]++;
-      }
-      return { name: shortName(key), std, maxAbs, bins, lo, hi };
-    });
+    const ACTIVITY_THRESHOLD = 0.001; // 0.1% of motor range
+    return actionKeys
+      .map((key) => {
+        const values = data.map((row) => row[key] ?? 0);
+        const motorMin = Math.min(...values);
+        const motorMax = Math.max(...values);
+        const motorRange = (motorMax - motorMin) || 1;
+        const deltas = values.slice(1).map((v, i) => v - values[i]);
+        if (deltas.length === 0)
+          return { name: shortName(key), std: 0, maxAbs: 0, bins: new Array(30).fill(0), lo: 0, hi: 0, motorRange };
+
+        // Activity score: p95 of |Δa|
+        const absDeltas = deltas.map(Math.abs).sort((a, b) => a - b);
+        const p95 = absDeltas[Math.floor(absDeltas.length * 0.95)];
+        const inactive = p95 < motorRange * ACTIVITY_THRESHOLD;
+
+        const mean = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+        const rawStd = Math.sqrt(
+          deltas.reduce((a, d) => a + (d - mean) ** 2, 0) / deltas.length,
+        );
+        const std = rawStd / motorRange;
+        const maxAbsRaw = Math.max(...absDeltas);
+        const maxAbs = maxAbsRaw / motorRange;
+        
+        const binCount = 30;
+        const lo = Math.min(...deltas) / motorRange;
+        const hi = Math.max(...deltas) / motorRange;
+        const range = hi - lo || 1;
+        const binW = range / binCount;
+        const bins: number[] = new Array(binCount).fill(0);
+        for (const d of deltas) {
+          const normD = d / motorRange;
+          let b = Math.floor((normD - lo) / binW);
+          if (b >= binCount) b = binCount - 1;
+          bins[b]++;
+        }
+        return { name: shortName(key), std, maxAbs, bins, lo, hi, motorRange, inactive };
+      });
   }, [data, actionKeys, agg]);
 
   const stats = useMemo(
@@ -503,22 +520,25 @@ function ActionVelocitySection({
     () => (stats.length > 0 ? Math.max(...stats.flatMap((s) => s.bins)) : 0),
     [stats],
   );
-  const maxStd = useMemo(
-    () => (stats.length > 0 ? Math.max(...stats.map((s) => s.std)) : 1),
-    [stats],
-  );
+  const maxStd = useMemo(() => {
+    const active = stats.filter((s) => !s.inactive);
+    return active.length > 0 ? Math.max(...active.map((s) => s.std)) : 1;
+  }, [stats]);
 
   const insight = useMemo(() => {
     if (stats.length === 0) return null;
-    const smooth = stats.filter((s) => s.std / maxStd < 0.4);
-    const moderate = stats.filter(
+    const active = stats.filter((s) => !s.inactive);
+    const inactiveCount = stats.length - active.length;
+    if (active.length === 0) return null;
+    const smooth = active.filter((s) => s.std / maxStd < 0.4);
+    const moderate = active.filter(
       (s) => s.std / maxStd >= 0.4 && s.std / maxStd < 0.7,
     );
-    const jerky = stats.filter((s) => s.std / maxStd >= 0.7);
+    const jerky = active.filter((s) => s.std / maxStd >= 0.7);
     const isGripper = (n: string) => /grip/i.test(n);
     const jerkyNonGripper = jerky.filter((s) => !isGripper(s.name));
     const jerkyGripper = jerky.filter((s) => isGripper(s.name));
-    const smoothRatio = smooth.length / stats.length;
+    const smoothRatio = smooth.length / active.length;
 
     let verdict: { label: string; color: string };
     if (smoothRatio >= 0.6 && jerkyNonGripper.length === 0)
@@ -543,6 +563,10 @@ function ActionVelocitySection({
     if (jerkyGripper.length > 0)
       lines.push(
         `${jerkyGripper.length} gripper${jerkyGripper.length > 1 ? "s" : ""} jerky — expected for binary open/close`,
+      );
+    if (inactiveCount > 0)
+      lines.push(
+        `${inactiveCount} inactive (${stats.filter((s) => s.inactive).map((s) => s.name).join(", ")}) — excluded from computation`,
       );
 
     let tip: string;
@@ -607,18 +631,24 @@ function ActionVelocitySection({
       >
         {stats.map((s, si) => {
           const barH = 28;
+          const dimmed = !!s.inactive;
           return (
             <div
               key={s.name}
-              className="bg-slate-900/50 rounded-md px-2.5 py-2 space-y-1"
+              className={`rounded-md px-2.5 py-2 space-y-1 ${dimmed ? "bg-slate-900/30 opacity-50" : "bg-slate-900/50"}`}
             >
               <p
-                className="text-xs font-medium text-slate-200 truncate"
+                className={`text-xs font-medium truncate ${dimmed ? "text-slate-500" : "text-slate-200"}`}
                 title={s.name}
               >
                 {s.name}
+                {dimmed && (
+                  <span className="text-slate-600 ml-1 font-normal">
+                    (inactive)
+                  </span>
+                )}
               </p>
-              <div className="flex gap-2 text-xs text-slate-400 tabular-nums">
+              <div className={`flex gap-2 text-xs tabular-nums ${dimmed ? "text-slate-600" : "text-slate-400"}`}>
                 <span>σ={s.std.toFixed(4)}</span>
                 <span>
                   |Δ|<sub>max</sub>={s.maxAbs.toFixed(4)}
@@ -640,8 +670,8 @@ function ActionVelocitySection({
                       y={barH - h}
                       width={0.85}
                       height={h}
-                      fill={COLORS[si % COLORS.length]}
-                      opacity={0.7}
+                      fill={dimmed ? "#475569" : COLORS[si % COLORS.length]}
+                      opacity={dimmed ? 0.4 : 0.7}
                     />
                   );
                 })}
@@ -651,8 +681,9 @@ function ActionVelocitySection({
                   className="h-full rounded-full"
                   style={{
                     width: `${Math.min(100, (s.std / maxStd) * 100)}%`,
-                    background:
-                      s.std / maxStd < 0.4
+                    background: dimmed
+                      ? "#475569"
+                      : s.std / maxStd < 0.4
                         ? "#22c55e"
                         : s.std / maxStd < 0.7
                           ? "#eab308"
