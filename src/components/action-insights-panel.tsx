@@ -606,9 +606,13 @@ function ActionVelocitySection({
       const inactiveOnly = excluded.filter((s) => s.inactive && !s.discrete);
       const parts: string[] = [];
       if (discreteOnly.length > 0)
-        parts.push(`${discreteOnly.length} discrete (${discreteOnly.map((s) => s.name).join(", ")})`);
+        parts.push(
+          `${discreteOnly.length} discrete (${discreteOnly.map((s) => s.name).join(", ")})`,
+        );
       if (inactiveOnly.length > 0)
-        parts.push(`${inactiveOnly.length} inactive (${inactiveOnly.map((s) => s.name).join(", ")})`);
+        parts.push(
+          `${inactiveOnly.length} inactive (${inactiveOnly.map((s) => s.name).join(", ")})`,
+        );
       lines.push(`${parts.join("; ")} — excluded from verdict`);
     }
 
@@ -684,14 +688,15 @@ function ActionVelocitySection({
       >
         {stats.map((s, si) => {
           const barH = 28;
-           const dimmed = !!s.inactive || !!s.discrete;
-           const tag = s.inactive && s.discrete
-             ? "inactive & discrete"
-             : s.discrete
-               ? "discrete"
-               : s.inactive
-                 ? "inactive"
-                 : null;
+          const dimmed = !!s.inactive || !!s.discrete;
+          const tag =
+            s.inactive && s.discrete
+              ? "inactive & discrete"
+              : s.discrete
+                ? "discrete"
+                : s.inactive
+                  ? "inactive"
+                  : null;
           return (
             <div
               key={s.name}
