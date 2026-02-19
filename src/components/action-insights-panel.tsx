@@ -351,8 +351,16 @@ function AutocorrelationSection({
               <br />
               <span className="text-slate-500">
                 Grounded in the theoretical result that chunk length should
-                scale logarithmically with system stability constants (<a href="https://arxiv.org/abs/2507.09061" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-300">Zhang et
-                al., 2025</a>, Theorem 1).
+                scale logarithmically with system stability constants (
+                <a
+                  href="https://arxiv.org/abs/2507.09061"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-slate-300"
+                >
+                  Zhang et al., 2025
+                </a>
+                , Theorem 1).
               </span>
             </p>
           </InfoToggle>
@@ -396,7 +404,11 @@ function AutocorrelationSection({
                 fontSize: 13,
               }}
             />
-            <YAxis stroke="#94a3b8" domain={yDomain} tickFormatter={(v) => Number(v.toFixed(2)).toString()} />
+            <YAxis
+              stroke="#94a3b8"
+              domain={yDomain}
+              tickFormatter={(v) => Number(v.toFixed(2)).toString()}
+            />
             <Tooltip
               contentStyle={{
                 background: "#1e293b",
@@ -471,43 +483,59 @@ function ActionVelocitySection({
     if (actionKeys.length === 0 || data.length < 2) return [];
 
     const ACTIVITY_THRESHOLD = 0.001; // 0.1% of motor range
-    return actionKeys
-      .map((key) => {
-        const values = data.map((row) => row[key] ?? 0);
-        const motorMin = Math.min(...values);
-        const motorMax = Math.max(...values);
-        const motorRange = (motorMax - motorMin) || 1;
-        const deltas = values.slice(1).map((v, i) => v - values[i]);
-        if (deltas.length === 0)
-          return { name: shortName(key), std: 0, maxAbs: 0, bins: new Array(30).fill(0), lo: 0, hi: 0, motorRange };
+    return actionKeys.map((key) => {
+      const values = data.map((row) => row[key] ?? 0);
+      const motorMin = Math.min(...values);
+      const motorMax = Math.max(...values);
+      const motorRange = motorMax - motorMin || 1;
+      const deltas = values.slice(1).map((v, i) => v - values[i]);
+      if (deltas.length === 0)
+        return {
+          name: shortName(key),
+          std: 0,
+          maxAbs: 0,
+          bins: new Array(30).fill(0),
+          lo: 0,
+          hi: 0,
+          motorRange,
+        };
 
-        // Activity score: p95 of |Δa|
-        const absDeltas = deltas.map(Math.abs).sort((a, b) => a - b);
-        const p95 = absDeltas[Math.floor(absDeltas.length * 0.95)];
-        const inactive = p95 < motorRange * ACTIVITY_THRESHOLD;
+      // Activity score: p95 of |Δa|
+      const absDeltas = deltas.map(Math.abs).sort((a, b) => a - b);
+      const p95 = absDeltas[Math.floor(absDeltas.length * 0.95)];
+      const inactive = p95 < motorRange * ACTIVITY_THRESHOLD;
 
-        const mean = deltas.reduce((a, b) => a + b, 0) / deltas.length;
-        const rawStd = Math.sqrt(
-          deltas.reduce((a, d) => a + (d - mean) ** 2, 0) / deltas.length,
-        );
-        const std = rawStd / motorRange;
-        const maxAbsRaw = Math.max(...absDeltas);
-        const maxAbs = maxAbsRaw / motorRange;
-        
-        const binCount = 30;
-        const lo = Math.min(...deltas) / motorRange;
-        const hi = Math.max(...deltas) / motorRange;
-        const range = hi - lo || 1;
-        const binW = range / binCount;
-        const bins: number[] = new Array(binCount).fill(0);
-        for (const d of deltas) {
-          const normD = d / motorRange;
-          let b = Math.floor((normD - lo) / binW);
-          if (b >= binCount) b = binCount - 1;
-          bins[b]++;
-        }
-        return { name: shortName(key), std, maxAbs, bins, lo, hi, motorRange, inactive };
-      });
+      const mean = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+      const rawStd = Math.sqrt(
+        deltas.reduce((a, d) => a + (d - mean) ** 2, 0) / deltas.length,
+      );
+      const std = rawStd / motorRange;
+      const maxAbsRaw = Math.max(...absDeltas);
+      const maxAbs = maxAbsRaw / motorRange;
+
+      const binCount = 30;
+      const lo = Math.min(...deltas) / motorRange;
+      const hi = Math.max(...deltas) / motorRange;
+      const range = hi - lo || 1;
+      const binW = range / binCount;
+      const bins: number[] = new Array(binCount).fill(0);
+      for (const d of deltas) {
+        const normD = d / motorRange;
+        let b = Math.floor((normD - lo) / binW);
+        if (b >= binCount) b = binCount - 1;
+        bins[b]++;
+      }
+      return {
+        name: shortName(key),
+        std,
+        maxAbs,
+        bins,
+        lo,
+        hi,
+        motorRange,
+        inactive,
+      };
+    });
   }, [data, actionKeys, agg]);
 
   const stats = useMemo(
@@ -566,7 +594,10 @@ function ActionVelocitySection({
       );
     if (inactiveCount > 0)
       lines.push(
-        `${inactiveCount} inactive (${stats.filter((s) => s.inactive).map((s) => s.name).join(", ")}) — excluded from computation`,
+        `${inactiveCount} inactive (${stats
+          .filter((s) => s.inactive)
+          .map((s) => s.name)
+          .join(", ")}) — excluded from computation`,
       );
 
     let tip: string;
@@ -616,8 +647,16 @@ function ActionVelocitySection({
               <br />
               <span className="text-slate-500">
                 Relates to the Lipschitz constant L<sub>π</sub> and smoothness C
-                <sub>π</sub> in <a href="https://arxiv.org/abs/2507.09061" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-300">Zhang et al. (2025)</a>, which govern compounding
-                error bounds (Assumptions 3.1, 4.1).
+                <sub>π</sub> in{" "}
+                <a
+                  href="https://arxiv.org/abs/2507.09061"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-slate-300"
+                >
+                  Zhang et al. (2025)
+                </a>
+                , which govern compounding error bounds (Assumptions 3.1, 4.1).
               </span>
             </p>
           </InfoToggle>
@@ -648,7 +687,9 @@ function ActionVelocitySection({
                   </span>
                 )}
               </p>
-              <div className={`flex gap-2 text-xs tabular-nums ${dimmed ? "text-slate-600" : "text-slate-400"}`}>
+              <div
+                className={`flex gap-2 text-xs tabular-nums ${dimmed ? "text-slate-600" : "text-slate-400"}`}
+              >
                 <span>σ={s.std.toFixed(4)}</span>
                 <span>
                   |Δ|<sub>max</sub>={s.maxAbs.toFixed(4)}
@@ -881,9 +922,17 @@ function VarianceHeatmap({
               indicate consistent behavior across demonstrations.
               <br />
               <span className="text-slate-500">
-                Relates to the &quot;coverage&quot; discussion in <a href="https://arxiv.org/abs/2507.09061" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-300">Zhang et al.
-                (2025)</a> — regions with low variance may lack the exploratory
-                coverage needed to prevent compounding errors (Section 4).
+                Relates to the &quot;coverage&quot; discussion in{" "}
+                <a
+                  href="https://arxiv.org/abs/2507.09061"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-slate-300"
+                >
+                  Zhang et al. (2025)
+                </a>{" "}
+                — regions with low variance may lack the exploratory coverage
+                needed to prevent compounding errors (Section 4).
               </span>
             </p>
           </InfoToggle>
@@ -1343,10 +1392,36 @@ function StateActionAlignmentSection({
               commanded and when the corresponding state changes.
               <br />
               <span className="text-slate-500">
-                Central to ACT (<a href="https://arxiv.org/abs/2304.13705" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-300">Zhao et al., 2023</a> — action chunking compensates
-                for delay), Real-Time Chunking (RTC, <a href="https://arxiv.org/abs/2506.07339" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-300">Black et al., 2025</a>), and Training-Time
-                RTC (<a href="https://arxiv.org/abs/2512.05964" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-300">Black et al., 2025</a>) — all address the timing mismatch
-                between commanded actions and observed state changes.
+                Central to ACT (
+                <a
+                  href="https://arxiv.org/abs/2304.13705"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-slate-300"
+                >
+                  Zhao et al., 2023
+                </a>{" "}
+                — action chunking compensates for delay), Real-Time Chunking
+                (RTC,{" "}
+                <a
+                  href="https://arxiv.org/abs/2506.07339"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-slate-300"
+                >
+                  Black et al., 2025
+                </a>
+                ), and Training-Time RTC (
+                <a
+                  href="https://arxiv.org/abs/2512.05964"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-slate-300"
+                >
+                  Black et al., 2025
+                </a>
+                ) — all address the timing mismatch between commanded actions
+                and observed state changes.
               </span>
             </p>
           </InfoToggle>
@@ -1393,7 +1468,11 @@ function StateActionAlignmentSection({
                 fontSize: 13,
               }}
             />
-            <YAxis stroke="#94a3b8" domain={[-0.5, 1]} tickFormatter={(v) => Number(v.toFixed(2)).toString()} />
+            <YAxis
+              stroke="#94a3b8"
+              domain={[-0.5, 1]}
+              tickFormatter={(v) => Number(v.toFixed(2)).toString()}
+            />
             <Tooltip
               contentStyle={{
                 background: "#1e293b",

@@ -1671,7 +1671,7 @@ export async function loadCrossEpisodeActionVariance(
         if (v > hi) hi = v;
       }
     }
-    motorRanges[d] = (hi - lo) || 1;
+    motorRanges[d] = hi - lo || 1;
   }
 
   // Per-episode, per-dimension activity: p95(|Δa|) >= 1% of motor range
@@ -1680,7 +1680,10 @@ export async function loadCrossEpisodeActionVariance(
   const activeMap: boolean[][] = episodeActions.map(({ actions: ep }) => {
     const flags: boolean[] = new Array(actionDim);
     for (let d = 0; d < actionDim; d++) {
-      if (ep.length < 2) { flags[d] = false; continue; }
+      if (ep.length < 2) {
+        flags[d] = false;
+        continue;
+      }
       const absDeltas: number[] = [];
       for (let t = 1; t < ep.length; t++) {
         absDeltas.push(Math.abs((ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0)));
@@ -1759,7 +1762,16 @@ export async function loadCrossEpisodeActionVariance(
         if (b >= binCount) b = binCount - 1;
         bins[b]++;
       }
-      results.push({ name: shortName(actionNames[d]), std, maxAbs, bins, lo, hi, motorRange, inactive });
+      results.push({
+        name: shortName(actionNames[d]),
+        std,
+        maxAbs,
+        bins,
+        lo,
+        hi,
+        motorRange,
+        inactive,
+      });
     }
     return results;
   })();
@@ -1840,7 +1852,8 @@ export async function loadCrossEpisodeActionVariance(
       for (let t = 1; t < ep.length; t++) {
         for (let d = 0; d < actionDim; d++) {
           if (!activeMap[ei][d]) continue; // skip motors inactive in this episode
-          sum += Math.abs((ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0)) / motorRanges[d];
+          sum +=
+            Math.abs((ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0)) / motorRanges[d];
           count++;
         }
       }
