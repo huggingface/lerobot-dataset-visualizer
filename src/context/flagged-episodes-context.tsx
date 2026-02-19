@@ -45,6 +45,7 @@ export const FlaggedEpisodesProvider: React.FC<{
   children: React.ReactNode;
 }> = ({ children }) => {
   const [flagged, setFlagged] = useState<Set<number>>(new Set());
+  const [hydrated, setHydrated] = useState(false);
 
   // Hydrate from sessionStorage after mount (avoids SSR/client mismatch)
   useEffect(() => {
@@ -54,11 +55,15 @@ export const FlaggedEpisodesProvider: React.FC<{
     } catch {
       /* ignore */
     }
+    setHydrated(true);
   }, []);
 
+  // Only persist after hydration so the initial empty set doesn't
+  // overwrite stored flags when the component remounts.
   useEffect(() => {
+    if (!hydrated) return;
     saveToStorage(flagged);
-  }, [flagged]);
+  }, [flagged, hydrated]);
 
   const toggle = useCallback((id: number) => {
     setFlagged((prev) => {
