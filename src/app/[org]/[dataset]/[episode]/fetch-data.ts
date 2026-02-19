@@ -1712,21 +1712,25 @@ export async function loadCrossEpisodeActionVariance(
     for (let d = 0; d < actionDim; d++) {
       const motorRange = motorRanges[d];
       const inactive = !globallyActive[d];
-      const deltas: number[] = [];
+      // Collect all deltas (unfiltered) for histogram display
+      const allDeltas: number[] = [];
+      // Collect only deltas from active episodes for stats
+      const activeDeltas: number[] = [];
       for (let ei = 0; ei < episodeActions.length; ei++) {
-        // Skip deltas from episodes where this motor is inactive
-        if (!activeMap[ei][d]) continue;
         const ep = episodeActions[ei].actions;
         for (let t = 1; t < ep.length; t++) {
-          deltas.push((ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0));
+          const delta = (ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0);
+          allDeltas.push(delta);
+          if (activeMap[ei][d]) activeDeltas.push(delta);
         }
       }
+      const deltas = activeDeltas.length > 0 ? activeDeltas : allDeltas;
       if (deltas.length === 0) {
         results.push({
           name: shortName(actionNames[d]),
           std: 0,
           maxAbs: 0,
-          bins: [],
+          bins: new Array(binCount).fill(0),
           lo: 0,
           hi: 0,
           motorRange,
