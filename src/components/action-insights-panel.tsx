@@ -483,11 +483,15 @@ function ActionVelocitySection({
     if (actionKeys.length === 0 || data.length < 2) return [];
 
     const ACTIVITY_THRESHOLD = 0.001; // 0.1% of motor range
+    const DISCRETE_THRESHOLD = 4; // ≤ this many unique values → discrete
     return actionKeys.map((key) => {
       const values = data.map((row) => row[key] ?? 0);
       const motorMin = Math.min(...values);
       const motorMax = Math.max(...values);
       const motorRange = motorMax - motorMin || 1;
+      const uniqueVals = new Set(values);
+      const nUnique = uniqueVals.size;
+      const discrete = nUnique <= DISCRETE_THRESHOLD;
       const deltas = values.slice(1).map((v, i) => v - values[i]);
       if (deltas.length === 0)
         return {
@@ -498,6 +502,7 @@ function ActionVelocitySection({
           lo: 0,
           hi: 0,
           motorRange,
+          discrete,
         };
 
       // Activity score: p95 of |Δa|
@@ -534,6 +539,7 @@ function ActionVelocitySection({
         hi,
         motorRange,
         inactive,
+        discrete,
       };
     });
   }, [data, actionKeys, agg]);
@@ -549,14 +555,14 @@ function ActionVelocitySection({
     [stats],
   );
   const maxStd = useMemo(() => {
-    const active = stats.filter((s) => !s.inactive);
+    const active = stats.filter((s) => !s.inactive && !s.discrete);
     return active.length > 0 ? Math.max(...active.map((s) => s.std)) : 1;
   }, [stats]);
 
   const insight = useMemo(() => {
     if (stats.length === 0) return null;
-    const active = stats.filter((s) => !s.inactive);
-    const inactiveCount = stats.length - active.length;
+    const active = stats.filter((s) => !s.inactive && !s.discrete);
+    const excluded = stats.filter((s) => s.inactive || s.discrete);
     if (active.length === 0) return null;
     const smooth = active.filter((s) => s.std / maxStd < 0.4);
     const moderate = active.filter(
@@ -592,13 +598,16 @@ function ActionVelocitySection({
       lines.push(
         `${jerkyGripper.length} gripper${jerkyGripper.length > 1 ? "s" : ""} jerky — expected for binary open/close`,
       );
-    if (inactiveCount > 0)
-      lines.push(
-        `${inactiveCount} inactive (${stats
-          .filter((s) => s.inactive)
-          .map((s) => s.name)
-          .join(", ")}) — excluded from computation`,
-      );
+    if (excluded.length > 0) {
+      const discreteOnly = excluded.filter((s) => s.discrete);
+      const inactiveOnly = excluded.filter((s) => s.inactive && !s.discrete);
+      const parts: string[] = [];
+      if (discreteOnly.length > 0)
+        parts.push(`${discreteOnly.length} discrete (${discreteOnly.map((s) => s.name).join(", ")})`);
+      if (inactiveOnly.length > 0)
+        parts.push(`${inactiveOnly.length} inactive (${inactiveOnly.map((s) => s.name).join(", ")})`);
+      lines.push(`${parts.join("; ")} — excluded from verdict`);
+    }
 
     let tip: string;
     if (verdict.label === "Smooth")
@@ -670,7 +679,12 @@ function ActionVelocitySection({
       >
         {stats.map((s, si) => {
           const barH = 28;
-          const dimmed = !!s.inactive;
+          const dimmed = !!s.inactive || !!s.discrete;
+          const tag = s.discrete
+            ? "discrete"
+            : s.inactive
+              ? "inactive"
+              : null;
           return (
             <div
               key={s.name}
@@ -681,9 +695,9 @@ function ActionVelocitySection({
                 title={s.name}
               >
                 {s.name}
-                {dimmed && (
+                {tag && (
                   <span className="text-slate-600 ml-1 font-normal">
-                    (inactive)
+                    ({tag})
                   </span>
                 )}
               </p>
