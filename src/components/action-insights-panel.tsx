@@ -563,7 +563,6 @@ function ActionVelocitySection({
     if (stats.length === 0) return null;
     const active = stats.filter((s) => !s.inactive && !s.discrete);
     const excluded = stats.filter((s) => s.inactive || s.discrete);
-    if (active.length === 0) return null;
     const smooth = active.filter((s) => s.std / maxStd < 0.4);
     const moderate = active.filter(
       (s) => s.std / maxStd >= 0.4 && s.std / maxStd < 0.7,
@@ -572,14 +571,18 @@ function ActionVelocitySection({
     const isGripper = (n: string) => /grip/i.test(n);
     const jerkyNonGripper = jerky.filter((s) => !isGripper(s.name));
     const jerkyGripper = jerky.filter((s) => isGripper(s.name));
-    const smoothRatio = smooth.length / active.length;
 
     let verdict: { label: string; color: string };
-    if (smoothRatio >= 0.6 && jerkyNonGripper.length === 0)
-      verdict = { label: "Smooth", color: "text-green-400" };
-    else if (jerkyNonGripper.length <= 2 && smoothRatio >= 0.3)
-      verdict = { label: "Moderate", color: "text-yellow-400" };
-    else verdict = { label: "Jerky", color: "text-red-400" };
+    if (active.length === 0) {
+      verdict = { label: "N/A", color: "text-zinc-400" };
+    } else {
+      const smoothRatio = smooth.length / active.length;
+      if (smoothRatio >= 0.6 && jerkyNonGripper.length === 0)
+        verdict = { label: "Smooth", color: "text-green-400" };
+      else if (jerkyNonGripper.length <= 2 && smoothRatio >= 0.3)
+        verdict = { label: "Moderate", color: "text-yellow-400" };
+      else verdict = { label: "Jerky", color: "text-red-400" };
+    }
 
     const lines: string[] = [];
     if (smooth.length > 0)
@@ -610,7 +613,9 @@ function ActionVelocitySection({
     }
 
     let tip: string;
-    if (verdict.label === "Smooth")
+    if (verdict.label === "N/A")
+      tip = "All motors are inactive or discrete — no motors to evaluate.";
+    else if (verdict.label === "Smooth")
       tip = "Actions are consistent — longer action chunks should work well.";
     else if (verdict.label === "Moderate")
       tip =
@@ -679,12 +684,14 @@ function ActionVelocitySection({
       >
         {stats.map((s, si) => {
           const barH = 28;
-          const dimmed = !!s.inactive || !!s.discrete;
-          const tag = s.discrete
-            ? "discrete"
-            : s.inactive
-              ? "inactive"
-              : null;
+           const dimmed = !!s.inactive || !!s.discrete;
+           const tag = s.inactive && s.discrete
+             ? "inactive & discrete"
+             : s.discrete
+               ? "discrete"
+               : s.inactive
+                 ? "inactive"
+                 : null;
           return (
             <div
               key={s.name}
