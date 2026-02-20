@@ -2,7 +2,7 @@ import React from "react";
 import ExploreGrid from "./explore-grid";
 import { fetchJson, formatStringWithVars } from "@/utils/parquetUtils";
 import { getDatasetVersion, buildVersionedUrl } from "@/utils/versionUtils";
-import type { DatasetMetadata } from "@/types";
+import type { DatasetMetadata } from "@/utils/parquetUtils";
 
 export default async function ExplorePage({
   searchParams,
@@ -10,7 +10,7 @@ export default async function ExplorePage({
   searchParams: Promise<{ p?: string }>;
 }) {
   const params = await searchParams;
-  let datasets: any[] = [];
+  let datasets: { id: string }[] = [];
   let currentPage = 1;
   let totalPages = 1;
   try {
@@ -40,7 +40,7 @@ export default async function ExplorePage({
   // Fetch episode 0 data for each dataset
   const datasetWithVideos = (
     await Promise.all(
-      datasets.map(async (ds: any) => {
+      datasets.map(async (ds) => {
         try {
           const [org, dataset] = ds.id.split("/");
           const repoId = `${org}/${dataset}`;

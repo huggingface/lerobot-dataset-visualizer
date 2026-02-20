@@ -1,4 +1,5 @@
-export function debounce<F extends (...args: any[]) => any>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function debounce<F extends (...args: any[]) => void>(
   func: F,
   waitFor: number,
 ): (...args: Parameters<F>) => void {

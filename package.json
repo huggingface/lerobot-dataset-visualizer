@@ -14,15 +14,20 @@
     "validate": "bun run type-check && bun run lint && bun run format:check"
   },
   "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.5.0",
     "hyparquet": "^1.12.1",
     "next": "15.3.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-icons": "^5.5.0",
-    "recharts": "^2.15.3"
+    "recharts": "^2.15.3",
+    "three": "^0.182.0",
+    "urdf-loader": "^0.12.6"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@types/three": "^0.182.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

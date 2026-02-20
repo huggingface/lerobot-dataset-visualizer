@@ -11,7 +11,7 @@ license: apache-2.0
 
 # LeRobot Dataset Visualizer
 
-LeRobot Dataset Visualizer is a web application for interactive exploration and visualization of robotics datasets, particularly those in the LeRobot format. It enables users to browse, view, and analyze episodes from large-scale robotics datasets, combining synchronized video playback with rich, interactive data graphs.
+LeRobot Dataset Tool and Visualizer is a web application for interactive exploration and visualization of robotics datasets, particularly those in the LeRobot format. It enables users to browse, view, and analyze episodes from large-scale robotics datasets, combining synchronized video playback with rich, interactive data graphs.
 
 ## Project Overview
 
@@ -20,13 +20,20 @@ This tool is designed to help robotics researchers and practitioners quickly ins
 - Navigating between organizations, datasets, and episodes
 - Watching episode videos
 - Exploring synchronized time-series data with interactive charts
+- Analyzing action quality and identifying problematic episodes
+- Visualizing robot poses in 3D using URDF models
 - Paginating through large datasets efficiently
 
 ## Key Features
 
 - **Dataset & Episode Navigation:** Quickly jump between organizations, datasets, and episodes using a sidebar and navigation controls.
 - **Synchronized Video & Data:** Video playback is synchronized with interactive data graphs for detailed inspection of sensor and control signals.
-- **Efficient Data Loading:** Uses parquet and JSON loading for large dataset support, with pagination and chunking.
+- **Overview Panel:** At-a-glance summary of dataset metadata, camera info, and episode details.
+- **Statistics Panel:** Dataset-level statistics including episode count, total recording time, frames-per-second, and an episode-length histogram.
+- **Action Insights Panel:** Data-driven analysis tools to guide training configuration — includes autocorrelation, state-action alignment, speed distribution, and cross-episode variance heatmap.
+- **Filtering Panel:** Identify and flag problematic episodes (low movement, jerky motion, outlier length) for removal. Exports flagged episode IDs as a ready-to-run LeRobot CLI command.
+- **3D URDF Viewer:** Visualize robot joint poses frame-by-frame in an interactive 3D scene, with end-effector trail rendering. Supports SO-100, SO-101, and OpenArm bimanual robots.
+- **Efficient Data Loading:** Uses parquet and JSON loading for large dataset support, with pagination, chunking, and lazy-loaded panels for fast initial load.
 - **Responsive UI:** Built with React, Next.js, and Tailwind CSS for a fast, modern user experience.
 
 ## Technologies Used
@@ -34,6 +41,8 @@ This tool is designed to help robotics researchers and practitioners quickly ins
 - **Next.js** (App Router)
 - **React**
 - **Recharts** (for data visualization)
+- **Three.js** + **@react-three/fiber** + **@react-three/drei** (for 3D URDF visualization)
+- **urdf-loader** (for parsing URDF robot models)
 - **hyparquet** (for reading Parquet files)
 - **Tailwind CSS** (styling)
 
