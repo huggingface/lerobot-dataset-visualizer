@@ -167,9 +167,9 @@ function HomeInner() {
           <div className="font-semibold mb-2 text-lg">Example Datasets:</div>
           <div className="flex flex-col gap-2 items-center">
             {[
+              "lerobot-data-collection/level12_rac_2_2026-02-07",
+              "imstevenpmwork/thanos_picking_power_gem_1749731584242992",
               "lerobot/aloha_static_cups_open",
-              "lerobot/columbia_cairlab_pusht_real",
-              "lerobot/taco_play",
             ].map((ds) => (
               <button
                 key={ds}
