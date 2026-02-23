@@ -260,7 +260,7 @@ function HomeInner() {
           <div className="flex flex-col gap-2 items-center">
             {[
               "lerobot-data-collection/level12_rac_2_2026-02-07",
-              "imstevenpmwork/thanos_picking_power_gem_1749731584242992",
+              "imstevenpmwork/thanos_picking_power_gem",
               "lerobot/aloha_static_cups_open",
             ].map((ds) => (
               <button
