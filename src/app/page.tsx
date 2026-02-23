@@ -6,7 +6,12 @@ import { useSearchParams } from "next/navigation";
 
 declare global {
   interface Window {
-    YT?: { Player: new (id: string, config: Record<string, unknown>) => { destroy?: () => void } };
+    YT?: {
+      Player: new (
+        id: string,
+        config: Record<string, unknown>,
+      ) => { destroy?: () => void };
+    };
     onYouTubeIframeAPIReady?: () => void;
   }
 }
@@ -87,7 +92,14 @@ function HomeInner() {
           start: 0,
         },
         events: {
-          onReady: (event: { target: { playVideo: () => void; mute: () => void; seekTo: (t: number) => void; getCurrentTime: () => number } }) => {
+          onReady: (event: {
+            target: {
+              playVideo: () => void;
+              mute: () => void;
+              seekTo: (t: number) => void;
+              getCurrentTime: () => number;
+            };
+          }) => {
             event.target.playVideo();
             event.target.mute();
             interval = setInterval(() => {

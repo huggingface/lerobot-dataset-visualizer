@@ -3,7 +3,7 @@
 import React, { useEffect, useRef } from "react";
 import { useTime } from "../context/time-context";
 import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
-import type { VideoInfo } from "@/app/[org]/[dataset]/[episode]/fetch-data";
+import type { VideoInfo } from "@/types";
 
 const THRESHOLDS = {
   VIDEO_SYNC_TOLERANCE: 0.2,
@@ -80,13 +80,13 @@ export const SimpleVideosPlayer = ({
             video.currentTime = info.segmentStart || 0;
             checkReady();
           };
-          
-          video.addEventListener('timeupdate', handleTimeUpdate);
-          video.addEventListener('loadeddata', handleLoadedData);
-          
+
+          video.addEventListener("timeupdate", handleTimeUpdate);
+          video.addEventListener("loadeddata", handleLoadedData);
+
           videoEventCleanup.set(video, () => {
-            video.removeEventListener('timeupdate', handleTimeUpdate);
-            video.removeEventListener('loadeddata', handleLoadedData);
+            video.removeEventListener("timeupdate", handleTimeUpdate);
+            video.removeEventListener("loadeddata", handleLoadedData);
           });
         } else {
           // For non-segmented videos, handle end of video
@@ -96,12 +96,12 @@ export const SimpleVideosPlayer = ({
               setCurrentTime(0);
             }
           };
-          
-          video.addEventListener('ended', handleEnded);
-          video.addEventListener('canplaythrough', checkReady, { once: true });
-          
+
+          video.addEventListener("ended", handleEnded);
+          video.addEventListener("canplaythrough", checkReady, { once: true });
+
           videoEventCleanup.set(video, () => {
-            video.removeEventListener('ended', handleEnded);
+            video.removeEventListener("ended", handleEnded);
           });
         }
       }
@@ -150,8 +150,9 @@ export const SimpleVideosPlayer = ({
   useEffect(() => {
     if (!videosReady) return;
 
-    const isExternalSeek = Math.abs(currentTime - lastVideoTimeRef.current) > 0.3;
-    
+    const isExternalSeek =
+      Math.abs(currentTime - lastVideoTimeRef.current) > 0.3;
+
     videoRefs.current.forEach((video, index) => {
       if (!video) return;
       if (hiddenVideos.includes(videosInfo[index].filename)) return;
@@ -164,7 +165,7 @@ export const SimpleVideosPlayer = ({
       if (info.isSegmented) {
         targetTime = (info.segmentStart || 0) + currentTime;
       }
-      
+
       if (Math.abs(video.currentTime - targetTime) > 0.2) {
         video.currentTime = targetTime;
       }
@@ -280,7 +281,9 @@ export const SimpleVideosPlayer = ({
                 </span>
               </p>
               <video
-                ref={(el: HTMLVideoElement | null) => { videoRefs.current[idx] = el; }}
+                ref={(el: HTMLVideoElement | null) => {
+                  videoRefs.current[idx] = el;
+                }}
                 className={`w-full object-contain ${
                   isEnlarged ? "max-h-[90vh] max-w-[90vw]" : ""
                 }`}

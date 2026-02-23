@@ -28,7 +28,11 @@ export async function fetchEpisodeFrames(
 ): Promise<EpisodeFramesData> {
   const repoId = `${org}/${dataset}`;
   const { version, info } = await getDatasetVersionAndInfo(repoId);
-  return loadAllEpisodeFrameInfo(repoId, version, info as unknown as DatasetMetadata);
+  return loadAllEpisodeFrameInfo(
+    repoId,
+    version,
+    info as unknown as DatasetMetadata,
+  );
 }
 
 export async function fetchCrossEpisodeVariance(
@@ -37,7 +41,12 @@ export async function fetchCrossEpisodeVariance(
 ): Promise<CrossEpisodeVarianceData | null> {
   const repoId = `${org}/${dataset}`;
   const { version, info } = await getDatasetVersionAndInfo(repoId);
-  return loadCrossEpisodeActionVariance(repoId, version, info as unknown as DatasetMetadata, info.fps);
+  return loadCrossEpisodeActionVariance(
+    repoId,
+    version,
+    info as unknown as DatasetMetadata,
+    info.fps,
+  );
 }
 
 export async function fetchEpisodeChartData(
@@ -47,6 +56,10 @@ export async function fetchEpisodeChartData(
 ): Promise<Record<string, number>[]> {
   const repoId = `${org}/${dataset}`;
   const { version, info } = await getDatasetVersionAndInfo(repoId);
-  return loadEpisodeFlatChartData(repoId, version, info as unknown as DatasetMetadata, episodeId);
+  return loadEpisodeFlatChartData(
+    repoId,
+    version,
+    info as unknown as DatasetMetadata,
+    episodeId,
+  );
 }
-

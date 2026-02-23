@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTime } from "../context/time-context";
 import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
-import type { VideoInfo } from "@/app/[org]/[dataset]/[episode]/fetch-data";
+import type { VideoInfo } from "@/types";
 
 type VideoPlayerProps = {
   videosInfo: VideoInfo[];
@@ -149,7 +149,8 @@ export const VideosPlayer = ({
   // For the primary video, only seek when the change came from an external source
   // (slider drag, chart click, etc.) — detected by comparing against lastVideoTimeRef.
   useEffect(() => {
-    const isExternalSeek = Math.abs(currentTime - lastVideoTimeRef.current) > 0.3;
+    const isExternalSeek =
+      Math.abs(currentTime - lastVideoTimeRef.current) > 0.3;
 
     videoRefs.current.forEach((video, index) => {
       if (!video) return;
@@ -176,7 +177,7 @@ export const VideosPlayer = ({
   const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.target as HTMLVideoElement;
     if (video && video.duration) {
-      const videoIndex = videoRefs.current.findIndex(ref => ref === video);
+      const videoIndex = videoRefs.current.findIndex((ref) => ref === video);
       const videoInfo = videosInfo[videoIndex];
 
       if (videoInfo?.isSegmented) {
@@ -220,11 +221,11 @@ export const VideosPlayer = ({
             }
           }
         };
-        
-        video.addEventListener('timeupdate', handleTimeUpdate);
-        
+
+        video.addEventListener("timeupdate", handleTimeUpdate);
+
         videoCleanupHandlers.set(video, () => {
-          video.removeEventListener('timeupdate', handleTimeUpdate);
+          video.removeEventListener("timeupdate", handleTimeUpdate);
         });
       }
 

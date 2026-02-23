@@ -16,7 +16,6 @@
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
-    "@types/three": "^0.182.0",
     "hyparquet": "^1.12.1",
     "next": "15.3.6",
     "react": "^19.0.0",
@@ -28,6 +27,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@types/three": "^0.182.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

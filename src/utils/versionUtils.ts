@@ -32,7 +32,10 @@ export interface DatasetInfo {
 }
 
 // In-memory cache for dataset info (5 min TTL)
-const datasetInfoCache = new Map<string, { data: DatasetInfo; expiry: number }>();
+const datasetInfoCache = new Map<
+  string,
+  { data: DatasetInfo; expiry: number }
+>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
@@ -48,8 +51,8 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
-    const response = await fetch(testUrl, { 
+
+    const response = await fetch(testUrl, {
       method: "GET",
       cache: "no-store",
       signal: controller.signal,
@@ -62,14 +65,17 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
     }
 
     const data = await response.json();
-    
+
     if (!data.features) {
       throw new Error(
         "Dataset info.json does not have the expected features structure",
       );
     }
-    
-    datasetInfoCache.set(repoId, { data: data as DatasetInfo, expiry: Date.now() + CACHE_TTL_MS });
+
+    datasetInfoCache.set(repoId, {
+      data: data as DatasetInfo,
+      expiry: Date.now() + CACHE_TTL_MS,
+    });
     return data as DatasetInfo;
   } catch (error) {
     if (error instanceof Error) {
@@ -88,7 +94,9 @@ const SUPPORTED_VERSIONS = ["v3.0", "v2.1", "v2.0"];
  * Returns both the validated version string and the dataset info in one call,
  * avoiding a duplicate info.json fetch.
  */
-export async function getDatasetVersionAndInfo(repoId: string): Promise<{ version: string; info: DatasetInfo }> {
+export async function getDatasetVersionAndInfo(
+  repoId: string,
+): Promise<{ version: string; info: DatasetInfo }> {
   const info = await getDatasetInfo(repoId);
   const version = info.codebase_version;
   if (!version) {
@@ -97,8 +105,8 @@ export async function getDatasetVersionAndInfo(repoId: string): Promise<{ versio
   if (!SUPPORTED_VERSIONS.includes(version)) {
     throw new Error(
       `Dataset ${repoId} has codebase version ${version}, which is not supported. ` +
-      "This tool only works with dataset versions 3.0, 2.1, or 2.0. " +
-      "Please use a compatible dataset version."
+        "This tool only works with dataset versions 3.0, 2.1, or 2.0. " +
+        "Please use a compatible dataset version.",
     );
   }
   return { version, info };
