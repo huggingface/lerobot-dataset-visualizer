@@ -4,6 +4,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 
+declare global {
+  interface Window {
+    YT?: {
+      Player: new (
+        id: string,
+        config: Record<string, unknown>,
+      ) => { destroy?: () => void };
+    };
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
+
 export default function Home() {
   return (
     <Suspense fallback={null}>
@@ -53,18 +65,19 @@ function HomeInner() {
     }
   }, [searchParams, router]);
 
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<{ destroy?: () => void } | null>(null);
 
   useEffect(() => {
     // Load YouTube IFrame API if not already present
-    if (!(window as any).YT) {
+    if (!window.YT) {
       const tag = document.createElement("script");
       tag.src = "https://www.youtube.com/iframe_api";
       document.body.appendChild(tag);
     }
     let interval: NodeJS.Timeout;
-    (window as any).onYouTubeIframeAPIReady = () => {
-      playerRef.current = new (window as any).YT.Player("yt-bg-player", {
+    window.onYouTubeIframeAPIReady = () => {
+      if (!window.YT) return;
+      playerRef.current = new window.YT.Player("yt-bg-player", {
         videoId: "Er8SPJsIYr0",
         playerVars: {
           autoplay: 1,
@@ -79,7 +92,14 @@ function HomeInner() {
           start: 0,
         },
         events: {
-          onReady: (event: any) => {
+          onReady: (event: {
+            target: {
+              playVideo: () => void;
+              mute: () => void;
+              seekTo: (t: number) => void;
+              getCurrentTime: () => number;
+            };
+          }) => {
             event.target.playVideo();
             event.target.mute();
             interval = setInterval(() => {
@@ -101,7 +121,7 @@ function HomeInner() {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleGo = (e: React.FormEvent) => {
+  const handleGo = (e: { preventDefault: () => void }) => {
     e.preventDefault();
     const value = inputRef.current?.value.trim();
     if (value) {
@@ -120,16 +140,8 @@ function HomeInner() {
       {/* Centered Content */}
       <div className="relative z-10 h-screen flex flex-col items-center justify-center text-white text-center">
         <h1 className="text-4xl md:text-5xl font-bold mb-6 drop-shadow-lg">
-          LeRobot Dataset Visualizer
+          LeRobot Dataset Tool and Visualizer
         </h1>
-        <a
-          href="https://x.com/RemiCadene/status/1825455895561859185"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sky-400 font-medium text-lg underline mb-8 inline-block hover:text-sky-300 transition-colors"
-        >
-          create & train your own robots
-        </a>
         <form onSubmit={handleGo} className="flex gap-2 justify-center mt-6">
           <input
             ref={inputRef}
@@ -138,9 +150,8 @@ function HomeInner() {
             className="px-4 py-2 rounded-md text-base text-white border-white border-1 focus:outline-none min-w-[220px] shadow-md"
             onKeyDown={(e) => {
               if (e.key === "Enter") {
-                // Prevent double submission if form onSubmit also fires
                 e.preventDefault();
-                handleGo(e as any);
+                handleGo(e);
               }
             }}
           />

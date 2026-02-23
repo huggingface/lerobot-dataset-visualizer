@@ -2,15 +2,20 @@
  * Utility functions for checking dataset version compatibility
  */
 
-import { HTTP } from "./constants";
-
 const DATASET_URL =
   process.env.DATASET_URL || "https://huggingface.co/datasets";
 
 /**
  * Dataset information structure from info.json
  */
-interface DatasetInfo {
+type FeatureInfo = {
+  dtype: string;
+  shape: number[];
+  names: string[] | Record<string, unknown> | null;
+  info?: Record<string, unknown>;
+};
+
+export interface DatasetInfo {
   codebase_version: string;
   robot_type: string | null;
   total_episodes: number;
@@ -23,18 +28,29 @@ interface DatasetInfo {
   splits: Record<string, string>;
   data_path: string;
   video_path: string;
-  features: Record<string, any>;
+  features: Record<string, FeatureInfo>;
 }
 
-/**
- * Fetches dataset information from the main revision
- */
+// In-memory cache for dataset info (5 min TTL)
+const datasetInfoCache = new Map<
+  string,
+  { data: DatasetInfo; expiry: number }
+>();
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
 export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
+  const cached = datasetInfoCache.get(repoId);
+  if (cached && Date.now() < cached.expiry) {
+    console.log(`[perf] getDatasetInfo cache HIT for ${repoId}`);
+    return cached.data;
+  }
+  console.log(`[perf] getDatasetInfo cache MISS for ${repoId} — fetching`);
+
   try {
     const testUrl = `${DATASET_URL}/${repoId}/resolve/main/meta/info.json`;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), HTTP.TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
 
     const response = await fetch(testUrl, {
       method: "GET",
@@ -50,13 +66,16 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
 
     const data = await response.json();
 
-    // Check if it has the required structure
     if (!data.features) {
       throw new Error(
         "Dataset info.json does not have the expected features structure",
       );
     }
 
+    datasetInfoCache.set(repoId, {
+      data: data as DatasetInfo,
+      expiry: Date.now() + CACHE_TTL_MS,
+    });
     return data as DatasetInfo;
   } catch (error) {
     if (error instanceof Error) {
@@ -69,39 +88,33 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
   }
 }
 
+const SUPPORTED_VERSIONS = ["v3.0", "v2.1", "v2.0"];
+
 /**
- * Gets the dataset version by reading the codebase_version from the main revision's info.json
+ * Returns both the validated version string and the dataset info in one call,
+ * avoiding a duplicate info.json fetch.
  */
-export async function getDatasetVersion(repoId: string): Promise<string> {
-  try {
-    const datasetInfo = await getDatasetInfo(repoId);
-
-    // Extract codebase_version
-    const codebaseVersion = datasetInfo.codebase_version;
-    if (!codebaseVersion) {
-      throw new Error("Dataset info.json does not contain codebase_version");
-    }
-
-    // Validate that it's a supported version
-    const supportedVersions = ["v3.0", "v2.1", "v2.0"];
-    if (!supportedVersions.includes(codebaseVersion)) {
-      throw new Error(
-        `Dataset ${repoId} has codebase version ${codebaseVersion}, which is not supported. ` +
-          "This tool only works with dataset versions 3.0, 2.1, or 2.0. " +
-          "Please use a compatible dataset version.",
-      );
-    }
-
-    return codebaseVersion;
-  } catch (error) {
-    if (error instanceof Error) {
-      throw error;
-    }
+export async function getDatasetVersionAndInfo(
+  repoId: string,
+): Promise<{ version: string; info: DatasetInfo }> {
+  const info = await getDatasetInfo(repoId);
+  const version = info.codebase_version;
+  if (!version) {
+    throw new Error("Dataset info.json does not contain codebase_version");
+  }
+  if (!SUPPORTED_VERSIONS.includes(version)) {
     throw new Error(
-      `Dataset ${repoId} is not compatible with this visualizer. ` +
-        "Failed to read dataset information from the main revision.",
+      `Dataset ${repoId} has codebase version ${version}, which is not supported. ` +
+        "This tool only works with dataset versions 3.0, 2.1, or 2.0. " +
+        "Please use a compatible dataset version.",
     );
   }
+  return { version, info };
+}
+
+export async function getDatasetVersion(repoId: string): Promise<string> {
+  const { version } = await getDatasetVersionAndInfo(repoId);
+  return version;
 }
 
 export function buildVersionedUrl(

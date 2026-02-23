@@ -16,7 +16,18 @@ jobs:
         with:
           fetch-depth: 0
           lfs: true
+          ref: main
       - name: Push to hub
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: git push https://mishig:$HF_TOKEN@huggingface.co/spaces/lerobot/visualize_dataset main -f
+        run: |
+          set -euo pipefail
+
+          git lfs install --local
+
+          git remote remove hf 2>/dev/null || true
+          git remote add hf "https://mishig:${HF_TOKEN}@huggingface.co/spaces/lerobot/visualize_dataset"
+
+          # Push large files first, then refs.
+          git lfs push hf main
+          git push hf main -f

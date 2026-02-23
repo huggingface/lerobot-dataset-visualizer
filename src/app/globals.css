@@ -19,6 +19,11 @@
   }
 }
 
+html {
+  /* Scale all rem-based sizes (text, padding, buttons) up ~12% */
+  font-size: 18px;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

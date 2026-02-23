@@ -10,53 +10,136 @@ import {
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
+  ReferenceLine,
 } from "recharts";
-import type { ChartDataGroup } from "@/types";
 
-// Recharts event payload types
-interface ChartPayload {
-  timestamp: number;
-  [key: string]: number | Record<string, number>;
-}
-
-interface ChartEventData {
-  activePayload?: Array<{ payload: ChartPayload }>;
-  activeLabel?: string | number;
-}
+type ChartRow = Record<string, number | Record<string, number>>;
 
 type DataGraphProps = {
-  data: ChartDataGroup[];
+  data: ChartRow[][];
   onChartsReady?: () => void;
 };
 
 import React, { useMemo } from "react";
 
-// Use the same delimiter as the data processing
 const SERIES_NAME_DELIMITER = " | ";
+
+const CHART_COLORS = [
+  "#f97316",
+  "#3b82f6",
+  "#22c55e",
+  "#ef4444",
+  "#a855f7",
+  "#eab308",
+  "#06b6d4",
+  "#ec4899",
+  "#14b8a6",
+  "#f59e0b",
+  "#6366f1",
+  "#84cc16",
+];
+
+function mergeGroups(data: ChartRow[][]): ChartRow[] {
+  if (data.length <= 1) return data[0] ?? [];
+  const maxLen = Math.max(...data.map((g) => g.length));
+  const merged: ChartRow[] = [];
+  for (let i = 0; i < maxLen; i++) {
+    const row: ChartRow = {};
+    for (const group of data) {
+      const src = group[i];
+      if (!src) continue;
+      for (const [k, v] of Object.entries(src)) {
+        if (k === "timestamp") {
+          row[k] = v;
+          continue;
+        }
+        row[k] = v;
+      }
+    }
+    merged.push(row);
+  }
+  return merged;
+}
 
 export const DataRecharts = React.memo(
   ({ data, onChartsReady }: DataGraphProps) => {
-    // Shared hoveredTime for all graphs
     const [hoveredTime, setHoveredTime] = useState<number | null>(null);
+    const [expanded, setExpanded] = useState(false);
 
     useEffect(() => {
-      if (typeof onChartsReady === "function") {
-        onChartsReady();
-      }
+      if (typeof onChartsReady === "function") onChartsReady();
     }, [onChartsReady]);
+
+    const combinedData = useMemo(
+      () => (expanded ? mergeGroups(data) : []),
+      [data, expanded],
+    );
 
     if (!Array.isArray(data) || data.length === 0) return null;
 
     return (
-      <div className="grid md:grid-cols-2 grid-cols-1 gap-4">
-        {data.map((group, idx) => (
+      <div>
+        {data.length > 1 && (
+          <div className="flex justify-end mb-2">
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className={`text-xs px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 ${
+                expanded
+                  ? "bg-orange-500/20 text-orange-400 border border-orange-500/40"
+                  : "bg-slate-800/60 text-slate-400 hover:text-slate-200 border border-slate-700/50"
+              }`}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                {expanded ? (
+                  <>
+                    <polyline points="4 14 10 14 10 20" />
+                    <polyline points="20 10 14 10 14 4" />
+                    <line x1="14" y1="10" x2="21" y2="3" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
+                  </>
+                ) : (
+                  <>
+                    <polyline points="15 3 21 3 21 9" />
+                    <polyline points="9 21 3 21 3 15" />
+                    <line x1="21" y1="3" x2="14" y2="10" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
+                  </>
+                )}
+              </svg>
+              {expanded ? "Split charts" : "Combine all"}
+            </button>
+          </div>
+        )}
+
+        {expanded ? (
           <SingleDataGraph
-            key={idx}
-            data={group}
+            data={combinedData}
             hoveredTime={hoveredTime}
             setHoveredTime={setHoveredTime}
+            tall
           />
-        ))}
+        ) : (
+          <div className="grid md:grid-cols-2 grid-cols-1 gap-4">
+            {data.map((group, idx) => (
+              <SingleDataGraph
+                key={idx}
+                data={group}
+                hoveredTime={hoveredTime}
+                setHoveredTime={setHoveredTime}
+              />
+            ))}
+          </div>
+        )}
       </div>
     );
   },
@@ -67,10 +150,12 @@ const SingleDataGraph = React.memo(
     data,
     hoveredTime,
     setHoveredTime,
+    tall,
   }: {
-    data: ChartDataGroup;
+    data: ChartRow[];
     hoveredTime: number | null;
     setHoveredTime: (t: number | null) => void;
+    tall?: boolean;
   }) => {
     const { currentTime, setCurrentTime } = useTime();
     function flattenRow(
@@ -101,9 +186,8 @@ const SingleDataGraph = React.memo(
           );
         }
       }
-      // Always keep timestamp at top level if present
-      if ("timestamp" in row && typeof row.timestamp === "number") {
-        result.timestamp = row.timestamp;
+      if ("timestamp" in row && typeof row["timestamp"] === "number") {
+        result["timestamp"] = row["timestamp"];
       }
       return result;
     }
@@ -135,12 +219,10 @@ const SingleDataGraph = React.memo(
       }
     });
 
-    // Assign a color per group (and for singles)
     const allGroups = [...Object.keys(groups), ...singles];
     const groupColorMap: Record<string, string> = {};
     allGroups.forEach((group, idx) => {
-      groupColorMap[group] =
-        `hsl(${idx * (360 / allGroups.length)}, 100%, 50%)`;
+      groupColorMap[group] = CHART_COLORS[idx % CHART_COLORS.length];
     });
 
     // Find the closest data point to the current time for highlighting
@@ -157,10 +239,11 @@ const SingleDataGraph = React.memo(
       setHoveredTime(null);
     };
 
-    const handleClick = (data: ChartEventData) => {
-      if (data?.activePayload?.[0]) {
-        const timeValue = data.activePayload[0].payload.timestamp;
-        setCurrentTime(timeValue);
+    const handleClick = (
+      data: { activePayload?: { payload: { timestamp: number } }[] } | null,
+    ) => {
+      if (data?.activePayload?.length) {
+        setCurrentTime(data.activePayload[0].payload.timestamp);
       }
     };
 
@@ -185,12 +268,10 @@ const SingleDataGraph = React.memo(
         }
       });
 
-      // Assign a color per group (and for singles)
       const allGroups = [...Object.keys(groups), ...singles];
       const groupColorMap: Record<string, string> = {};
       allGroups.forEach((group, idx) => {
-        groupColorMap[group] =
-          `hsl(${idx * (360 / allGroups.length)}, 100%, 50%)`;
+        groupColorMap[group] = CHART_COLORS[idx % CHART_COLORS.length];
       });
 
       const isGroupChecked = (group: string) =>
@@ -220,13 +301,12 @@ const SingleDataGraph = React.memo(
       };
 
       return (
-        <div className="grid grid-cols-[repeat(auto-fit,250px)] gap-4 mx-8">
-          {/* Grouped keys */}
+        <div className="flex flex-wrap gap-x-5 gap-y-2 px-1 pt-2">
           {Object.entries(groups).map(([group, children]) => {
             const color = groupColorMap[group];
             return (
-              <div key={group} className="mb-2">
-                <label className="flex gap-2 cursor-pointer select-none font-semibold">
+              <div key={group}>
+                <label className="flex items-center gap-1.5 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={isGroupChecked(group)}
@@ -234,68 +314,72 @@ const SingleDataGraph = React.memo(
                       if (el) el.indeterminate = isGroupIndeterminate(group);
                     }}
                     onChange={() => handleGroupCheckboxChange(group)}
-                    className="size-3.5 mt-1"
+                    className="size-3"
                     style={{ accentColor: color }}
                   />
-                  <span className="text-sm w-40 text-white">{group}</span>
+                  <span className="text-xs font-semibold text-slate-200">
+                    {group}
+                  </span>
                 </label>
-                <div className="pl-7 flex flex-col gap-1 mt-1">
-                  {children.map((key) => (
-                    <label
-                      key={key}
-                      className="flex gap-2 cursor-pointer select-none"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={visibleKeys.includes(key)}
-                        onChange={() => handleCheckboxChange(key)}
-                        className="size-3.5 mt-1"
-                        style={{ accentColor: color }}
-                      />
-                      <span
-                        className={`text-xs break-all w-36 ${visibleKeys.includes(key) ? "text-white" : "text-gray-400"}`}
+                <div className="pl-5 flex flex-col gap-0.5 mt-0.5">
+                  {children.map((key) => {
+                    const label = key.split(SERIES_NAME_DELIMITER).pop() ?? key;
+                    return (
+                      <label
+                        key={key}
+                        className="flex items-center gap-1.5 cursor-pointer select-none"
                       >
-                        {key.slice(group.length + 1)}
-                      </span>
-                      <span
-                        className={`text-xs font-mono ml-auto ${visibleKeys.includes(key) ? "text-orange-300" : "text-gray-500"}`}
-                      >
-                        {typeof currentData[key] === "number"
-                          ? currentData[key].toFixed(2)
-                          : "--"}
-                      </span>
-                    </label>
-                  ))}
+                        <input
+                          type="checkbox"
+                          checked={visibleKeys.includes(key)}
+                          onChange={() => handleCheckboxChange(key)}
+                          className="size-2.5"
+                          style={{ accentColor: color }}
+                        />
+                        <span
+                          className={`text-xs ${visibleKeys.includes(key) ? "text-slate-300" : "text-slate-500"}`}
+                        >
+                          {label}
+                        </span>
+                        <span
+                          className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-orange-300/80" : "text-slate-600"}`}
+                        >
+                          {typeof currentData[key] === "number"
+                            ? currentData[key].toFixed(2)
+                            : "–"}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             );
           })}
-          {/* Singles (non-grouped) */}
           {singles.map((key) => {
             const color = groupColorMap[key];
             return (
               <label
                 key={key}
-                className="flex gap-2 cursor-pointer select-none"
+                className="flex items-center gap-1.5 cursor-pointer select-none"
               >
                 <input
                   type="checkbox"
                   checked={visibleKeys.includes(key)}
                   onChange={() => handleCheckboxChange(key)}
-                  className="size-3.5 mt-1"
+                  className="size-3"
                   style={{ accentColor: color }}
                 />
                 <span
-                  className={`text-sm break-all w-40 ${visibleKeys.includes(key) ? "text-white" : "text-gray-400"}`}
+                  className={`text-xs ${visibleKeys.includes(key) ? "text-slate-200" : "text-slate-500"}`}
                 >
                   {key}
                 </span>
                 <span
-                  className={`text-sm font-mono ml-auto ${visibleKeys.includes(key) ? "text-orange-300" : "text-gray-500"}`}
+                  className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-orange-300/80" : "text-slate-600"}`}
                 >
                   {typeof currentData[key] === "number"
                     ? currentData[key].toFixed(2)
-                    : "--"}
+                    : "–"}
                 </span>
               </label>
             );
@@ -304,57 +388,76 @@ const SingleDataGraph = React.memo(
       );
     };
 
+    // Derive chart title from the grouped feature names
+    const chartTitle = useMemo(() => {
+      const featureNames = Object.keys(groups);
+      if (featureNames.length > 0) {
+        const suffixes = featureNames.map((g) => {
+          const parts = g.split(SERIES_NAME_DELIMITER);
+          return parts[parts.length - 1];
+        });
+        return suffixes.join(", ");
+      }
+      return singles.join(", ");
+    }, [groups, singles]);
+
     return (
-      <div className="w-full">
-        <div className="w-full h-80" onMouseLeave={handleMouseLeave}>
+      <div className="w-full bg-slate-800/40 rounded-lg border border-slate-700/50 p-3">
+        {chartTitle && (
+          <p
+            className="text-xs font-medium text-slate-300 mb-1 px-1 truncate"
+            title={chartTitle}
+          >
+            {chartTitle}
+          </p>
+        )}
+        <div
+          className={`w-full ${tall ? "h-[500px]" : "h-72"}`}
+          onMouseLeave={handleMouseLeave}
+        >
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={chartData}
               syncId="episode-sync"
-              margin={{ top: 24, right: 16, left: 0, bottom: 16 }}
+              margin={{ top: 12, right: 12, left: -8, bottom: 8 }}
               onClick={handleClick}
-              onMouseMove={(state: ChartEventData) => {
-                const timestamp = state?.activePayload?.[0]?.payload?.timestamp;
-                const label = state?.activeLabel;
-                setHoveredTime(
-                  timestamp ??
-                    (typeof label === "number"
-                      ? label
-                      : typeof label === "string"
-                        ? Number(label)
-                        : null),
-                );
+              onMouseMove={(state) => {
+                const payload = state?.activePayload?.[0]?.payload as
+                  | { timestamp?: number }
+                  | undefined;
+                setHoveredTime(payload?.timestamp ?? null);
               }}
               onMouseLeave={handleMouseLeave}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="#334155"
+                strokeOpacity={0.6}
+              />
               <XAxis
                 dataKey="timestamp"
-                label={{
-                  value: "time",
-                  position: "insideBottomLeft",
-                  fill: "#cbd5e1",
-                }}
                 domain={[
                   chartData.at(0)?.timestamp ?? 0,
                   chartData.at(-1)?.timestamp ?? 0,
                 ]}
-                ticks={useMemo(
-                  () =>
-                    Array.from(
-                      new Set(chartData.map((d) => Math.ceil(d.timestamp))),
-                    ),
-                  [chartData],
-                )}
-                stroke="#cbd5e1"
-                minTickGap={20} // Increased for fewer ticks
+                tickFormatter={(v: number) => `${v.toFixed(1)}s`}
+                stroke="#64748b"
+                tick={{ fontSize: 12, fill: "#94a3b8" }}
+                minTickGap={30}
                 allowDataOverflow={true}
               />
               <YAxis
                 domain={["auto", "auto"]}
-                stroke="#cbd5e1"
-                interval={0}
+                stroke="#64748b"
+                tick={{ fontSize: 12, fill: "#94a3b8" }}
+                width={55}
                 allowDataOverflow={true}
+                tickFormatter={(v: number) => {
+                  if (v === 0) return "0";
+                  const abs = Math.abs(v);
+                  if (abs < 0.01 || abs >= 10000) return v.toExponential(1);
+                  return Number(v.toFixed(2)).toString();
+                }}
               />
 
               <Tooltip
@@ -366,9 +469,14 @@ const SingleDataGraph = React.memo(
                 }
               />
 
-              {/* Render lines for visible dataKeys only */}
+              <ReferenceLine
+                x={currentTime}
+                stroke="#f97316"
+                strokeWidth={1.5}
+                strokeOpacity={0.7}
+              />
+
               {dataKeys.map((key) => {
-                // Use group color for all keys in a group
                 const group = key.includes(SERIES_NAME_DELIMITER)
                   ? key.split(SERIES_NAME_DELIMITER)[0]
                   : key;

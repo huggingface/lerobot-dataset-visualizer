@@ -4,17 +4,18 @@ import React, { useEffect, useRef } from "react";
 import { useTime } from "../context/time-context";
 import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
 import type { VideoInfo } from "@/types";
-import { THRESHOLDS } from "@/utils/constants";
 
-// Augmented video element with custom event handlers for cleanup
-interface EnhancedVideoElement extends HTMLVideoElement {
-  _segmentHandlers?: () => void;
-}
+const THRESHOLDS = {
+  VIDEO_SYNC_TOLERANCE: 0.2,
+  VIDEO_SEGMENT_BOUNDARY: 0.05,
+};
 
 type VideoPlayerProps = {
   videosInfo: VideoInfo[];
   onVideosReady?: () => void;
 };
+
+const videoEventCleanup = new WeakMap<HTMLVideoElement, () => void>();
 
 export const SimpleVideosPlayer = ({
   videosInfo,
@@ -30,6 +31,10 @@ export const SimpleVideosPlayer = ({
   const firstVisibleIdx = videosInfo.findIndex(
     (video) => !hiddenVideos.includes(video.filename),
   );
+
+  // Tracks the last time value set by the primary video's onTimeUpdate.
+  // If currentTime differs from this, an external source (slider/chart click) changed it.
+  const lastVideoTimeRef = useRef(0);
 
   // Initialize video refs array
   useEffect(() => {
@@ -79,11 +84,10 @@ export const SimpleVideosPlayer = ({
           video.addEventListener("timeupdate", handleTimeUpdate);
           video.addEventListener("loadeddata", handleLoadedData);
 
-          // Store cleanup
-          (video as EnhancedVideoElement)._segmentHandlers = () => {
+          videoEventCleanup.set(video, () => {
             video.removeEventListener("timeupdate", handleTimeUpdate);
             video.removeEventListener("loadeddata", handleLoadedData);
-          };
+          });
         } else {
           // For non-segmented videos, handle end of video
           const handleEnded = () => {
@@ -96,21 +100,20 @@ export const SimpleVideosPlayer = ({
           video.addEventListener("ended", handleEnded);
           video.addEventListener("canplaythrough", checkReady, { once: true });
 
-          // Store cleanup
-          (video as EnhancedVideoElement)._segmentHandlers = () => {
+          videoEventCleanup.set(video, () => {
             video.removeEventListener("ended", handleEnded);
-          };
+          });
         }
       }
     });
 
     return () => {
       videoRefs.current.forEach((video) => {
-        if (video) {
-          const enhancedVideo = video as EnhancedVideoElement;
-          if (enhancedVideo._segmentHandlers) {
-            enhancedVideo._segmentHandlers();
-          }
+        if (!video) return;
+        const cleanup = videoEventCleanup.get(video);
+        if (cleanup) {
+          cleanup();
+          videoEventCleanup.delete(video);
         }
       });
     };
@@ -141,25 +144,33 @@ export const SimpleVideosPlayer = ({
     });
   }, [isPlaying, videosReady, hiddenVideos, videosInfo]);
 
-  // Sync video times
+  // Sync all video times when currentTime changes.
+  // For the primary video, only seek when the change came from an external source
+  // (slider drag, chart click, etc.) — detected by comparing against lastVideoTimeRef.
   useEffect(() => {
     if (!videosReady) return;
 
+    const isExternalSeek =
+      Math.abs(currentTime - lastVideoTimeRef.current) > 0.3;
+
     videoRefs.current.forEach((video, index) => {
-      if (video && !hiddenVideos.includes(videosInfo[index].filename)) {
-        const info = videosInfo[index];
-        let targetTime = currentTime;
+      if (!video) return;
+      if (hiddenVideos.includes(videosInfo[index].filename)) return;
 
-        if (info.isSegmented) {
-          targetTime = (info.segmentStart || 0) + currentTime;
-        }
+      // Skip the primary video unless the time was changed externally
+      if (index === firstVisibleIdx && !isExternalSeek) return;
 
-        if (Math.abs(video.currentTime - targetTime) > 0.2) {
-          video.currentTime = targetTime;
-        }
+      const info = videosInfo[index];
+      let targetTime = currentTime;
+      if (info.isSegmented) {
+        targetTime = (info.segmentStart || 0) + currentTime;
+      }
+
+      if (Math.abs(video.currentTime - targetTime) > 0.2) {
+        video.currentTime = targetTime;
       }
     });
-  }, [currentTime, videosInfo, videosReady, hiddenVideos]);
+  }, [currentTime, videosInfo, videosReady, hiddenVideos, firstVisibleIdx]);
 
   // Handle time update from first visible video
   const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
@@ -172,6 +183,7 @@ export const SimpleVideosPlayer = ({
       if (info.isSegmented) {
         globalTime = video.currentTime - (info.segmentStart || 0);
       }
+      lastVideoTimeRef.current = globalTime;
       setCurrentTime(globalTime);
     }
   };
@@ -269,7 +281,7 @@ export const SimpleVideosPlayer = ({
                 </span>
               </p>
               <video
-                ref={(el) => {
+                ref={(el: HTMLVideoElement | null) => {
                   videoRefs.current[idx] = el;
                 }}
                 className={`w-full object-contain ${
