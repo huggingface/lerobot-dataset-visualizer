@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, Suspense } from "react";
+import { useEffect, useRef, useState, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
@@ -119,13 +119,79 @@ function HomeInner() {
     };
   }, []);
 
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const handleGo = (e: { preventDefault: () => void }) => {
-    e.preventDefault();
-    const value = inputRef.current?.value.trim();
-    if (value) {
+  useEffect(() => {
+    if (!query.trim()) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://huggingface.co/api/quicksearch?q=${encodeURIComponent(query)}&type=dataset`,
+          { cache: "no-store" },
+        );
+        const data = await res.json();
+        const ids: string[] = (
+          (data.datasets as { id: string }[] | undefined) ?? []
+        ).map((d) => d.id);
+        setSuggestions(ids);
+        setShowSuggestions(ids.length > 0);
+        setActiveIndex(-1);
+      } catch {
+        setSuggestions([]);
+      }
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const navigate = useCallback(
+    (value: string) => {
+      setShowSuggestions(false);
       router.push(value);
+    },
+    [router],
+  );
+
+  const handleSubmit = (e: { preventDefault: () => void }) => {
+    e.preventDefault();
+    const target =
+      activeIndex >= 0 && suggestions[activeIndex]
+        ? suggestions[activeIndex]
+        : query.trim();
+    if (target) navigate(target);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showSuggestions) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((prev) => (prev >= suggestions.length - 1 ? 0 : prev + 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((prev) => (prev <= 0 ? suggestions.length - 1 : prev - 1));
+    } else if (e.key === "Escape") {
+      setShowSuggestions(false);
+      setActiveIndex(-1);
     }
   };
 
@@ -142,22 +208,48 @@ function HomeInner() {
         <h1 className="text-4xl md:text-5xl font-bold mb-6 drop-shadow-lg">
           LeRobot Dataset Tool and Visualizer
         </h1>
-        <form onSubmit={handleGo} className="flex gap-2 justify-center mt-6">
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder="Enter dataset id (e.g. lerobot/visualize_dataset)"
-            className="px-4 py-2 rounded-md text-base text-white border-white border-1 focus:outline-none min-w-[220px] shadow-md"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handleGo(e);
-              }
-            }}
-          />
+        <form
+          onSubmit={handleSubmit}
+          className="flex gap-2 justify-center mt-6"
+        >
+          <div ref={containerRef} className="relative">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+              placeholder="Enter dataset id (e.g. lerobot/pusht)"
+              className="px-4 py-2.5 rounded-md text-base text-white bg-white/10 backdrop-blur-sm border border-white/40 focus:outline-none focus:border-sky-400 focus:bg-white/15 w-[380px] shadow-md placeholder:text-white/50 transition-colors"
+              autoComplete="off"
+            />
+            {showSuggestions && (
+              <ul className="absolute left-0 right-0 top-full mt-1 rounded-md bg-slate-900/95 backdrop-blur-sm border border-white/10 shadow-xl overflow-hidden z-50 max-h-64 overflow-y-auto">
+                {suggestions.map((id, i) => (
+                  <li key={id}>
+                    <button
+                      type="button"
+                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                        i === activeIndex
+                          ? "bg-sky-600 text-white"
+                          : "text-slate-200 hover:bg-slate-700"
+                      }`}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        navigate(id);
+                      }}
+                      onMouseEnter={() => setActiveIndex(i)}
+                    >
+                      {id}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <button
             type="submit"
-            className="px-5 py-2 rounded-md bg-sky-400 text-black font-semibold text-base hover:bg-sky-300 transition-colors shadow-md"
+            className="px-5 py-2.5 rounded-md bg-sky-400 text-black font-semibold text-base hover:bg-sky-300 transition-colors shadow-md"
           >
             Go
           </button>
@@ -175,13 +267,7 @@ function HomeInner() {
                 key={ds}
                 type="button"
                 className="px-4 py-2 rounded bg-slate-700 text-sky-200 hover:bg-sky-700 hover:text-white transition-colors shadow"
-                onClick={() => {
-                  if (inputRef.current) {
-                    inputRef.current.value = ds;
-                    inputRef.current.focus();
-                  }
-                  router.push(ds);
-                }}
+                onClick={() => navigate(ds)}
               >
                 {ds}
               </button>
