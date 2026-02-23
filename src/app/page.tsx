@@ -24,6 +24,12 @@ export default function Home() {
   );
 }
 
+const EXAMPLE_DATASETS = [
+  "lerobot-data-collection/level12_rac_2_2026-02-07",
+  "imstevenpmwork/thanos_picking_power_gem",
+  "lerobot/aloha_static_cups_open",
+];
+
 function HomeInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -123,14 +129,21 @@ function HomeInner() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasFetched, setHasFetched] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!query.trim()) {
       setSuggestions([]);
       setShowSuggestions(false);
+      setIsLoading(false);
+      setHasFetched(false);
       return;
     }
+    setIsLoading(true);
+    setHasFetched(false);
+    setShowSuggestions(true);
     const timer = setTimeout(async () => {
       try {
         const res = await fetch(
@@ -142,10 +155,12 @@ function HomeInner() {
           (data.datasets as { id: string }[] | undefined) ?? []
         ).map((d) => d.id);
         setSuggestions(ids);
-        setShowSuggestions(ids.length > 0);
         setActiveIndex(-1);
       } catch {
         setSuggestions([]);
+      } finally {
+        setIsLoading(false);
+        setHasFetched(true);
       }
     }, 150);
     return () => clearTimeout(timer);
@@ -201,72 +216,136 @@ function HomeInner() {
       <div className="video-background">
         <div id="yt-bg-player" />
       </div>
-      {/* Overlay */}
-      <div className="fixed top-0 right-0 bottom-0 left-0 bg-black/60 -z-0" />
+
+      {/* Gradient overlay — darker at edges, lighter at center for depth */}
+      <div className="fixed inset-0 -z-0 bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.35)_0%,rgba(0,0,0,0.80)_100%)]" />
+
       {/* Centered Content */}
-      <div className="relative z-10 h-screen flex flex-col items-center justify-center text-white text-center">
-        <h1 className="text-4xl md:text-5xl font-bold mb-6 drop-shadow-lg">
-          LeRobot Dataset Tool and Visualizer
+      <div className="relative z-10 h-screen flex flex-col items-center justify-center text-white text-center animate-fade-in-up px-4">
+        {/* Title */}
+        <h1 className="text-4xl md:text-5xl font-bold mb-2 drop-shadow-lg tracking-tight">
+          LeRobot{" "}
+          <span className="bg-gradient-to-r from-sky-400 to-indigo-400 bg-clip-text text-transparent">
+            Dataset
+          </span>{" "}
+          Visualizer
         </h1>
-        <form
-          onSubmit={handleSubmit}
-          className="flex gap-2 justify-center mt-6"
-        >
+
+        {/* Subtitle */}
+        <p className="text-white/55 text-base md:text-lg mb-8 max-w-md">
+          Explore and visualize robot learning datasets from Hugging Face
+        </p>
+
+        {/* Search form */}
+        <form onSubmit={handleSubmit} className="flex gap-2 justify-center">
           <div ref={containerRef} className="relative">
+            {/* Search icon */}
+            <svg
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 pointer-events-none"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"
+              />
+            </svg>
+
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
-              onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+              onFocus={() => query.trim() && setShowSuggestions(true)}
               placeholder="Enter dataset id (e.g. lerobot/pusht)"
-              className="px-4 py-2.5 rounded-md text-base text-white bg-white/10 backdrop-blur-sm border border-white/40 focus:outline-none focus:border-sky-400 focus:bg-white/15 w-[380px] shadow-md placeholder:text-white/50 transition-colors"
+              className="pl-10 pr-4 py-2.5 rounded-md text-base text-white bg-white/10 backdrop-blur-sm border border-white/30 focus:outline-none focus:border-sky-400 focus:bg-white/15 w-[380px] shadow-md placeholder:text-white/40 transition-colors"
               autoComplete="off"
             />
+
+            {/* Suggestions dropdown */}
             {showSuggestions && (
               <ul className="absolute left-0 right-0 top-full mt-1 rounded-md bg-slate-900/95 backdrop-blur-sm border border-white/10 shadow-xl overflow-hidden z-50 max-h-64 overflow-y-auto">
-                {suggestions.map((id, i) => (
-                  <li key={id}>
-                    <button
-                      type="button"
-                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                        i === activeIndex
-                          ? "bg-sky-600 text-white"
-                          : "text-slate-200 hover:bg-slate-700"
-                      }`}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        navigate(id);
-                      }}
-                      onMouseEnter={() => setActiveIndex(i)}
+                {isLoading ? (
+                  <li className="flex items-center gap-2.5 px-4 py-3 text-sm text-white/50">
+                    <svg
+                      className="animate-spin w-4 h-4 shrink-0"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
                     >
-                      {id}
-                    </button>
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8v8H4z"
+                      />
+                    </svg>
+                    Searching…
                   </li>
-                ))}
+                ) : suggestions.length > 0 ? (
+                  suggestions.map((id, i) => (
+                    <li key={id}>
+                      <button
+                        type="button"
+                        className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                          i === activeIndex
+                            ? "bg-sky-600 text-white"
+                            : "text-slate-200 hover:bg-slate-700"
+                        }`}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          navigate(id);
+                        }}
+                        onMouseEnter={() => setActiveIndex(i)}
+                      >
+                        {id}
+                      </button>
+                    </li>
+                  ))
+                ) : (
+                  hasFetched && (
+                    <li className="px-4 py-3 text-sm text-white/40">
+                      No datasets found
+                    </li>
+                  )
+                )}
               </ul>
             )}
           </div>
+
           <button
             type="submit"
-            className="px-5 py-2.5 rounded-md bg-sky-400 text-black font-semibold text-base hover:bg-sky-300 transition-colors shadow-md"
+            className="px-5 py-2.5 rounded-md bg-sky-500 text-white font-semibold text-base hover:bg-sky-400 active:scale-95 transition-all shadow-md flex items-center gap-2"
           >
             Go
+            <kbd className="text-xs font-mono bg-white/20 rounded px-1 py-0.5 leading-tight">
+              ↵
+            </kbd>
           </button>
         </form>
+
         {/* Example Datasets */}
         <div className="mt-8">
-          <div className="font-semibold mb-2 text-lg">Example Datasets:</div>
-          <div className="flex flex-col gap-2 items-center">
-            {[
-              "lerobot-data-collection/level12_rac_2_2026-02-07",
-              "imstevenpmwork/thanos_picking_power_gem",
-              "lerobot/aloha_static_cups_open",
-            ].map((ds) => (
+          <p className="text-white/40 text-xs uppercase tracking-widest mb-3 font-medium">
+            Example Datasets
+          </p>
+          <div className="flex flex-row flex-wrap gap-2 justify-center max-w-xl">
+            {EXAMPLE_DATASETS.map((ds) => (
               <button
                 key={ds}
                 type="button"
-                className="px-4 py-2 rounded bg-slate-700 text-sky-200 hover:bg-sky-700 hover:text-white transition-colors shadow"
+                className="px-3 py-1.5 rounded-full border border-white/20 text-sm text-sky-200/80 hover:border-sky-400 hover:text-white hover:bg-sky-500/15 active:scale-95 transition-all backdrop-blur-sm"
                 onClick={() => navigate(ds)}
               >
                 {ds}
@@ -275,11 +354,26 @@ function HomeInner() {
           </div>
         </div>
 
+        {/* Explore CTA */}
         <Link
           href="/explore"
-          className="inline-block px-6 py-3 mt-8 rounded-md bg-sky-500 text-white font-semibold text-lg shadow-lg hover:bg-sky-400 transition-colors"
+          className="inline-flex items-center gap-2 px-6 py-3 mt-8 rounded-md bg-sky-500/90 backdrop-blur-sm text-white font-semibold text-lg shadow-lg hover:bg-sky-400 active:scale-95 transition-all"
         >
           Explore Open Datasets
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="w-5 h-5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"
+            />
+          </svg>
         </Link>
       </div>
     </div>
