@@ -31,12 +31,13 @@ export interface DatasetInfo {
   features: Record<string, FeatureInfo>;
 }
 
-// In-memory cache for dataset info (5 min TTL)
+// In-memory cache for dataset info (5 min TTL, max 200 entries)
 const datasetInfoCache = new Map<
   string,
   { data: DatasetInfo; expiry: number }
 >();
 const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_MAX_SIZE = 200;
 
 export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
   const cached = datasetInfoCache.get(repoId);
@@ -72,6 +73,10 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
       );
     }
 
+    if (datasetInfoCache.size >= CACHE_MAX_SIZE) {
+      // Evict the oldest entry (Maps preserve insertion order)
+      datasetInfoCache.delete(datasetInfoCache.keys().next().value!);
+    }
     datasetInfoCache.set(repoId, {
       data: data as DatasetInfo,
       expiry: Date.now() + CACHE_TTL_MS,

@@ -363,7 +363,7 @@ async function getEpisodeDataV2(
   if (!task && allData.length > 0) {
     try {
       const tasksUrl = buildVersionedUrl(repoId, version, "meta/tasks.jsonl");
-      const tasksResponse = await fetch(tasksUrl);
+      const tasksResponse = await fetch(tasksUrl, { cache: "no-store" });
 
       if (tasksResponse.ok) {
         const tasksText = await tasksResponse.text();

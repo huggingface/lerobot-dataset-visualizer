@@ -25,7 +25,7 @@ export interface DatasetMetadata {
 }
 
 export async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+  const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) {
     throw new Error(
       `Failed to fetch JSON ${url}: ${res.status} ${res.statusText}`,
@@ -43,7 +43,7 @@ export function formatStringWithVars(
 
 // Fetch and parse the Parquet file
 export async function fetchParquetFile(url: string): Promise<ArrayBuffer> {
-  const res = await fetch(url);
+  const res = await fetch(url, { cache: "no-store" });
 
   if (!res.ok) {
     throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
