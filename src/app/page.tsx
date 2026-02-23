@@ -139,7 +139,7 @@ function HomeInner() {
         );
         const data = await res.json();
         const ids: string[] = (
-          data.datasets as { id: string }[] | undefined ?? []
+          (data.datasets as { id: string }[] | undefined) ?? []
         ).map((d) => d.id);
         setSuggestions(ids);
         setShowSuggestions(ids.length > 0);
@@ -208,7 +208,10 @@ function HomeInner() {
         <h1 className="text-4xl md:text-5xl font-bold mb-6 drop-shadow-lg">
           LeRobot Dataset Tool and Visualizer
         </h1>
-        <form onSubmit={handleSubmit} className="flex gap-2 justify-center mt-6">
+        <form
+          onSubmit={handleSubmit}
+          className="flex gap-2 justify-center mt-6"
+        >
           <div ref={containerRef} className="relative">
             <input
               type="text"
