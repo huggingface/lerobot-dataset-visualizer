@@ -98,10 +98,6 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
       );
     }
 
-    if (datasetInfoCache.size >= CACHE_MAX_SIZE) {
-      // Evict the oldest entry (Maps preserve insertion order)
-      datasetInfoCache.delete(datasetInfoCache.keys().next().value!);
-    }
     datasetInfoCache.set(repoId, {
       data: data as DatasetInfo,
       expiry: Date.now() + CACHE_TTL_MS,
