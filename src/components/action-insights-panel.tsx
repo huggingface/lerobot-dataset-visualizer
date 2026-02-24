@@ -1281,15 +1281,14 @@ function StateActionAlignmentSection({
     }
     if (pairs.length === 0) return null;
 
-    // Per-pair cross-correlation
+    // Per-pair cross-correlation (Δaction vs Δstate)
     const pairCorrs: number[][] = [];
     for (const [aKey, sKey] of pairs) {
-      const aVals = data.map((row) => row[aKey] ?? 0);
-      const sDeltas = data
-        .slice(1)
-        .map((row, i) => (row[sKey] ?? 0) - (data[i][sKey] ?? 0));
-      const n = Math.min(aVals.length, sDeltas.length);
-      const aM = aVals.slice(0, n).reduce((a, b) => a + b, 0) / n;
+      const aDeltas = data.slice(1).map((row, i) => (row[aKey] ?? 0) - (data[i][aKey] ?? 0));
+      const sDeltas = data.slice(1).map((row, i) => (row[sKey] ?? 0) - (data[i][sKey] ?? 0));
+      const n = Math.min(aDeltas.length, sDeltas.length);
+      if (n < 4) { pairCorrs.push(Array(2 * maxLag + 1).fill(0)); continue; }
+      const aM = aDeltas.slice(0, n).reduce((a, b) => a + b, 0) / n;
       const sM = sDeltas.slice(0, n).reduce((a, b) => a + b, 0) / n;
 
       const corrs: number[] = [];
@@ -1299,8 +1298,8 @@ function StateActionAlignmentSection({
           sV = 0;
         for (let t = 0; t < n; t++) {
           const sIdx = t + lag;
-          if (sIdx < 0 || sIdx >= sDeltas.length) continue;
-          const a = aVals[t] - aM,
+          if (sIdx < 0 || sIdx >= n) continue;
+          const a = aDeltas[t] - aM,
             s = sDeltas[sIdx] - sM;
           sum += a * s;
           aV += a * a;
@@ -1407,7 +1406,7 @@ function StateActionAlignmentSection({
           </h3>
           <InfoToggle>
             <p className="text-xs text-slate-400">
-              Per-dimension cross-correlation between action<sub>d</sub>(t) and
+              Per-dimension cross-correlation between Δaction<sub>d</sub>(t) and
               Δstate<sub>d</sub>(t+lag), aggregated as
               <span className="text-orange-400"> max</span>,{" "}
               <span className="text-slate-200">mean</span>, and
