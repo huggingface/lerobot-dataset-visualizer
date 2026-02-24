@@ -1284,10 +1284,17 @@ function StateActionAlignmentSection({
     // Per-pair cross-correlation (Δaction vs Δstate)
     const pairCorrs: number[][] = [];
     for (const [aKey, sKey] of pairs) {
-      const aDeltas = data.slice(1).map((row, i) => (row[aKey] ?? 0) - (data[i][aKey] ?? 0));
-      const sDeltas = data.slice(1).map((row, i) => (row[sKey] ?? 0) - (data[i][sKey] ?? 0));
+      const aDeltas = data
+        .slice(1)
+        .map((row, i) => (row[aKey] ?? 0) - (data[i][aKey] ?? 0));
+      const sDeltas = data
+        .slice(1)
+        .map((row, i) => (row[sKey] ?? 0) - (data[i][sKey] ?? 0));
       const n = Math.min(aDeltas.length, sDeltas.length);
-      if (n < 4) { pairCorrs.push(Array(2 * maxLag + 1).fill(0)); continue; }
+      if (n < 4) {
+        pairCorrs.push(Array(2 * maxLag + 1).fill(0));
+        continue;
+      }
       const aM = aDeltas.slice(0, n).reduce((a, b) => a + b, 0) / n;
       const sM = sDeltas.slice(0, n).reduce((a, b) => a + b, 0) / n;
 
