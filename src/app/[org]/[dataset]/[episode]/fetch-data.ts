@@ -269,7 +269,8 @@ export async function getAdjacentEpisodesVideoInfo(
           } else {
             // For v2.x, use simpler video info extraction
             if (info.video_path) {
-              const episode_chunk = Math.floor(0 / 1000);
+              const chunkSize = Math.max(1, info.chunks_size || 1000);
+              const episode_chunk = Math.floor(episodeId / chunkSize);
               videosInfo = Object.entries(info.features)
                 .filter(([, value]) => value.dtype === "video")
                 .map(([key]) => {
@@ -311,7 +312,8 @@ async function getEpisodeDataV2(
   info: DatasetMetadata,
   episodeId: number,
 ): Promise<EpisodeData> {
-  const episode_chunk = Math.floor(0 / 1000);
+  const chunkSize = Math.max(1, info.chunks_size || 1000);
+  const episode_chunk = Math.floor(episodeId / chunkSize);
 
   const datasetInfo: DatasetDisplayInfo = {
     repoId,
