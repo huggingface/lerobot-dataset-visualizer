@@ -105,6 +105,81 @@ type ColumnDef = {
   value: string[];
 };
 
+function parsePositiveIntEnv(
+  value: string | undefined,
+  fallback: number,
+  min = 1,
+): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed >= min ? parsed : fallback;
+}
+
+const MAX_EPISODE_POINTS = parsePositiveIntEnv(
+  process.env.MAX_EPISODE_POINTS,
+  4000,
+  100,
+);
+const MAX_FRAMES_OVERVIEW_EPISODES = parsePositiveIntEnv(
+  process.env.MAX_FRAMES_OVERVIEW_EPISODES,
+  3000,
+  100,
+);
+const MAX_CROSS_EPISODE_SAMPLE = parsePositiveIntEnv(
+  process.env.MAX_CROSS_EPISODE_SAMPLE,
+  120,
+  10,
+);
+const MAX_CROSS_EPISODE_FRAMES_PER_EPISODE = parsePositiveIntEnv(
+  process.env.MAX_CROSS_EPISODE_FRAMES_PER_EPISODE,
+  2500,
+  100,
+);
+
+function evenlySampleIndices(length: number, target: number): number[] {
+  if (length <= 0) return [];
+  if (target >= length) return Array.from({ length }, (_, i) => i);
+  if (target <= 1) return [0];
+
+  const sampled = new Set<number>();
+  for (let i = 0; i < target; i++) {
+    sampled.add(Math.round((i * (length - 1)) / (target - 1)));
+  }
+
+  // Fill potential gaps caused by rounding collisions.
+  if (sampled.size < target) {
+    for (let i = 0; i < length && sampled.size < target; i++) {
+      sampled.add(i);
+    }
+  }
+
+  return Array.from(sampled).sort((a, b) => a - b);
+}
+
+function evenlySampleArray<T>(items: T[], maxCount: number): T[] {
+  if (items.length <= maxCount) return items;
+  return evenlySampleIndices(items.length, maxCount).map((idx) => items[idx]);
+}
+
+function sampleRowsFromRange(
+  rows: Record<string, unknown>[],
+  from: number,
+  to: number,
+  maxCount: number,
+): Record<string, unknown>[] {
+  const length = Math.max(0, to - from);
+  if (length === 0) return [];
+  if (length <= maxCount) return rows.slice(from, to);
+  return evenlySampleIndices(length, maxCount).map((idx) => rows[from + idx]);
+}
+
+function buildSampledEpisodeSet(
+  totalEpisodes: number,
+  maxEpisodes: number,
+): Set<number> | null {
+  if (totalEpisodes <= maxEpisodes) return null;
+  return new Set(evenlySampleIndices(totalEpisodes, maxEpisodes));
+}
+
 export async function getEpisodeData(
   org: string,
   dataset: string,
@@ -328,7 +403,16 @@ async function getEpisodeDataV2(
   );
 
   const arrayBuffer = await fetchParquetFile(parquetUrl);
-  const allData = await readParquetAsObjects(arrayBuffer, []);
+  const parquetColumns = Array.from(
+    new Set([
+      "timestamp",
+      "task",
+      "task_index",
+      "language_instruction",
+      ...filteredColumns.map((c) => c.key),
+    ]),
+  );
+  const allData = await readParquetAsObjects(arrayBuffer, parquetColumns);
 
   // Extract task from language_instruction fields, task field, or tasks.jsonl
   let task: string | undefined;
@@ -410,6 +494,7 @@ async function getEpisodeDataV2(
     }
     return obj;
   });
+  const sampledChartData = evenlySampleArray(chartData, MAX_EPISODE_POINTS);
 
   // List of columns that are ignored (e.g., 2D or 3D data)
   const ignoredColumns = Object.entries(info.features)
@@ -420,12 +505,15 @@ async function getEpisodeDataV2(
     .map(([key]) => key);
 
   // Process chart data into organized groups using utility function
-  const chartGroups = processChartDataGroups(seriesNames, chartData);
+  const chartGroups = processChartDataGroups(seriesNames, sampledChartData);
 
-  const duration = chartData[chartData.length - 1].timestamp;
+  const duration =
+    sampledChartData.length > 0
+      ? sampledChartData[sampledChartData.length - 1].timestamp
+      : 0;
 
   const chartDataGroups = chartGroups.map((group) =>
-    chartData.map((row) => {
+    sampledChartData.map((row) => {
       const grouped = groupRowBySuffix(pick(row, [...group, "timestamp"]));
       // Ensure timestamp is always a number at the top level
       return {
@@ -441,7 +529,7 @@ async function getEpisodeDataV2(
     episodeId,
     videosInfo,
     chartDataGroups,
-    flatChartData: chartData,
+    flatChartData: sampledChartData,
     episodes,
     ignoredColumns,
     duration,
@@ -526,7 +614,37 @@ async function loadEpisodeDataV3(
   try {
     const dataUrl = buildVersionedUrl(repoId, version, dataPath);
     const arrayBuffer = await fetchParquetFile(dataUrl);
-    const fullData = await readParquetAsObjects(arrayBuffer, []);
+    const v3DataColumns = Array.from(
+      new Set([
+        "index",
+        "timestamp",
+        "task_index",
+        "language_instruction",
+        "language_instruction_2",
+        "language_instruction_3",
+        ...Object.entries(info.features)
+          .filter(([, feature]) => {
+            const dtype = feature.dtype.toLowerCase();
+            const isNumericOrBool = [
+              "float32",
+              "float64",
+              "int8",
+              "int16",
+              "int32",
+              "int64",
+              "uint8",
+              "uint16",
+              "uint32",
+              "uint64",
+              "bool",
+              "boolean",
+            ].includes(dtype);
+            return isNumericOrBool && feature.shape.length <= 1;
+          })
+          .map(([key]) => key),
+      ]),
+    );
+    const fullData = await readParquetAsObjects(arrayBuffer, v3DataColumns);
 
     // Extract the episode-specific data slice
     const fromIndex = bigIntToNumber(episodeMetadata.dataset_from_index, 0);
@@ -546,7 +664,12 @@ async function loadEpisodeDataV3(
     const localFromIndex = Math.max(0, fromIndex - fileStartIndex);
     const localToIndex = Math.min(fullData.length, toIndex - fileStartIndex);
 
-    const episodeData = fullData.slice(localFromIndex, localToIndex);
+    const episodeData = sampleRowsFromRange(
+      fullData,
+      localFromIndex,
+      localToIndex,
+      MAX_EPISODE_POINTS,
+    );
 
     if (episodeData.length === 0) {
       return {
@@ -1258,6 +1381,10 @@ export async function loadAllEpisodeFrameInfo(
   const cameras = videoFeatures.map(([key]) => key);
   const framesByCamera: Record<string, EpisodeFrameInfo[]> = {};
   for (const cam of cameras) framesByCamera[cam] = [];
+  const sampledEpisodeSet = buildSampledEpisodeSet(
+    info.total_episodes,
+    MAX_FRAMES_OVERVIEW_EPISODES,
+  );
 
   if (version === "v3.0") {
     let fileIndex = 0;
@@ -1271,6 +1398,7 @@ export async function loadAllEpisodeFrameInfo(
         if (rows.length === 0 && fileIndex > 0) break;
         for (const row of rows) {
           const epIdx = Number(row["episode_index"] ?? 0);
+          if (sampledEpisodeSet && !sampledEpisodeSet.has(epIdx)) continue;
           for (const cam of cameras) {
             const cIdx = Number(
               row[`videos/${cam}/chunk_index`] ?? row["video_chunk_index"] ?? 0,
@@ -1307,6 +1435,7 @@ export async function loadAllEpisodeFrameInfo(
 
   // v2.x — construct URLs from template
   for (let i = 0; i < info.total_episodes; i++) {
+    if (sampledEpisodeSet && !sampledEpisodeSet.has(i)) continue;
     const chunk = Math.floor(i / (info.chunks_size || 1000));
     for (const cam of cameras) {
       const videoPath = formatStringWithVars(info.video_path, {
@@ -1391,9 +1520,10 @@ export async function loadCrossEpisodeActionVariance(
   version: string,
   info: DatasetMetadata,
   fps: number,
-  maxEpisodes = 500,
+  maxEpisodes = MAX_CROSS_EPISODE_SAMPLE,
   numTimeBins = 50,
 ): Promise<CrossEpisodeVarianceData | null> {
+  const cappedMaxEpisodes = Math.min(maxEpisodes, MAX_CROSS_EPISODE_SAMPLE);
   const actionEntry = Object.entries(info.features).find(
     ([key, f]) => key === "action" && f.shape.length === 1,
   );
@@ -1476,17 +1606,21 @@ export async function loadCrossEpisodeActionVariance(
     return null;
   }
   console.log(
-    `[cross-ep] Found ${allEps.length} episodes in metadata, sampling up to ${maxEpisodes}`,
+    `[cross-ep] Found ${allEps.length} episodes in metadata, sampling up to ${cappedMaxEpisodes}`,
   );
 
   // Sample episodes evenly
   const sampled =
-    allEps.length <= maxEpisodes
+    allEps.length <= cappedMaxEpisodes
       ? allEps
       : Array.from(
-          { length: maxEpisodes },
+          { length: cappedMaxEpisodes },
           (_, i) =>
-            allEps[Math.round((i * (allEps.length - 1)) / (maxEpisodes - 1))],
+            allEps[
+              Math.round(
+                (i * (allEps.length - 1)) / (cappedMaxEpisodes - 1),
+              )
+            ],
         );
 
   // Load action (and state) data per episode
@@ -1508,7 +1642,10 @@ export async function loadCrossEpisodeActionVariance(
         const buf = await fetchParquetFile(
           buildVersionedUrl(repoId, version, dataPath),
         );
-        const rows = await readParquetAsObjects(buf, []);
+        const rows = await readParquetAsObjects(
+          buf,
+          stateKey ? ["index", actionKey, stateKey] : ["index", actionKey],
+        );
         const fileStart =
           rows.length > 0 && rows[0].index !== undefined
             ? Number(rows[0].index)
@@ -1528,9 +1665,18 @@ export async function loadCrossEpisodeActionVariance(
             }
           }
           if (actions.length > 0) {
-            episodeActions.push({ index: ep.index, actions });
+            const sampledIndices = evenlySampleIndices(
+              actions.length,
+              Math.min(actions.length, MAX_CROSS_EPISODE_FRAMES_PER_EPISODE),
+            );
+            const sampledActions = sampledIndices.map((i) => actions[i]);
+            const sampledStates =
+              stateKey && states.length === actions.length
+                ? sampledIndices.map((i) => states[i])
+                : null;
+            episodeActions.push({ index: ep.index, actions: sampledActions });
             episodeStates.push(
-              stateKey && states.length === actions.length ? states : null,
+              stateKey ? sampledStates : null,
             );
           }
         }
@@ -1550,7 +1696,10 @@ export async function loadCrossEpisodeActionVariance(
         const buf = await fetchParquetFile(
           buildVersionedUrl(repoId, version, dataPath),
         );
-        const rows = await readParquetAsObjects(buf, []);
+        const rows = await readParquetAsObjects(
+          buf,
+          stateKey ? [actionKey, stateKey] : [actionKey],
+        );
         const actions: number[][] = [];
         const states: number[][] = [];
         for (const row of rows) {
@@ -1571,9 +1720,18 @@ export async function loadCrossEpisodeActionVariance(
           }
         }
         if (actions.length > 0) {
-          episodeActions.push({ index: ep.index, actions });
+          const sampledIndices = evenlySampleIndices(
+            actions.length,
+            Math.min(actions.length, MAX_CROSS_EPISODE_FRAMES_PER_EPISODE),
+          );
+          const sampledActions = sampledIndices.map((i) => actions[i]);
+          const sampledStates =
+            stateKey && states.length === actions.length
+              ? sampledIndices.map((i) => states[i])
+              : null;
+          episodeActions.push({ index: ep.index, actions: sampledActions });
           episodeStates.push(
-            stateKey && states.length === actions.length ? states : null,
+            stateKey ? sampledStates : null,
           );
         }
       } catch {

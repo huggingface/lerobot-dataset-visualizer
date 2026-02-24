@@ -37,11 +37,36 @@ const datasetInfoCache = new Map<
   { data: DatasetInfo; expiry: number }
 >();
 const CACHE_TTL_MS = 5 * 60 * 1000;
-const CACHE_MAX_SIZE = 200;
+const MAX_CACHE_ENTRIES = Math.max(
+  8,
+  parseInt(process.env.MAX_DATASET_INFO_CACHE_ENTRIES ?? "64", 10) || 64,
+);
+
+function pruneDatasetInfoCache(now: number) {
+  // Remove expired entries first.
+  for (const [key, value] of datasetInfoCache) {
+    if (now >= value.expiry) {
+      datasetInfoCache.delete(key);
+    }
+  }
+
+  // Then cap overall cache size to prevent unbounded growth.
+  while (datasetInfoCache.size > MAX_CACHE_ENTRIES) {
+    const oldestKey = datasetInfoCache.keys().next().value;
+    if (!oldestKey) break;
+    datasetInfoCache.delete(oldestKey);
+  }
+}
 
 export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
+  const now = Date.now();
+  pruneDatasetInfoCache(now);
+
   const cached = datasetInfoCache.get(repoId);
-  if (cached && Date.now() < cached.expiry) {
+  if (cached && now < cached.expiry) {
+    // Keep insertion order fresh so the cache behaves closer to LRU.
+    datasetInfoCache.delete(repoId);
+    datasetInfoCache.set(repoId, cached);
     console.log(`[perf] getDatasetInfo cache HIT for ${repoId}`);
     return cached.data;
   }
@@ -81,6 +106,7 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
       data: data as DatasetInfo,
       expiry: Date.now() + CACHE_TTL_MS,
     });
+    pruneDatasetInfoCache(Date.now());
     return data as DatasetInfo;
   } catch (error) {
     if (error instanceof Error) {
