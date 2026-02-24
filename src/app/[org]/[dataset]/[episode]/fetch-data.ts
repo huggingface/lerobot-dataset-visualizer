@@ -1619,9 +1619,7 @@ export async function loadCrossEpisodeActionVariance(
           { length: cappedMaxEpisodes },
           (_, i) =>
             allEps[
-              Math.round(
-                (i * (allEps.length - 1)) / (cappedMaxEpisodes - 1),
-              )
+              Math.round((i * (allEps.length - 1)) / (cappedMaxEpisodes - 1))
             ],
         );
 
@@ -1677,9 +1675,7 @@ export async function loadCrossEpisodeActionVariance(
                 ? sampledIndices.map((i) => states[i])
                 : null;
             episodeActions.push({ index: ep.index, actions: sampledActions });
-            episodeStates.push(
-              stateKey ? sampledStates : null,
-            );
+            episodeStates.push(stateKey ? sampledStates : null);
           }
         }
       } catch {
@@ -1732,9 +1728,7 @@ export async function loadCrossEpisodeActionVariance(
               ? sampledIndices.map((i) => states[i])
               : null;
           episodeActions.push({ index: ep.index, actions: sampledActions });
-          episodeStates.push(
-            stateKey ? sampledStates : null,
-          );
+          episodeStates.push(stateKey ? sampledStates : null);
         }
       } catch {
         /* skip */
@@ -2082,14 +2076,18 @@ export async function loadCrossEpisodeActionVariance(
 
       for (let pi = 0; pi < pairs.length; pi++) {
         const [ai, si] = pairs[pi];
-        const aVals = actions.slice(0, n).map((r) => r[ai] ?? 0);
+        const aDeltas = Array.from(
+          { length: n - 1 },
+          (_, t) => (actions[t + 1][ai] ?? 0) - (actions[t][ai] ?? 0),
+        );
         const sDeltas = Array.from(
           { length: n - 1 },
           (_, t) => (states[t + 1][si] ?? 0) - (states[t][si] ?? 0),
         );
-        const effN = Math.min(aVals.length, sDeltas.length);
-        const aM = aVals.slice(0, effN).reduce((a, b) => a + b, 0) / effN;
-        const sM = sDeltas.slice(0, effN).reduce((a, b) => a + b, 0) / effN;
+        const effN = aDeltas.length;
+        if (effN < 4) continue;
+        const aM = aDeltas.reduce((a, b) => a + b, 0) / effN;
+        const sM = sDeltas.reduce((a, b) => a + b, 0) / effN;
 
         for (let li = 0; li < numLags; li++) {
           const lag = -maxLag + li;
@@ -2098,8 +2096,8 @@ export async function loadCrossEpisodeActionVariance(
             sV = 0;
           for (let t = 0; t < effN; t++) {
             const sIdx = t + lag;
-            if (sIdx < 0 || sIdx >= sDeltas.length) continue;
-            const a = aVals[t] - aM,
+            if (sIdx < 0 || sIdx >= effN) continue;
+            const a = aDeltas[t] - aM,
               s = sDeltas[sIdx] - sM;
             sum += a * s;
             aV += a * a;
