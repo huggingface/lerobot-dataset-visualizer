@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef, lazy, Suspense, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  lazy,
+  Suspense,
+  useCallback,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { postParentMessageWithParams } from "@/utils/postParentMessage";
 import { SimpleVideosPlayer } from "@/components/simple-videos-player";

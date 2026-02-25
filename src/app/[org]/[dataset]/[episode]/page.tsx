@@ -25,11 +25,7 @@ export default async function EpisodePage({
   const episodeNumber = Number(episode.replace(/^episode_/, ""));
   return (
     <Suspense fallback={null}>
-      <EpisodeViewer
-        org={org}
-        dataset={dataset}
-        episodeId={episodeNumber}
-      />
+      <EpisodeViewer org={org} dataset={dataset} episodeId={episodeNumber} />
     </Suspense>
   );
 }

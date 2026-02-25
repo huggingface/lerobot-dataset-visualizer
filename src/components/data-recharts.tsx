@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTime } from "../context/time-context";
 import {
   LineChart,
@@ -19,8 +19,6 @@ type DataGraphProps = {
   data: ChartRow[][];
   onChartsReady?: () => void;
 };
-
-import React, { useMemo } from "react";
 
 const SERIES_NAME_DELIMITER = " | ";
 
@@ -158,42 +156,45 @@ const SingleDataGraph = React.memo(
     tall?: boolean;
   }) => {
     const { currentTime, setCurrentTime } = useTime();
-    function flattenRow(
-      row: Record<string, number | Record<string, number>>,
-      prefix = "",
-    ): Record<string, number> {
-      const result: Record<string, number> = {};
-      for (const [key, value] of Object.entries(row)) {
-        // Special case: if this is a group value that is a primitive, assign to prefix.key
-        if (typeof value === "number") {
-          if (prefix) {
-            result[`${prefix}${SERIES_NAME_DELIMITER}${key}`] = value;
-          } else {
-            result[key] = value;
+    const flattenRow = useCallback(
+      (row: Record<string, number | Record<string, number>>, prefix = "") => {
+        const result: Record<string, number> = {};
+        for (const [key, value] of Object.entries(row)) {
+          // Special case: if this is a group value that is a primitive, assign to prefix.key
+          if (typeof value === "number") {
+            if (prefix) {
+              result[`${prefix}${SERIES_NAME_DELIMITER}${key}`] = value;
+            } else {
+              result[key] = value;
+            }
+          } else if (
+            value !== null &&
+            typeof value === "object" &&
+            !Array.isArray(value)
+          ) {
+            // If it's an object, recurse
+            Object.assign(
+              result,
+              flattenRow(
+                value,
+                prefix ? `${prefix}${SERIES_NAME_DELIMITER}${key}` : key,
+              ),
+            );
           }
-        } else if (
-          value !== null &&
-          typeof value === "object" &&
-          !Array.isArray(value)
-        ) {
-          // If it's an object, recurse
-          Object.assign(
-            result,
-            flattenRow(
-              value,
-              prefix ? `${prefix}${SERIES_NAME_DELIMITER}${key}` : key,
-            ),
-          );
         }
-      }
-      if ("timestamp" in row && typeof row["timestamp"] === "number") {
-        result["timestamp"] = row["timestamp"];
-      }
-      return result;
-    }
+        if ("timestamp" in row && typeof row["timestamp"] === "number") {
+          result["timestamp"] = row["timestamp"];
+        }
+        return result;
+      },
+      [],
+    );
 
     // Flatten all rows for recharts
-    const chartData = useMemo(() => data.map((row) => flattenRow(row)), [data]);
+    const chartData = useMemo(
+      () => data.map((row) => flattenRow(row)),
+      [data, flattenRow],
+    );
     const [dataKeys, setDataKeys] = useState<string[]>([]);
     const [visibleKeys, setVisibleKeys] = useState<string[]>([]);
 
@@ -205,25 +206,27 @@ const SingleDataGraph = React.memo(
       setVisibleKeys(keys);
     }, [chartData]);
 
-    // Parse dataKeys into groups (dot notation)
-    const groups: Record<string, string[]> = {};
-    const singles: string[] = [];
-    dataKeys.forEach((key) => {
-      const parts = key.split(SERIES_NAME_DELIMITER);
-      if (parts.length > 1) {
-        const group = parts[0];
-        if (!groups[group]) groups[group] = [];
-        groups[group].push(key);
-      } else {
-        singles.push(key);
-      }
-    });
+    const { groups, singles, groupColorMap } = useMemo(() => {
+      const grouped: Record<string, string[]> = {};
+      const singleList: string[] = [];
+      dataKeys.forEach((key) => {
+        const parts = key.split(SERIES_NAME_DELIMITER);
+        if (parts.length > 1) {
+          const group = parts[0];
+          if (!grouped[group]) grouped[group] = [];
+          grouped[group].push(key);
+        } else {
+          singleList.push(key);
+        }
+      });
 
-    const allGroups = [...Object.keys(groups), ...singles];
-    const groupColorMap: Record<string, string> = {};
-    allGroups.forEach((group, idx) => {
-      groupColorMap[group] = CHART_COLORS[idx % CHART_COLORS.length];
-    });
+      const allGroups = [...Object.keys(grouped), ...singleList];
+      const colorMap: Record<string, string> = {};
+      allGroups.forEach((group, idx) => {
+        colorMap[group] = CHART_COLORS[idx % CHART_COLORS.length];
+      });
+      return { groups: grouped, singles: singleList, groupColorMap: colorMap };
+    }, [dataKeys]);
 
     // Find the closest data point to the current time for highlighting
     const findClosestDataIndex = (time: number) => {
@@ -253,26 +256,6 @@ const SingleDataGraph = React.memo(
         hoveredTime != null ? hoveredTime : currentTime,
       );
       const currentData = chartData[closestIndex] || {};
-
-      // Parse dataKeys into groups (dot notation)
-      const groups: Record<string, string[]> = {};
-      const singles: string[] = [];
-      dataKeys.forEach((key) => {
-        const parts = key.split(SERIES_NAME_DELIMITER);
-        if (parts.length > 1) {
-          const group = parts[0];
-          if (!groups[group]) groups[group] = [];
-          groups[group].push(key);
-        } else {
-          singles.push(key);
-        }
-      });
-
-      const allGroups = [...Object.keys(groups), ...singles];
-      const groupColorMap: Record<string, string> = {};
-      allGroups.forEach((group, idx) => {
-        groupColorMap[group] = CHART_COLORS[idx % CHART_COLORS.length];
-      });
 
       const isGroupChecked = (group: string) =>
         groups[group].every((k) => visibleKeys.includes(k));

@@ -209,7 +209,9 @@ function pickProgressColumn(rows: Record<string, unknown>[]): string | null {
   const candidates = [...preferred, ...additionalProgressColumns];
 
   for (const column of candidates) {
-    const hasFiniteValue = rows.some((row) => toFiniteNumber(row[column]) !== null);
+    const hasFiniteValue = rows.some(
+      (row) => toFiniteNumber(row[column]) !== null,
+    );
     if (hasFiniteValue) {
       return column;
     }
@@ -260,13 +262,17 @@ async function loadEpisodeProgressGroup(
       if (orderedPoints.length === 0) continue;
       orderedPoints.sort((a, b) => a.order - b.order);
 
-      const sampledPoints = evenlySampleArray(orderedPoints, MAX_EPISODE_POINTS);
+      const sampledPoints = evenlySampleArray(
+        orderedPoints,
+        MAX_EPISODE_POINTS,
+      );
       const progressKey = buildProgressSeriesKey(progressColumn);
       const denominator = Math.max(sampledPoints.length - 1, 1);
       const duration = Math.max(episodeDuration, 0);
 
       return sampledPoints.map((point, idx) => ({
-        timestamp: sampledPoints.length === 1 ? 0 : (idx / denominator) * duration,
+        timestamp:
+          sampledPoints.length === 1 ? 0 : (idx / denominator) * duration,
         [progressKey]: point.progress,
       }));
     } catch {

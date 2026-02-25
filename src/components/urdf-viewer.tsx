@@ -542,7 +542,10 @@ export default function URDFViewer({
 
   const [selectedGroup, setSelectedGroup] = useState(defaultGroup);
   useEffect(() => setSelectedGroup(defaultGroup), [defaultGroup]);
-  const selectedColumns = columnGroups[selectedGroup] ?? [];
+  const selectedColumns = useMemo(
+    () => columnGroups[selectedGroup] ?? [],
+    [columnGroups, selectedGroup],
+  );
 
   // Joint mapping
   const autoMapping = useMemo(
@@ -640,7 +643,7 @@ export default function URDFViewer({
       }
     }
     return values;
-  }, [chartData, frame, mapping, totalFrames, urdfJointNames]);
+  }, [chartData, frame, gripperRanges, mapping, totalFrames, urdfJointNames]);
 
   const currentTime = totalFrames > 0 ? (frame / fps).toFixed(2) : "0.00";
   const totalTime = (totalFrames / fps).toFixed(2);
