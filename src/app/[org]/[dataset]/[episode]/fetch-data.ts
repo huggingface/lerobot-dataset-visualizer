@@ -283,18 +283,6 @@ async function loadEpisodeProgressGroup(
   return null;
 }
 
-function sampleRowsFromRange(
-  rows: Record<string, unknown>[],
-  from: number,
-  to: number,
-  maxCount: number,
-): Record<string, unknown>[] {
-  const length = Math.max(0, to - from);
-  if (length === 0) return [];
-  if (length <= maxCount) return rows.slice(from, to);
-  return evenlySampleIndices(length, maxCount).map((idx) => rows[from + idx]);
-}
-
 function buildSampledEpisodeSet(
   totalEpisodes: number,
   maxEpisodes: number,
