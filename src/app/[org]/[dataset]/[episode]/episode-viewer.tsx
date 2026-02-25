@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, lazy, Suspense, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { postParentMessageWithParams } from "@/utils/postParentMessage";
 import { SimpleVideosPlayer } from "@/components/simple-videos-player";
@@ -140,7 +140,7 @@ function EpisodeViewerInner({
         `[perf] Loading complete in ${(performance.now() - loadStartRef.current).toFixed(0)}ms (videos: ${videosReady ? "✓" : "…"}, charts: ${chartsReady ? "✓" : "…"})`,
       );
     }
-  }, [isLoading]);
+  }, [isLoading, videosReady, chartsReady]);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -357,7 +357,7 @@ function EpisodeViewerInner({
         setCurrentTime(timeValue);
       }
     }
-  }, []);
+  }, [searchParams, setCurrentTime]);
 
   // sync with parent window hf.co/spaces
   useEffect(() => {
@@ -365,6 +365,31 @@ function EpisodeViewerInner({
       params.set("path", window.location.pathname + window.location.search);
     });
   }, []);
+
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      const { key } = e;
+
+      if (key === " ") {
+        e.preventDefault();
+        setIsPlaying((prev: boolean) => !prev);
+      } else if (key === "ArrowDown" || key === "ArrowUp") {
+        e.preventDefault();
+        const nextEpisodeId =
+          key === "ArrowDown" ? episodeId + 1 : episodeId - 1;
+        const lowestEpisodeId = episodes[0];
+        const highestEpisodeId = episodes[episodes.length - 1];
+
+        if (
+          nextEpisodeId >= lowestEpisodeId &&
+          nextEpisodeId <= highestEpisodeId
+        ) {
+          router.push(`./episode_${nextEpisodeId}`);
+        }
+      }
+    },
+    [episodeId, episodes, router, setIsPlaying],
+  );
 
   // Initialize based on URL time parameter
   useEffect(() => {
@@ -379,7 +404,7 @@ function EpisodeViewerInner({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [episodes, episodeId, pageSize, searchParams]);
+  }, [episodes, episodeId, pageSize, handleKeyDown]);
 
   // Only update URL ?t= param when the integer second changes
   const lastUrlSecondRef = useRef<number>(-1);
@@ -401,28 +426,6 @@ function EpisodeViewerInner({
       });
     }
   }, [isPlaying, currentTime, searchParams]);
-
-  // Handle keyboard shortcuts
-  const handleKeyDown = (e: KeyboardEvent) => {
-    const { key } = e;
-
-    if (key === " ") {
-      e.preventDefault();
-      setIsPlaying((prev: boolean) => !prev);
-    } else if (key === "ArrowDown" || key === "ArrowUp") {
-      e.preventDefault();
-      const nextEpisodeId = key === "ArrowDown" ? episodeId + 1 : episodeId - 1;
-      const lowestEpisodeId = episodes[0];
-      const highestEpisodeId = episodes[episodes.length - 1];
-
-      if (
-        nextEpisodeId >= lowestEpisodeId &&
-        nextEpisodeId <= highestEpisodeId
-      ) {
-        router.push(`./episode_${nextEpisodeId}`);
-      }
-    }
-  };
 
   // Pagination functions
   const nextPage = () => {
@@ -555,6 +558,7 @@ function EpisodeViewerInner({
                   target="_blank"
                   className="block"
                 >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src="https://github.com/huggingface/lerobot/raw/main/media/readme/lerobot-logo-thumbnail.png"
                     alt="LeRobot Logo"
