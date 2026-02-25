@@ -16,17 +16,18 @@ import { hasURDFSupport } from "@/lib/so101-robot";
 import {
   getAdjacentEpisodesVideoInfo,
   computeColumnMinMax,
+  getEpisodeDataSafe,
+  loadAllEpisodeLengthsV3,
+  loadAllEpisodeFrameInfo,
+  loadCrossEpisodeActionVariance,
   type EpisodeData,
   type ColumnMinMax,
   type EpisodeLengthStats,
   type EpisodeFramesData,
   type CrossEpisodeVarianceData,
 } from "./fetch-data";
-import {
-  fetchEpisodeLengthStats,
-  fetchEpisodeFrames,
-  fetchCrossEpisodeVariance,
-} from "./actions";
+import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
+import type { DatasetMetadata } from "@/utils/parquetUtils";
 
 const URDFViewer = lazy(() => import("@/components/urdf-viewer"));
 const ActionInsightsPanel = lazy(
@@ -43,16 +44,45 @@ type ActiveTab =
   | "urdf";
 
 export default function EpisodeViewer({
-  data,
-  error,
   org,
   dataset,
+  episodeId,
 }: {
-  data?: EpisodeData;
-  error?: string;
-  org?: string;
-  dataset?: string;
+  org: string;
+  dataset: string;
+  episodeId: number;
 }) {
+  const [data, setData] = useState<EpisodeData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    if (Number.isNaN(episodeId)) {
+      setError("Invalid episode id.");
+      setData(null);
+      return;
+    }
+    const requestId = ++requestIdRef.current;
+    setError(null);
+    setData(null);
+    getEpisodeDataSafe(org, dataset, episodeId)
+      .then(({ data: loaded, error: loadError }) => {
+        if (requestIdRef.current !== requestId) return;
+        if (loadError) {
+          setError(loadError);
+          setData(null);
+          return;
+        }
+        setData(loaded ?? null);
+      })
+      .catch((err) => {
+        if (requestIdRef.current !== requestId) return;
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message || "Unknown error");
+        setData(null);
+      });
+  }, [org, dataset, episodeId]);
+
   if (error) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-950 text-red-400">
@@ -65,7 +95,11 @@ export default function EpisodeViewer({
   }
 
   if (!data) {
-    return null;
+    return (
+      <div className="relative h-screen bg-slate-950">
+        <Loading />
+      </div>
+    );
   }
 
   return (
@@ -128,6 +162,23 @@ function EpisodeViewerInner({
     useState<CrossEpisodeVarianceData | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const insightsLoadedRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    statsLoadedRef.current = false;
+    framesLoadedRef.current = false;
+    insightsLoadedRef.current = false;
+    setEpisodeLengthStats(null);
+    setEpisodeFramesData(null);
+    setCrossEpData(null);
+  }, [datasetInfo.repoId]);
 
   // Hydrate UI state from sessionStorage after mount (avoids SSR/client mismatch)
   useEffect(() => {
@@ -168,10 +219,20 @@ function EpisodeViewerInner({
     setStatsLoading(true);
     setColumnMinMax(computeColumnMinMax(data.chartDataGroups));
     if (org && dataset) {
-      fetchEpisodeLengthStats(org, dataset)
-        .then((result) => setEpisodeLengthStats(result))
+      const repoId = `${org}/${dataset}`;
+      getDatasetVersionAndInfo(repoId)
+        .then(({ version, info }) => {
+          if (version !== "v3.0") return null;
+          return loadAllEpisodeLengthsV3(repoId, version, info.fps);
+        })
+        .then((result) => {
+          if (!mountedRef.current) return;
+          setEpisodeLengthStats(result);
+        })
         .catch(() => {})
-        .finally(() => setStatsLoading(false));
+        .finally(() => {
+          if (mountedRef.current) setStatsLoading(false);
+        });
     } else {
       setStatsLoading(false);
     }
@@ -181,20 +242,50 @@ function EpisodeViewerInner({
     if (framesLoadedRef.current || !org || !dataset) return;
     framesLoadedRef.current = true;
     setFramesLoading(true);
-    fetchEpisodeFrames(org, dataset)
-      .then(setEpisodeFramesData)
-      .catch(() => setEpisodeFramesData({ cameras: [], framesByCamera: {} }))
-      .finally(() => setFramesLoading(false));
+    const repoId = `${org}/${dataset}`;
+    getDatasetVersionAndInfo(repoId)
+      .then(({ version, info }) =>
+        loadAllEpisodeFrameInfo(
+          repoId,
+          version,
+          info as unknown as DatasetMetadata,
+        ),
+      )
+      .then((result) => {
+        if (!mountedRef.current) return;
+        setEpisodeFramesData(result);
+      })
+      .catch(() => {
+        if (!mountedRef.current) return;
+        setEpisodeFramesData({ cameras: [], framesByCamera: {} });
+      })
+      .finally(() => {
+        if (mountedRef.current) setFramesLoading(false);
+      });
   };
 
   const loadInsights = () => {
     if (insightsLoadedRef.current || !org || !dataset) return;
     insightsLoadedRef.current = true;
     setInsightsLoading(true);
-    fetchCrossEpisodeVariance(org, dataset)
-      .then(setCrossEpData)
+    const repoId = `${org}/${dataset}`;
+    getDatasetVersionAndInfo(repoId)
+      .then(({ version, info }) =>
+        loadCrossEpisodeActionVariance(
+          repoId,
+          version,
+          info as unknown as DatasetMetadata,
+          info.fps,
+        ),
+      )
+      .then((result) => {
+        if (!mountedRef.current) return;
+        setCrossEpData(result);
+      })
       .catch((err) => console.error("[cross-ep] Failed:", err))
-      .finally(() => setInsightsLoading(false));
+      .finally(() => {
+        if (mountedRef.current) setInsightsLoading(false);
+      });
   };
 
   // Re-trigger data loading for the restored tab on mount

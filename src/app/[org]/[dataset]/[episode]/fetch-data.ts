@@ -134,6 +134,15 @@ const MAX_CROSS_EPISODE_FRAMES_PER_EPISODE = parsePositiveIntEnv(
   2500,
   100,
 );
+const PROGRESS_PARQUET_CANDIDATES = [
+  "sarm_progress.parquet",
+  "srm_progress.parquet",
+] as const;
+const PREFERRED_PROGRESS_COLUMNS = [
+  "progress_sparse",
+  "progress_dense",
+  "progress",
+] as const;
 
 function evenlySampleIndices(length: number, target: number): number[] {
   if (length <= 0) return [];
@@ -158,6 +167,114 @@ function evenlySampleIndices(length: number, target: number): number[] {
 function evenlySampleArray<T>(items: T[], maxCount: number): T[] {
   if (items.length <= maxCount) return items;
   return evenlySampleIndices(items.length, maxCount).map((idx) => items[idx]);
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function buildProgressSeriesKey(progressColumn: string): string {
+  if (progressColumn === "progress_sparse") {
+    return `progress${SERIES_NAME_DELIMITER}sparse`;
+  }
+  if (progressColumn === "progress_dense") {
+    return `progress${SERIES_NAME_DELIMITER}dense`;
+  }
+  return "progress";
+}
+
+function pickProgressColumn(rows: Record<string, unknown>[]): string | null {
+  if (rows.length === 0) return null;
+
+  const columnNames = Object.keys(rows[0] ?? {});
+  const preferred = PREFERRED_PROGRESS_COLUMNS.filter((column) =>
+    columnNames.includes(column),
+  );
+  const preferredSet = new Set<string>(preferred);
+  const additionalProgressColumns = columnNames
+    .filter(
+      (column) => column.startsWith("progress_") && !preferredSet.has(column),
+    )
+    .sort();
+  const candidates = [...preferred, ...additionalProgressColumns];
+
+  for (const column of candidates) {
+    const hasFiniteValue = rows.some((row) => toFiniteNumber(row[column]) !== null);
+    if (hasFiniteValue) {
+      return column;
+    }
+  }
+
+  return null;
+}
+
+async function loadEpisodeProgressGroup(
+  repoId: string,
+  version: string,
+  episodeId: number,
+  episodeDuration: number,
+): Promise<ChartRow[] | null> {
+  for (const progressPath of PROGRESS_PARQUET_CANDIDATES) {
+    const progressUrl = buildVersionedUrl(repoId, version, progressPath);
+    try {
+      const progressBuffer = await fetchParquetFile(progressUrl);
+      const progressRows = await readParquetAsObjects(progressBuffer, []);
+      if (progressRows.length === 0) continue;
+
+      const hasEpisodeIndex = progressRows.some(
+        (row) => toFiniteNumber(row["episode_index"]) !== null,
+      );
+      const targetRows = hasEpisodeIndex
+        ? progressRows.filter(
+            (row) => toFiniteNumber(row["episode_index"]) === episodeId,
+          )
+        : progressRows;
+      if (targetRows.length === 0) continue;
+
+      const progressColumn = pickProgressColumn(targetRows);
+      if (!progressColumn) continue;
+
+      const orderedPoints: Array<{ order: number; progress: number }> = [];
+      for (let i = 0; i < targetRows.length; i++) {
+        const row = targetRows[i];
+        const progressValue = toFiniteNumber(row[progressColumn]);
+        if (progressValue === null) continue;
+
+        const order =
+          toFiniteNumber(row["index"]) ??
+          toFiniteNumber(row["frame_index"]) ??
+          i;
+        orderedPoints.push({ order, progress: progressValue });
+      }
+
+      if (orderedPoints.length === 0) continue;
+      orderedPoints.sort((a, b) => a.order - b.order);
+
+      const sampledPoints = evenlySampleArray(orderedPoints, MAX_EPISODE_POINTS);
+      const progressKey = buildProgressSeriesKey(progressColumn);
+      const denominator = Math.max(sampledPoints.length - 1, 1);
+      const duration = Math.max(episodeDuration, 0);
+
+      return sampledPoints.map((point, idx) => ({
+        timestamp: sampledPoints.length === 1 ? 0 : (idx / denominator) * duration,
+        [progressKey]: point.progress,
+      }));
+    } catch {
+      // Optional file: ignore and try next candidate.
+    }
+  }
+
+  return null;
 }
 
 function sampleRowsFromRange(
@@ -223,6 +340,16 @@ export async function getEpisodeData(
         ) / 10,
       cameras,
     };
+
+    const progressGroup = await loadEpisodeProgressGroup(
+      repoId,
+      version,
+      episodeId,
+      result.duration,
+    );
+    if (progressGroup && progressGroup.length > 0) {
+      result.chartDataGroups = [...result.chartDataGroups, progressGroup];
+    }
 
     return result;
   } catch (err) {

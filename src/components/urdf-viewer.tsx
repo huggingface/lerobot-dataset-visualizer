@@ -18,8 +18,10 @@ import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import type { EpisodeData } from "@/app/[org]/[dataset]/[episode]/fetch-data";
-import { fetchEpisodeChartData } from "@/app/[org]/[dataset]/[episode]/actions";
+import { loadEpisodeFlatChartData } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import { CHART_CONFIG } from "@/utils/constants";
+import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
+import type { DatasetMetadata } from "@/utils/parquetUtils";
 
 const SERIES_DELIM = CHART_CONFIG.SERIES_NAME_DELIMITER;
 const DEG2RAD = Math.PI / 180;
@@ -455,6 +457,20 @@ export default function URDFViewer({
     [datasetInfo.robot_type],
   );
   const { urdfUrl, scale } = robotConfig;
+  const repoId = org && dataset ? `${org}/${dataset}` : null;
+  const datasetInfoRef = useRef<{
+    version: string;
+    info: DatasetMetadata;
+  } | null>(null);
+
+  const ensureDatasetInfo = useCallback(async () => {
+    if (!repoId) return null;
+    if (datasetInfoRef.current) return datasetInfoRef.current;
+    const { version, info } = await getDatasetVersionAndInfo(repoId);
+    const payload = { version, info: info as unknown as DatasetMetadata };
+    datasetInfoRef.current = payload;
+    return payload;
+  }, [repoId]);
 
   // Episode selection & chart data
   const [selectedEpisode, setSelectedEpisode] = useState(data.episodeId);
@@ -476,17 +492,27 @@ export default function URDFViewer({
         return;
       }
 
-      if (!org || !dataset) return;
+      if (!repoId) return;
       setEpisodeLoading(true);
-      fetchEpisodeChartData(org, dataset, epId)
+      ensureDatasetInfo()
+        .then((payload) => {
+          if (!payload) return null;
+          return loadEpisodeFlatChartData(
+            repoId,
+            payload.version,
+            payload.info,
+            epId,
+          );
+        })
         .then((result) => {
+          if (!result) return;
           chartDataCache.current[epId] = result;
           setChartData(result);
         })
         .catch((err) => console.error("Failed to load episode:", err))
         .finally(() => setEpisodeLoading(false));
     },
-    [org, dataset],
+    [ensureDatasetInfo, repoId],
   );
 
   const totalFrames = chartData.length;
