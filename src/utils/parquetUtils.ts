@@ -1,4 +1,10 @@
-import { parquetRead, parquetReadObjects } from "hyparquet";
+import {
+  asyncBufferFromUrl,
+  cachedAsyncBuffer,
+  parquetRead,
+  parquetReadObjects,
+  type AsyncBuffer,
+} from "hyparquet";
 
 export interface DatasetMetadata {
   codebase_version: string;
@@ -42,26 +48,36 @@ export function formatStringWithVars(
 }
 
 // Fetch and parse the Parquet file
-export async function fetchParquetFile(url: string): Promise<ArrayBuffer> {
-  const res = await fetch(url, { cache: "no-store" });
+type ParquetFile = ArrayBuffer | AsyncBuffer;
 
-  if (!res.ok) {
-    throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
-  }
+const parquetFileCache = new Map<string, AsyncBuffer>();
 
-  return res.arrayBuffer();
+export async function fetchParquetFile(url: string): Promise<ParquetFile> {
+  const cached = parquetFileCache.get(url);
+  if (cached) return cached;
+
+  const file = await asyncBufferFromUrl({
+    url,
+    requestInit: { cache: "no-store" },
+  });
+  const wrapped = cachedAsyncBuffer(file);
+  parquetFileCache.set(url, wrapped);
+  return wrapped;
 }
 
 // Read specific columns from the Parquet file
 export async function readParquetColumn(
-  fileBuffer: ArrayBuffer,
+  fileBuffer: ParquetFile,
   columns: string[],
+  options?: { rowStart?: number; rowEnd?: number },
 ): Promise<unknown[][]> {
   return new Promise((resolve, reject) => {
     try {
       parquetRead({
         file: fileBuffer,
         columns: columns.length > 0 ? columns : undefined,
+        rowStart: options?.rowStart,
+        rowEnd: options?.rowEnd,
         onComplete: (data: unknown[][]) => {
           resolve(data);
         },
@@ -73,12 +89,15 @@ export async function readParquetColumn(
 }
 
 export async function readParquetAsObjects(
-  fileBuffer: ArrayBuffer,
+  fileBuffer: ParquetFile,
   columns: string[] = [],
+  options?: { rowStart?: number; rowEnd?: number },
 ): Promise<Record<string, unknown>[]> {
   return parquetReadObjects({
     file: fileBuffer,
     columns: columns.length > 0 ? columns : undefined,
+    rowStart: options?.rowStart,
+    rowEnd: options?.rowEnd,
   }) as Promise<Record<string, unknown>[]>;
 }
 

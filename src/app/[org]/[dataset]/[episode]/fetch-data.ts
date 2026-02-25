@@ -748,7 +748,7 @@ async function loadEpisodeDataV3(
 
   try {
     const dataUrl = buildVersionedUrl(repoId, version, dataPath);
-    const arrayBuffer = await fetchParquetFile(dataUrl);
+    const parquetFile = await fetchParquetFile(dataUrl);
     const v3DataColumns = Array.from(
       new Set([
         "index",
@@ -779,32 +779,44 @@ async function loadEpisodeDataV3(
           .map(([key]) => key),
       ]),
     );
-    const fullData = await readParquetAsObjects(arrayBuffer, v3DataColumns);
-
     // Extract the episode-specific data slice
     const fromIndex = bigIntToNumber(episodeMetadata.dataset_from_index, 0);
-    const toIndex = bigIntToNumber(
-      episodeMetadata.dataset_to_index,
-      fullData.length,
-    );
-
-    // Find the starting index of this parquet file by checking the first row's index
-    // This handles the case where episodes are split across multiple parquet files
-    let fileStartIndex = 0;
-    if (fullData.length > 0 && fullData[0].index !== undefined) {
-      fileStartIndex = Number(fullData[0].index);
+    let toIndex = bigIntToNumber(episodeMetadata.dataset_to_index, fromIndex);
+    if (toIndex <= fromIndex) {
+      toIndex = fromIndex + 1;
     }
 
-    // Adjust indices to be relative to this file's starting position
-    const localFromIndex = Math.max(0, fromIndex - fileStartIndex);
-    const localToIndex = Math.min(fullData.length, toIndex - fileStartIndex);
+    let episodeRows: Record<string, unknown>[] = [];
+    let usedRowRange = false;
 
-    const episodeData = sampleRowsFromRange(
-      fullData,
-      localFromIndex,
-      localToIndex,
-      MAX_EPISODE_POINTS,
-    );
+    try {
+      const indexPreview = await readParquetAsObjects(parquetFile, ["index"], {
+        rowStart: 0,
+        rowEnd: 1,
+      });
+      const startIndexValue = indexPreview[0]?.index;
+      if (startIndexValue !== undefined && startIndexValue !== null) {
+        const fileStartIndex =
+          typeof startIndexValue === "bigint"
+            ? Number(startIndexValue)
+            : Number(startIndexValue);
+        const localFromIndex = Math.max(0, fromIndex - fileStartIndex);
+        const localToIndex = Math.max(localFromIndex, toIndex - fileStartIndex);
+        episodeRows = await readParquetAsObjects(parquetFile, v3DataColumns, {
+          rowStart: localFromIndex,
+          rowEnd: localToIndex,
+        });
+        usedRowRange = true;
+      }
+    } catch {
+      // Fall back to full reads if row-range selection fails.
+    }
+
+    if (!usedRowRange) {
+      episodeRows = await readParquetAsObjects(parquetFile, v3DataColumns);
+    }
+
+    const episodeData = evenlySampleArray(episodeRows, MAX_EPISODE_POINTS);
 
     if (episodeData.length === 0) {
       return {
