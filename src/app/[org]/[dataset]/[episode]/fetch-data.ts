@@ -1768,32 +1768,95 @@ export async function loadCrossEpisodeActionVariance(
       byFile.get(key)!.push(ep);
     }
 
-    for (const [, eps] of byFile) {
-      const ep0 = eps[0];
-      const dataPath = `data/chunk-${ep0.chunkIdx.toString().padStart(3, "0")}/file-${ep0.fileIdx.toString().padStart(3, "0")}.parquet`;
-      try {
-        const buf = await fetchParquetFile(
-          buildVersionedUrl(repoId, version, dataPath),
-        );
-        const rows = await readParquetAsObjects(
-          buf,
-          stateKey ? ["index", actionKey, stateKey] : ["index", actionKey],
-        );
-        const fileStart =
-          rows.length > 0 && rows[0].index !== undefined
-            ? Number(rows[0].index)
-            : 0;
+    const fileResults = await Promise.all(
+      [...byFile.values()].map(async (eps) => {
+        const ep0 = eps[0];
+        const dataPath = `data/chunk-${ep0.chunkIdx.toString().padStart(3, "0")}/file-${ep0.fileIdx.toString().padStart(3, "0")}.parquet`;
+        const fileEpActions: { index: number; actions: number[][] }[] = [];
+        const fileEpStates: (number[][] | null)[] = [];
+        try {
+          const buf = await fetchParquetFile(
+            buildVersionedUrl(repoId, version, dataPath),
+          );
+          const rows = await readParquetAsObjects(
+            buf,
+            stateKey ? ["index", actionKey, stateKey] : ["index", actionKey],
+          );
+          const fileStart =
+            rows.length > 0 && rows[0].index !== undefined
+              ? Number(rows[0].index)
+              : 0;
 
-        for (const ep of eps) {
-          const localFrom = Math.max(0, ep.from - fileStart);
-          const localTo = Math.min(rows.length, ep.to - fileStart);
+          for (const ep of eps) {
+            const localFrom = Math.max(0, ep.from - fileStart);
+            const localTo = Math.min(rows.length, ep.to - fileStart);
+            const actions: number[][] = [];
+            const states: number[][] = [];
+            for (let r = localFrom; r < localTo; r++) {
+              const raw = rows[r]?.[actionKey];
+              if (Array.isArray(raw)) actions.push(raw.map(Number));
+              if (stateKey) {
+                const sRaw = rows[r]?.[stateKey];
+                if (Array.isArray(sRaw)) states.push(sRaw.map(Number));
+              }
+            }
+            if (actions.length > 0) {
+              const sampledIndices = evenlySampleIndices(
+                actions.length,
+                Math.min(actions.length, MAX_CROSS_EPISODE_FRAMES_PER_EPISODE),
+              );
+              const sampledActions = sampledIndices.map((i) => actions[i]);
+              const sampledStates =
+                stateKey && states.length === actions.length
+                  ? sampledIndices.map((i) => states[i])
+                  : null;
+              fileEpActions.push({ index: ep.index, actions: sampledActions });
+              fileEpStates.push(stateKey ? sampledStates : null);
+            }
+          }
+        } catch {
+          /* skip file */
+        }
+        return { fileEpActions, fileEpStates };
+      }),
+    );
+    for (const { fileEpActions, fileEpStates } of fileResults) {
+      episodeActions.push(...fileEpActions);
+      episodeStates.push(...fileEpStates);
+    }
+  } else {
+    const chunkSize = info.chunks_size || 1000;
+    const epResults = await Promise.all(
+      sampled.map(async (ep) => {
+        const chunk = Math.floor(ep.index / chunkSize);
+        const dataPath = formatStringWithVars(info.data_path, {
+          episode_chunk: chunk.toString().padStart(3, "0"),
+          episode_index: ep.index.toString().padStart(6, "0"),
+        });
+        try {
+          const buf = await fetchParquetFile(
+            buildVersionedUrl(repoId, version, dataPath),
+          );
+          const rows = await readParquetAsObjects(
+            buf,
+            stateKey ? [actionKey, stateKey] : [actionKey],
+          );
           const actions: number[][] = [];
           const states: number[][] = [];
-          for (let r = localFrom; r < localTo; r++) {
-            const raw = rows[r]?.[actionKey];
-            if (Array.isArray(raw)) actions.push(raw.map(Number));
+          for (const row of rows) {
+            const raw = row[actionKey];
+            if (Array.isArray(raw)) {
+              actions.push(raw.map(Number));
+            } else {
+              const vec: number[] = [];
+              for (let d = 0; d < actionDim; d++) {
+                const v = row[`${actionKey}.${d}`] ?? row[d];
+                vec.push(typeof v === "number" ? v : Number(v) || 0);
+              }
+              actions.push(vec);
+            }
             if (stateKey) {
-              const sRaw = rows[r]?.[stateKey];
+              const sRaw = row[stateKey];
               if (Array.isArray(sRaw)) states.push(sRaw.map(Number));
             }
           }
@@ -1807,64 +1870,22 @@ export async function loadCrossEpisodeActionVariance(
               stateKey && states.length === actions.length
                 ? sampledIndices.map((i) => states[i])
                 : null;
-            episodeActions.push({ index: ep.index, actions: sampledActions });
-            episodeStates.push(stateKey ? sampledStates : null);
+            return {
+              index: ep.index,
+              actions: sampledActions,
+              states: sampledStates,
+            };
           }
+        } catch {
+          /* skip */
         }
-      } catch {
-        /* skip file */
-      }
-    }
-  } else {
-    const chunkSize = info.chunks_size || 1000;
-    for (const ep of sampled) {
-      const chunk = Math.floor(ep.index / chunkSize);
-      const dataPath = formatStringWithVars(info.data_path, {
-        episode_chunk: chunk.toString().padStart(3, "0"),
-        episode_index: ep.index.toString().padStart(6, "0"),
-      });
-      try {
-        const buf = await fetchParquetFile(
-          buildVersionedUrl(repoId, version, dataPath),
-        );
-        const rows = await readParquetAsObjects(
-          buf,
-          stateKey ? [actionKey, stateKey] : [actionKey],
-        );
-        const actions: number[][] = [];
-        const states: number[][] = [];
-        for (const row of rows) {
-          const raw = row[actionKey];
-          if (Array.isArray(raw)) {
-            actions.push(raw.map(Number));
-          } else {
-            const vec: number[] = [];
-            for (let d = 0; d < actionDim; d++) {
-              const v = row[`${actionKey}.${d}`] ?? row[d];
-              vec.push(typeof v === "number" ? v : Number(v) || 0);
-            }
-            actions.push(vec);
-          }
-          if (stateKey) {
-            const sRaw = row[stateKey];
-            if (Array.isArray(sRaw)) states.push(sRaw.map(Number));
-          }
-        }
-        if (actions.length > 0) {
-          const sampledIndices = evenlySampleIndices(
-            actions.length,
-            Math.min(actions.length, MAX_CROSS_EPISODE_FRAMES_PER_EPISODE),
-          );
-          const sampledActions = sampledIndices.map((i) => actions[i]);
-          const sampledStates =
-            stateKey && states.length === actions.length
-              ? sampledIndices.map((i) => states[i])
-              : null;
-          episodeActions.push({ index: ep.index, actions: sampledActions });
-          episodeStates.push(stateKey ? sampledStates : null);
-        }
-      } catch {
-        /* skip */
+        return null;
+      }),
+    );
+    for (const result of epResults) {
+      if (result !== null) {
+        episodeActions.push({ index: result.index, actions: result.actions });
+        episodeStates.push(stateKey ? result.states : null);
       }
     }
   }
