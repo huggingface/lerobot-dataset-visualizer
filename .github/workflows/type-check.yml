@@ -3,8 +3,16 @@ name: Type Check & Lint
 on:
   push:
     branches: [main]
+    paths:
+      - "src/**"
+      - "*.json"
+      - ".github/workflows/type-check.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "src/**"
+      - "*.json"
+      - ".github/workflows/type-check.yml"
 
 jobs:
   type-check:
