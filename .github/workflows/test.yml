@@ -3,8 +3,16 @@ name: Tests
 on:
   push:
     branches: [main]
+    paths:
+      - "src/**"
+      - "*.json"
+      - ".github/workflows/test.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "src/**"
+      - "*.json"
+      - ".github/workflows/test.yml"
 
 jobs:
   test:
