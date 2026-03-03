@@ -12,22 +12,15 @@ jobs:
   sync-to-hub:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           lfs: true
           ref: main
-      - name: Push to hub
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          git lfs install --local
-
-          git remote remove hf 2>/dev/null || true
-          git remote add hf "https://mishig:${HF_TOKEN}@huggingface.co/spaces/lerobot/visualize_dataset"
-
-          # Push large files first, then refs.
-          git lfs push hf main
-          git push hf main -f
+      - name: Sync to HF Space
+        uses: huggingface/hub-sync@main
+        with:
+          github_repo_id: huggingface/lerobot-dataset-visualizer
+          huggingface_repo_id: lerobot/visualize_dataset
+          repo_type: space
+          hf_token: ${{ secrets.HF_TOKEN }}
