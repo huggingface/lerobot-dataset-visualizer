@@ -138,9 +138,16 @@ function EpisodeViewerInner({
 
   const [videosReady, setVideosReady] = useState(!videosInfo.length);
   const [chartsReady, setChartsReady] = useState(false);
-  const isLoading = !videosReady || !chartsReady;
 
   const loadStartRef = useRef(performance.now());
+
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Tab state & lazy stats
+  const [activeTab, setActiveTab] = useState<ActiveTab>("episodes");
+  const isLoading = activeTab === "episodes" && (!videosReady || !chartsReady);
+
   useEffect(() => {
     if (!isLoading) {
       console.log(
@@ -148,12 +155,6 @@ function EpisodeViewerInner({
       );
     }
   }, [isLoading, videosReady, chartsReady]);
-
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
-  // Tab state & lazy stats
-  const [activeTab, setActiveTab] = useState<ActiveTab>("episodes");
   const [, setColumnMinMax] = useState<ColumnMinMax[] | null>(null);
   const [episodeLengthStats, setEpisodeLengthStats] =
     useState<EpisodeLengthStats | null>(null);
@@ -320,6 +321,11 @@ function EpisodeViewerInner({
 
   // Use context for time sync
   const { currentTime, setCurrentTime, setIsPlaying, isPlaying } = useTime();
+
+  // URDFViewer episode changer — populated by URDFViewer on mount
+  const urdfChangerRef = useRef<((ep: number) => void) | undefined>(undefined);
+  const [urdfEpisode, setUrdfEpisode] = useState(episodeId);
+  useEffect(() => setUrdfEpisode(episodeId), [episodeId]);
 
   // Pagination state
   const pageSize = 100;
@@ -536,18 +542,26 @@ function EpisodeViewerInner({
 
       {/* Body: sidebar + content */}
       <div className="flex flex-1 min-h-0">
-        {/* Sidebar — only on Episodes tab */}
-        {activeTab === "episodes" && (
+        {/* Sidebar — on Episodes and 3D Replay tabs */}
+        {(activeTab === "episodes" || activeTab === "urdf") && (
           <Sidebar
             datasetInfo={datasetInfo}
             paginatedEpisodes={paginatedEpisodes}
-            episodeId={episodeId}
+            episodeId={activeTab === "urdf" ? urdfEpisode : episodeId}
             totalPages={totalPages}
             currentPage={currentPage}
             prevPage={prevPage}
             nextPage={nextPage}
             showFlaggedOnly={sidebarFlaggedOnly}
             onShowFlaggedOnlyChange={setSidebarFlaggedOnly}
+            onEpisodeSelect={
+              activeTab === "urdf"
+                ? (ep) => {
+                    setUrdfEpisode(ep);
+                    urdfChangerRef.current?.(ep);
+                  }
+                : undefined
+            }
           />
         )}
 
@@ -675,7 +689,12 @@ function EpisodeViewerInner({
 
           {activeTab === "urdf" && (
             <Suspense fallback={<Loading />}>
-              <URDFViewer data={data} org={org} dataset={dataset} />
+              <URDFViewer
+                data={data}
+                org={org}
+                dataset={dataset}
+                episodeChangerRef={urdfChangerRef}
+              />
             </Suspense>
           )}
         </div>
