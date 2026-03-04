@@ -1,127 +1,137 @@
+"use client";
+
 import React from "react";
-import { useTime } from "../context/time-context";
-import {
-  FaPlay,
-  FaPause,
-  FaBackward,
-  FaForward,
-  FaUndoAlt,
-  FaArrowDown,
-  FaArrowUp,
-} from "react-icons/fa";
 
-const PlaybackBar: React.FC = () => {
-  const { duration, isPlaying, setIsPlaying, currentTime, setCurrentTime } =
-    useTime();
+interface PlaybackBarProps {
+  playing: boolean;
+  onPlayPause: () => void;
 
-  const sliderActiveRef = React.useRef(false);
+  value: number;
+  max: number;
+  step?: number;
+  onSeek: (value: number) => void;
+  onDragStart?: () => void;
+  onDragEnd?: (value: number, wasPlaying: boolean) => void;
+
+  timeLabel: string;
+  frameLabel?: string;
+
+  trailEnabled?: boolean;
+  onTrailToggle?: () => void;
+}
+
+export default function PlaybackBar({
+  playing,
+  onPlayPause,
+  value,
+  max,
+  step = 1,
+  onSeek,
+  onDragStart,
+  onDragEnd,
+  timeLabel,
+  frameLabel,
+  trailEnabled,
+  onTrailToggle,
+}: PlaybackBarProps) {
+  const isDraggingRef = React.useRef(false);
   const wasPlayingRef = React.useRef(false);
-  const [sliderValue, setSliderValue] = React.useState(currentTime);
+  const [displayValue, setDisplayValue] = React.useState(value);
 
-  // Only update sliderValue from context if not dragging
   React.useEffect(() => {
-    if (!sliderActiveRef.current) {
-      setSliderValue(currentTime);
-    }
-  }, [currentTime]);
+    if (!isDraggingRef.current) setDisplayValue(value);
+  }, [value]);
 
-  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const t = Number(e.target.value);
-    setSliderValue(t);
-    // Seek videos immediately while dragging (no debounce)
-    setCurrentTime(t);
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = parseFloat(e.target.value);
+    setDisplayValue(v);
+    onSeek(v);
   };
 
-  const handleSliderMouseDown = () => {
-    sliderActiveRef.current = true;
-    wasPlayingRef.current = isPlaying;
-    setIsPlaying(false);
+  const handleDragStart = () => {
+    isDraggingRef.current = true;
+    wasPlayingRef.current = playing;
+    onDragStart?.();
   };
 
-  const handleSliderMouseUp = () => {
-    sliderActiveRef.current = false;
-    // Final seek to exact slider position
-    setCurrentTime(sliderValue);
-    if (wasPlayingRef.current) {
-      setIsPlaying(true);
-    }
+  const handleDragEnd = () => {
+    isDraggingRef.current = false;
+    onDragEnd?.(displayValue, wasPlayingRef.current);
   };
 
   return (
-    <div className="flex items-center gap-4 w-full max-w-4xl mx-auto sticky bottom-0 bg-slate-900/95 px-4 py-3 rounded-3xl mt-auto">
+    <div className="flex items-center gap-3">
+      {/* Play/Pause */}
       <button
-        title="Jump backward 5 seconds"
-        onClick={() => setCurrentTime(Math.max(0, currentTime - 5))}
-        className="text-2xl hidden md:block"
+        onClick={onPlayPause}
+        className="w-8 h-8 flex items-center justify-center rounded bg-orange-600 hover:bg-orange-500 text-white transition-colors shrink-0"
       >
-        <FaBackward size={24} />
+        {playing ? (
+          <svg width="12" height="14" viewBox="0 0 12 14">
+            <rect x="1" y="1" width="3" height="12" fill="white" />
+            <rect x="8" y="1" width="3" height="12" fill="white" />
+          </svg>
+        ) : (
+          <svg width="12" height="14" viewBox="0 0 12 14">
+            <polygon points="2,1 11,7 2,13" fill="white" />
+          </svg>
+        )}
       </button>
-      <button
-        className={`text-3xl transition-transform ${isPlaying ? "scale-90 opacity-60" : "scale-110"}`}
-        title="Play. Toggle with Space"
-        onClick={() => setIsPlaying(true)}
-        style={{ display: isPlaying ? "none" : "inline-block" }}
-      >
-        <FaPlay size={24} />
-      </button>
-      <button
-        className={`text-3xl transition-transform ${!isPlaying ? "scale-90 opacity-60" : "scale-110"}`}
-        title="Pause. Toggle with Space"
-        onClick={() => setIsPlaying(false)}
-        style={{ display: !isPlaying ? "none" : "inline-block" }}
-      >
-        <FaPause size={24} />
-      </button>
-      <button
-        title="Jump forward 5 seconds"
-        onClick={() => setCurrentTime(Math.min(duration, currentTime + 5))}
-        className="text-2xl hidden md:block"
-      >
-        <FaForward size={24} />
-      </button>
-      <button
-        title="Rewind from start"
-        onClick={() => setCurrentTime(0)}
-        className="text-2xl hidden md:block"
-      >
-        <FaUndoAlt size={24} />
-      </button>
+
+      {/* Trail toggle (3D only) */}
+      {onTrailToggle !== undefined && (
+        <button
+          onClick={onTrailToggle}
+          className={`px-2 h-8 text-xs rounded transition-colors shrink-0 ${
+            trailEnabled
+              ? "bg-orange-600/30 text-orange-400 border border-orange-500"
+              : "bg-slate-700 text-slate-400 border border-slate-600"
+          }`}
+          title={trailEnabled ? "Hide trail" : "Show trail"}
+        >
+          Trail
+        </button>
+      )}
+
+      {/* Scrubber */}
       <input
         type="range"
         min={0}
-        max={duration}
-        step={0.01}
-        value={sliderValue}
-        onChange={handleSliderChange}
-        onMouseDown={handleSliderMouseDown}
-        onMouseUp={handleSliderMouseUp}
-        onTouchStart={handleSliderMouseDown}
-        onTouchEnd={handleSliderMouseUp}
-        className="flex-1 mx-2 accent-orange-500 focus:outline-none focus:ring-0"
-        aria-label="Seek video"
+        max={max}
+        step={step}
+        value={displayValue}
+        onChange={handleChange}
+        onMouseDown={handleDragStart}
+        onMouseUp={handleDragEnd}
+        onTouchStart={handleDragStart}
+        onTouchEnd={handleDragEnd}
+        className="flex-1 h-1.5 accent-orange-500 cursor-pointer"
       />
-      <span className="w-16 text-right tabular-nums text-xs text-slate-200 shrink-0">
-        {Math.floor(sliderValue)} / {Math.floor(duration)}
+
+      {/* Time label */}
+      <span className="text-xs text-slate-400 tabular-nums w-28 text-right shrink-0">
+        {timeLabel}
       </span>
 
-      <div className="text-xs text-slate-300 select-none ml-8 flex-col gap-y-0.5 hidden md:flex">
+      {/* Frame label (3D only) */}
+      {frameLabel !== undefined && (
+        <span className="text-xs text-slate-500 tabular-nums w-20 text-right shrink-0">
+          {frameLabel}
+        </span>
+      )}
+
+      {/* Keyboard hints */}
+      <div className="text-xs text-slate-500 select-none hidden md:flex flex-col gap-y-0.5 ml-2 shrink-0">
         <p>
-          <span className="inline-flex items-center gap-1 font-mono align-middle">
-            <span className="px-2 py-0.5 rounded border border-slate-400 bg-slate-800 text-slate-200 text-xs shadow-inner">
-              Space
-            </span>
+          <span className="px-1.5 py-0.5 rounded border border-slate-600 bg-slate-800 text-slate-400 text-xs">
+            Space
           </span>{" "}
-          to pause/unpause
+          pause/unpause
         </p>
         <p>
-          <span className="inline-flex items-center gap-1 font-mono align-middle">
-            <FaArrowUp size={14} />/<FaArrowDown size={14} />
-          </span>{" "}
-          to previous/next episode
+          <span className="font-mono">↑/↓</span> prev/next episode
         </p>
       </div>
     </div>
   );
-};
-
-export default PlaybackBar;
+}

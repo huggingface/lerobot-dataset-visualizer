@@ -19,7 +19,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import type { EpisodeData } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import { loadEpisodeFlatChartData } from "@/app/[org]/[dataset]/[episode]/fetch-data";
-import UrdfPlaybackBar from "@/components/urdf-playback-bar";
+import PlaybackBar from "@/components/playback-bar";
 import { CHART_CONFIG } from "@/utils/constants";
 import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
 import type { DatasetMetadata } from "@/utils/parquetUtils";
@@ -573,14 +573,11 @@ export default function URDFViewer({
   const [playing, setPlaying] = useState(false);
   const frameRef = useRef(0);
 
-  const handleFrameChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const f = parseInt(e.target.value);
-      setFrame(f);
-      frameRef.current = f;
-    },
-    [],
-  );
+  const handleSeek = useCallback((v: number) => {
+    const f = Math.round(v);
+    setFrame(f);
+    frameRef.current = f;
+  }, []);
 
   const handlePlayPause = useCallback(() => {
     setPlaying((prev) => {
@@ -728,15 +725,16 @@ export default function URDFViewer({
 
       {/* Controls */}
       <div className="bg-slate-800/90 border-t border-slate-700 p-3 space-y-3 shrink-0">
-        <UrdfPlaybackBar
-          frame={frame}
-          totalFrames={totalFrames}
-          fps={fps}
+        <PlaybackBar
           playing={playing}
           onPlayPause={handlePlayPause}
+          value={frame}
+          max={Math.max(totalFrames - 1, 0)}
+          onSeek={handleSeek}
+          timeLabel={`${(frame / fps).toFixed(2)}s / ${(totalFrames / fps).toFixed(2)}s`}
+          frameLabel={`F ${frame}/${Math.max(totalFrames - 1, 0)}`}
           trailEnabled={trailEnabled}
           onTrailToggle={() => setTrailEnabled((v) => !v)}
-          onFrameChange={handleFrameChange}
         />
 
         {/* Collapsible joint mapping */}
