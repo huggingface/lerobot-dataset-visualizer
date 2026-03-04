@@ -322,8 +322,9 @@ function EpisodeViewerInner({
   // Use context for time sync
   const { currentTime, setCurrentTime, setIsPlaying, isPlaying } = useTime();
 
-  // URDFViewer episode changer — populated by URDFViewer on mount
+  // URDFViewer episode changer and play toggle — populated by URDFViewer on mount
   const urdfChangerRef = useRef<((ep: number) => void) | undefined>(undefined);
+  const urdfPlayToggleRef = useRef<(() => void) | undefined>(undefined);
   const [urdfEpisode, setUrdfEpisode] = useState(episodeId);
   useEffect(() => setUrdfEpisode(episodeId), [episodeId]);
 
@@ -385,23 +386,37 @@ function EpisodeViewerInner({
 
       if (key === " ") {
         e.preventDefault();
-        setIsPlaying((prev: boolean) => !prev);
+        if (activeTab === "urdf") {
+          urdfPlayToggleRef.current?.();
+        } else {
+          setIsPlaying((prev: boolean) => !prev);
+        }
       } else if (key === "ArrowDown" || key === "ArrowUp") {
         e.preventDefault();
-        const nextEpisodeId =
-          key === "ArrowDown" ? episodeId + 1 : episodeId - 1;
-        const lowestEpisodeId = episodes[0];
-        const highestEpisodeId = episodes[episodes.length - 1];
-
-        if (
-          nextEpisodeId >= lowestEpisodeId &&
-          nextEpisodeId <= highestEpisodeId
-        ) {
-          router.push(`./episode_${nextEpisodeId}`);
+        if (activeTab === "urdf") {
+          const nextEp =
+            key === "ArrowDown" ? urdfEpisode + 1 : urdfEpisode - 1;
+          const lowest = episodes[0];
+          const highest = episodes[episodes.length - 1];
+          if (nextEp >= lowest && nextEp <= highest) {
+            setUrdfEpisode(nextEp);
+            urdfChangerRef.current?.(nextEp);
+          }
+        } else {
+          const nextEpisodeId =
+            key === "ArrowDown" ? episodeId + 1 : episodeId - 1;
+          const lowestEpisodeId = episodes[0];
+          const highestEpisodeId = episodes[episodes.length - 1];
+          if (
+            nextEpisodeId >= lowestEpisodeId &&
+            nextEpisodeId <= highestEpisodeId
+          ) {
+            router.push(`./episode_${nextEpisodeId}`);
+          }
         }
       }
     },
-    [episodeId, episodes, router, setIsPlaying],
+    [activeTab, episodeId, episodes, router, setIsPlaying, urdfEpisode],
   );
 
   // Initialize based on URL time parameter
@@ -694,6 +709,7 @@ function EpisodeViewerInner({
                 org={org}
                 dataset={dataset}
                 episodeChangerRef={urdfChangerRef}
+                playToggleRef={urdfPlayToggleRef}
               />
             </Suspense>
           )}

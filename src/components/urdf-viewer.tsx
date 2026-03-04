@@ -19,6 +19,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import type { EpisodeData } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import { loadEpisodeFlatChartData } from "@/app/[org]/[dataset]/[episode]/fetch-data";
+import UrdfPlaybackBar from "@/components/urdf-playback-bar";
 import { CHART_CONFIG } from "@/utils/constants";
 import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
 import type { DatasetMetadata } from "@/utils/parquetUtils";
@@ -446,13 +447,13 @@ export default function URDFViewer({
   org,
   dataset,
   episodeChangerRef,
+  playToggleRef,
 }: {
   data: EpisodeData;
   org?: string;
   dataset?: string;
-  episodeChangerRef?: React.MutableRefObject<
-    ((ep: number) => void) | undefined
-  >;
+  episodeChangerRef?: React.RefObject<((ep: number) => void) | undefined>;
+  playToggleRef?: React.RefObject<(() => void) | undefined>;
 }) {
   const { datasetInfo } = data;
   const fps = datasetInfo.fps || 30;
@@ -581,6 +582,17 @@ export default function URDFViewer({
     [],
   );
 
+  const handlePlayPause = useCallback(() => {
+    setPlaying((prev) => {
+      if (!prev) frameRef.current = frame;
+      return !prev;
+    });
+  }, [frame]);
+
+  useEffect(() => {
+    if (playToggleRef) playToggleRef.current = handlePlayPause;
+  }, [playToggleRef, handlePlayPause]);
+
   // Filter out mimic joints (finger_joint2) from the UI list
   const displayJointNames = useMemo(
     () =>
@@ -653,9 +665,6 @@ export default function URDFViewer({
     return values;
   }, [chartData, frame, gripperRanges, mapping, totalFrames, urdfJointNames]);
 
-  const currentTime = totalFrames > 0 ? (frame / fps).toFixed(2) : "0.00";
-  const totalTime = (totalFrames / fps).toFixed(2);
-
   if (data.flatChartData.length === 0) {
     return (
       <div className="text-slate-400 p-8 text-center">
@@ -719,57 +728,16 @@ export default function URDFViewer({
 
       {/* Controls */}
       <div className="bg-slate-800/90 border-t border-slate-700 p-3 space-y-3 shrink-0">
-        {/* Timeline */}
-        <div className="flex items-center gap-3">
-          {/* Play/Pause */}
-          <button
-            onClick={() => {
-              setPlaying(!playing);
-              if (!playing) frameRef.current = frame;
-            }}
-            className="w-8 h-8 flex items-center justify-center rounded bg-orange-600 hover:bg-orange-500 text-white transition-colors shrink-0"
-          >
-            {playing ? (
-              <svg width="12" height="14" viewBox="0 0 12 14">
-                <rect x="1" y="1" width="3" height="12" fill="white" />
-                <rect x="8" y="1" width="3" height="12" fill="white" />
-              </svg>
-            ) : (
-              <svg width="12" height="14" viewBox="0 0 12 14">
-                <polygon points="2,1 11,7 2,13" fill="white" />
-              </svg>
-            )}
-          </button>
-
-          {/* Trail toggle */}
-          <button
-            onClick={() => setTrailEnabled((v) => !v)}
-            className={`px-2 h-8 text-xs rounded transition-colors shrink-0 ${
-              trailEnabled
-                ? "bg-orange-600/30 text-orange-400 border border-orange-500"
-                : "bg-slate-700 text-slate-400 border border-slate-600"
-            }`}
-            title={trailEnabled ? "Hide trail" : "Show trail"}
-          >
-            Trail
-          </button>
-
-          {/* Scrubber */}
-          <input
-            type="range"
-            min={0}
-            max={Math.max(totalFrames - 1, 0)}
-            value={frame}
-            onChange={handleFrameChange}
-            className="flex-1 h-1.5 accent-orange-500 cursor-pointer"
-          />
-          <span className="text-xs text-slate-400 tabular-nums w-28 text-right shrink-0">
-            {currentTime}s / {totalTime}s
-          </span>
-          <span className="text-xs text-slate-500 tabular-nums w-20 text-right shrink-0">
-            F {frame}/{Math.max(totalFrames - 1, 0)}
-          </span>
-        </div>
+        <UrdfPlaybackBar
+          frame={frame}
+          totalFrames={totalFrames}
+          fps={fps}
+          playing={playing}
+          onPlayPause={handlePlayPause}
+          trailEnabled={trailEnabled}
+          onTrailToggle={() => setTrailEnabled((v) => !v)}
+          onFrameChange={handleFrameChange}
+        />
 
         {/* Collapsible joint mapping */}
         <button
