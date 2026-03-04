@@ -454,7 +454,7 @@ export default function URDFViewer({
     ((ep: number) => void) | undefined
   >;
 }) {
-  const { datasetInfo, episodes } = data;
+  const { datasetInfo } = data;
   const fps = datasetInfo.fps || 30;
   const robotConfig = useMemo(
     () => getRobotConfig(datasetInfo.robot_type),
@@ -719,43 +719,8 @@ export default function URDFViewer({
 
       {/* Controls */}
       <div className="bg-slate-800/90 border-t border-slate-700 p-3 space-y-3 shrink-0">
-        {/* Episode selector + Timeline */}
+        {/* Timeline */}
         <div className="flex items-center gap-3">
-          {/* Episode selector */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              onClick={() => {
-                if (selectedEpisode > episodes[0])
-                  handleEpisodeChange(selectedEpisode - 1);
-              }}
-              disabled={selectedEpisode <= episodes[0]}
-              className="w-6 h-6 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed text-xs"
-            >
-              ◀
-            </button>
-            <select
-              value={selectedEpisode}
-              onChange={(e) => handleEpisodeChange(Number(e.target.value))}
-              className="bg-slate-900 text-slate-200 text-xs rounded px-1.5 py-1 border border-slate-600 w-28"
-            >
-              {episodes.map((ep) => (
-                <option key={ep} value={ep}>
-                  Episode {ep}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={() => {
-                if (selectedEpisode < episodes[episodes.length - 1])
-                  handleEpisodeChange(selectedEpisode + 1);
-              }}
-              disabled={selectedEpisode >= episodes[episodes.length - 1]}
-              className="w-6 h-6 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed text-xs"
-            >
-              ▶
-            </button>
-          </div>
-
           {/* Play/Pause */}
           <button
             onClick={() => {
