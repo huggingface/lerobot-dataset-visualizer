@@ -536,8 +536,8 @@ function EpisodeViewerInner({
 
       {/* Body: sidebar + content */}
       <div className="flex flex-1 min-h-0">
-        {/* Sidebar — only on Episodes tab */}
-        {activeTab === "episodes" && (
+        {/* Sidebar — on Episodes and 3D Replay tabs */}
+        {(activeTab === "episodes" || activeTab === "urdf") && (
           <Sidebar
             datasetInfo={datasetInfo}
             paginatedEpisodes={paginatedEpisodes}
