@@ -79,7 +79,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 {onEpisodeSelect ? (
                   <button
                     onClick={() => onEpisodeSelect(episode)}
-                    className={`underline text-left ${episode === episodeId ? "-ml-1 font-bold text-orange-400" : ""}`}
+                    className={`underline text-left cursor-pointer ${episode === episodeId ? "-ml-1 font-bold text-orange-400" : ""}`}
                   >
                     Episode {episode}
                   </button>
