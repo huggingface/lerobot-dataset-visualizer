@@ -16,6 +16,7 @@ interface SidebarProps {
   nextPage: () => void;
   showFlaggedOnly: boolean;
   onShowFlaggedOnlyChange: (v: boolean) => void;
+  onEpisodeSelect?: (ep: number) => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -28,6 +29,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   nextPage,
   showFlaggedOnly,
   onShowFlaggedOnlyChange,
+  onEpisodeSelect,
 }) => {
   const [mobileVisible, setMobileVisible] = useState(false);
   const { flagged, count, toggle } = useFlaggedEpisodes();
@@ -74,12 +76,21 @@ const Sidebar: React.FC<SidebarProps> = ({
                 key={episode}
                 className="mt-0.5 font-mono text-sm flex items-center gap-1"
               >
-                <Link
-                  href={`./episode_${episode}`}
-                  className={`underline ${episode === episodeId ? "-ml-1 font-bold" : ""}`}
-                >
-                  Episode {episode}
-                </Link>
+                {onEpisodeSelect ? (
+                  <button
+                    onClick={() => onEpisodeSelect(episode)}
+                    className={`underline text-left ${episode === episodeId ? "-ml-1 font-bold text-orange-400" : ""}`}
+                  >
+                    Episode {episode}
+                  </button>
+                ) : (
+                  <Link
+                    href={`./episode_${episode}`}
+                    className={`underline ${episode === episodeId ? "-ml-1 font-bold" : ""}`}
+                  >
+                    Episode {episode}
+                  </Link>
+                )}
                 <button
                   onClick={() => toggle(episode)}
                   className={`text-xs leading-none px-0.5 rounded transition-colors ${

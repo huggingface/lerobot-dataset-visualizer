@@ -445,10 +445,14 @@ export default function URDFViewer({
   data,
   org,
   dataset,
+  episodeChangerRef,
 }: {
   data: EpisodeData;
   org?: string;
   dataset?: string;
+  episodeChangerRef?: React.MutableRefObject<
+    ((ep: number) => void) | undefined
+  >;
 }) {
   const { datasetInfo, episodes } = data;
   const fps = datasetInfo.fps || 30;
@@ -514,6 +518,10 @@ export default function URDFViewer({
     },
     [ensureDatasetInfo, repoId],
   );
+
+  useEffect(() => {
+    if (episodeChangerRef) episodeChangerRef.current = handleEpisodeChange;
+  }, [episodeChangerRef, handleEpisodeChange]);
 
   const totalFrames = chartData.length;
 
