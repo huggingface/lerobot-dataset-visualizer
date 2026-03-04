@@ -34,29 +34,26 @@ export default function PlaybackBar({
   trailEnabled,
   onTrailToggle,
 }: PlaybackBarProps) {
-  const isDraggingRef = React.useRef(false);
   const wasPlayingRef = React.useRef(false);
-  const [displayValue, setDisplayValue] = React.useState(value);
-
-  React.useEffect(() => {
-    if (!isDraggingRef.current) setDisplayValue(value);
-  }, [value]);
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [dragValue, setDragValue] = React.useState(value);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = parseFloat(e.target.value);
-    setDisplayValue(v);
+    setDragValue(v);
     onSeek(v);
   };
 
   const handleDragStart = () => {
-    isDraggingRef.current = true;
+    setDragValue(value);
+    setIsDragging(true);
     wasPlayingRef.current = playing;
     onDragStart?.();
   };
 
   const handleDragEnd = () => {
-    isDraggingRef.current = false;
-    onDragEnd?.(displayValue, wasPlayingRef.current);
+    setIsDragging(false);
+    onDragEnd?.(dragValue, wasPlayingRef.current);
   };
 
   return (
@@ -99,7 +96,7 @@ export default function PlaybackBar({
         min={0}
         max={max}
         step={step}
-        value={displayValue}
+        value={isDragging ? dragValue : value}
         onChange={handleChange}
         onMouseDown={handleDragStart}
         onMouseUp={handleDragEnd}
