@@ -30,15 +30,15 @@ const DEG2RAD = Math.PI / 180;
 function getRobotConfig(robotType: string | null) {
   const lower = (robotType ?? "").toLowerCase();
   if (lower.includes("g1") || lower.includes("unitree")) {
-    return { urdfUrl: "/urdf/g1/g1_body29_hand14.urdf", scale: 1, isHumanoid: true };
+    return { urdfUrl: "/urdf/g1/g1_body29_hand14.urdf", scale: 1 };
   }
   if (lower.includes("openarm")) {
-    return { urdfUrl: "/urdf/openarm/openarm_bimanual.urdf", scale: 3, isHumanoid: false };
+    return { urdfUrl: "/urdf/openarm/openarm_bimanual.urdf", scale: 3 };
   }
   if (lower.includes("so100") && !lower.includes("so101")) {
-    return { urdfUrl: "/urdf/so101/so100.urdf", scale: 10, isHumanoid: false };
+    return { urdfUrl: "/urdf/so101/so100.urdf", scale: 10 };
   }
-  return { urdfUrl: "/urdf/so101/so101_new_calib.urdf", scale: 10, isHumanoid: false };
+  return { urdfUrl: "/urdf/so101/so101_new_calib.urdf", scale: 10 };
 }
 
 // Detect unit: servo ticks (0-4096), degrees (>6.28), or radians
@@ -180,7 +180,6 @@ function RobotScene({
   trailEnabled,
   trailResetKey,
   scale,
-  isHumanoid,
 }: {
   urdfUrl: string;
   jointValues: Record<string, number>;
@@ -188,7 +187,6 @@ function RobotScene({
   trailEnabled: boolean;
   trailResetKey: number;
   scale: number;
-  isHumanoid: boolean;
 }) {
   const { scene, size } = useThree();
   const robotRef = useRef<URDFRobot | null>(null);
@@ -531,7 +529,8 @@ export default function URDFViewer({
     () => getRobotConfig(datasetInfo.robot_type),
     [datasetInfo.robot_type],
   );
-  const { urdfUrl, scale, isHumanoid } = robotConfig;
+  const { urdfUrl, scale } = robotConfig;
+  const isG1 = urdfUrl.includes("g1");
   const repoId = org && dataset ? `${org}/${dataset}` : null;
   const datasetInfoRef = useRef<{
     version: string;
@@ -756,7 +755,7 @@ export default function URDFViewer({
         )}
         <Canvas
           camera={{
-            position: isHumanoid
+            position: isG1
               ? [1.5, 1.0, 1.5]
               : [0.3 * scale, 0.25 * scale, 0.3 * scale],
             fov: 45,
@@ -775,20 +774,19 @@ export default function URDFViewer({
             trailEnabled={trailEnabled}
             trailResetKey={selectedEpisode}
             scale={scale}
-            isHumanoid={isHumanoid}
           />
           <Grid
             args={[10, 10]}
-            cellSize={isHumanoid ? 0.5 : 0.2}
+            cellSize={isG1 ? 0.5 : 0.2}
             cellThickness={0.5}
             cellColor="#334155"
-            sectionSize={isHumanoid ? 2 : 1}
+            sectionSize={isG1 ? 2 : 1}
             sectionThickness={1}
             sectionColor="#475569"
-            fadeDistance={isHumanoid ? 20 : 10}
+            fadeDistance={isG1 ? 20 : 10}
             position={[0, 0, 0]}
           />
-          <OrbitControls target={isHumanoid ? [0, 0.5, 0] : [0, 0.8, 0]} />
+          <OrbitControls target={isG1 ? [0, 0.5, 0] : [0, 0.8, 0]} />
           <PlaybackDriver
             playing={playing}
             fps={fps}
