@@ -34,29 +34,36 @@ export default function PlaybackBar({
   trailEnabled,
   onTrailToggle,
 }: PlaybackBarProps) {
-  const isDraggingRef = React.useRef(false);
   const wasPlayingRef = React.useRef(false);
-  const [displayValue, setDisplayValue] = React.useState(value);
+  // committedRef holds the position to display when paused and not dragging.
+  // It is updated live while playing, and after each seek, but NOT when the
+  // browser fires timeupdate after pause (which can snap to a keyframe).
+  const committedRef = React.useRef(value);
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [dragValue, setDragValue] = React.useState(value);
 
-  React.useEffect(() => {
-    if (!isDraggingRef.current) setDisplayValue(value);
-  }, [value]);
+  // Keep committedRef in sync with live playback
+  if (playing && !isDragging) {
+    committedRef.current = value;
+  }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = parseFloat(e.target.value);
-    setDisplayValue(v);
+    setDragValue(v);
     onSeek(v);
   };
 
   const handleDragStart = () => {
-    isDraggingRef.current = true;
+    setDragValue(committedRef.current);
+    setIsDragging(true);
     wasPlayingRef.current = playing;
     onDragStart?.();
   };
 
   const handleDragEnd = () => {
-    isDraggingRef.current = false;
-    onDragEnd?.(displayValue, wasPlayingRef.current);
+    committedRef.current = dragValue;
+    setIsDragging(false);
+    onDragEnd?.(dragValue, wasPlayingRef.current);
   };
 
   return (
@@ -99,7 +106,7 @@ export default function PlaybackBar({
         min={0}
         max={max}
         step={step}
-        value={displayValue}
+        value={isDragging ? dragValue : committedRef.current}
         onChange={handleChange}
         onMouseDown={handleDragStart}
         onMouseUp={handleDragEnd}
