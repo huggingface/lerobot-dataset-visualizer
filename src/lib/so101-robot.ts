@@ -20,5 +20,7 @@ export function isG1Robot(robotType: string | null): boolean {
 }
 
 export function hasURDFSupport(robotType: string | null): boolean {
-  return isSO101Robot(robotType) || isOpenArmRobot(robotType) || isG1Robot(robotType);
+  return (
+    isSO101Robot(robotType) || isOpenArmRobot(robotType) || isG1Robot(robotType)
+  );
 }
