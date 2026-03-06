@@ -29,13 +29,16 @@ const DEG2RAD = Math.PI / 180;
 
 function getRobotConfig(robotType: string | null) {
   const lower = (robotType ?? "").toLowerCase();
+  if (lower.includes("g1") || lower.includes("unitree")) {
+    return { urdfUrl: "/urdf/g1/g1_body29_hand14.urdf", scale: 1, isHumanoid: true };
+  }
   if (lower.includes("openarm")) {
-    return { urdfUrl: "/urdf/openarm/openarm_bimanual.urdf", scale: 3 };
+    return { urdfUrl: "/urdf/openarm/openarm_bimanual.urdf", scale: 3, isHumanoid: false };
   }
   if (lower.includes("so100") && !lower.includes("so101")) {
-    return { urdfUrl: "/urdf/so101/so100.urdf", scale: 10 };
+    return { urdfUrl: "/urdf/so101/so100.urdf", scale: 10, isHumanoid: false };
   }
-  return { urdfUrl: "/urdf/so101/so101_new_calib.urdf", scale: 10 };
+  return { urdfUrl: "/urdf/so101/so101_new_calib.urdf", scale: 10, isHumanoid: false };
 }
 
 // Detect unit: servo ticks (0-4096), degrees (>6.28), or radians
@@ -59,6 +62,39 @@ function groupColumnsByPrefix(keys: string[]): Record<string, string[]> {
   return groups;
 }
 
+// Unitree G1 SDK column suffix → URDF joint name
+const G1_SDK_TO_URDF: Record<string, string> = {
+  "klefthippitch.q": "left_hip_pitch_joint",
+  "klefthiproll.q": "left_hip_roll_joint",
+  "klefthipyaw.q": "left_hip_yaw_joint",
+  "kleftknee.q": "left_knee_joint",
+  "kleftanklepitch.q": "left_ankle_pitch_joint",
+  "kleftankleroll.q": "left_ankle_roll_joint",
+  "krighthippitch.q": "right_hip_pitch_joint",
+  "krighthiproll.q": "right_hip_roll_joint",
+  "krighthipyaw.q": "right_hip_yaw_joint",
+  "krightknee.q": "right_knee_joint",
+  "krightanklepitch.q": "right_ankle_pitch_joint",
+  "krightankleroll.q": "right_ankle_roll_joint",
+  "kwaistyaw.q": "waist_yaw_joint",
+  "kwaistroll.q": "waist_roll_joint",
+  "kwaistpitch.q": "waist_pitch_joint",
+  "kleftshoulderpitch.q": "left_shoulder_pitch_joint",
+  "kleftshoulderroll.q": "left_shoulder_roll_joint",
+  "kleftshoulderyaw.q": "left_shoulder_yaw_joint",
+  "kleftelbow.q": "left_elbow_joint",
+  "kleftwristroll.q": "left_wrist_roll_joint",
+  "kleftwristpitch.q": "left_wrist_pitch_joint",
+  "kleftwristyaw.q": "left_wrist_yaw_joint",
+  "krightshoulderpitch.q": "right_shoulder_pitch_joint",
+  "krightshoulderroll.q": "right_shoulder_roll_joint",
+  "krightshoulderyaw.q": "right_shoulder_yaw_joint",
+  "krightelbow.q": "right_elbow_joint",
+  "krightwristroll.q": "right_wrist_roll_joint",
+  "krightwristpitch.q": "right_wrist_pitch_joint",
+  "krightwristyaw.q": "right_wrist_yaw_joint",
+};
+
 function autoMatchJoints(
   urdfJointNames: string[],
   columnKeys: string[],
@@ -68,6 +104,13 @@ function autoMatchJoints(
     (k.split(SERIES_DELIM).pop()?.trim() ?? k).toLowerCase(),
   );
 
+  // Build reverse lookup: URDF joint name → column key (for G1 SDK-style columns)
+  const g1Reverse = new Map<string, string>();
+  for (let i = 0; i < suffixes.length; i++) {
+    const urdfName = G1_SDK_TO_URDF[suffixes[i]];
+    if (urdfName) g1Reverse.set(urdfName, columnKeys[i]);
+  }
+
   for (const jointName of urdfJointNames) {
     const lower = jointName.toLowerCase();
 
@@ -75,6 +118,13 @@ function autoMatchJoints(
     const exactIdx = suffixes.findIndex((s) => s === lower);
     if (exactIdx >= 0) {
       mapping[jointName] = columnKeys[exactIdx];
+      continue;
+    }
+
+    // G1 / Unitree SDK name match
+    const g1Col = g1Reverse.get(lower);
+    if (g1Col) {
+      mapping[jointName] = g1Col;
       continue;
     }
 
@@ -117,6 +167,7 @@ const SINGLE_ARM_TIP_NAMES = [
   "gripper",
 ];
 const DUAL_ARM_TIP_NAMES = ["openarm_left_hand_tcp", "openarm_right_hand_tcp"];
+const G1_TIP_NAMES = ["left_hand_palm_link", "right_hand_palm_link"];
 const TRAIL_DURATION = 1.0;
 const TRAIL_COLORS = [new THREE.Color("#ff6600"), new THREE.Color("#00aaff")];
 const MAX_TRAIL_POINTS = 300;
@@ -129,6 +180,7 @@ function RobotScene({
   trailEnabled,
   trailResetKey,
   scale,
+  isHumanoid,
 }: {
   urdfUrl: string;
   jointValues: Record<string, number>;
@@ -136,6 +188,7 @@ function RobotScene({
   trailEnabled: boolean;
   trailResetKey: number;
   scale: number;
+  isHumanoid: boolean;
 }) {
   const { scene, size } = useThree();
   const robotRef = useRef<URDFRobot | null>(null);
@@ -211,6 +264,7 @@ function RobotScene({
     setLoading(true);
     setError(null);
     const isOpenArm = urdfUrl.includes("openarm");
+    const isG1 = urdfUrl.includes("g1");
     const manager = new THREE.LoadingManager();
     const loader = new URDFLoader(manager);
     loader.loadMeshCb = (url, mgr, onLoad) => {
@@ -248,7 +302,19 @@ function RobotScene({
           let color = "#FFD700";
           let metalness = 0.1;
           let roughness = 0.6;
-          if (url.includes("sts3215")) {
+          if (isG1) {
+            const lower = url.toLowerCase();
+            const isWhitePart =
+              lower.includes("contour") ||
+              lower.includes("roll_link") ||
+              lower.includes("logo") ||
+              lower.includes("rubber") ||
+              lower.includes("constraint") ||
+              lower.includes("support");
+            color = isWhitePart ? "#c0c0c0" : "#2a2a2a";
+            metalness = 0.3;
+            roughness = 0.5;
+          } else if (url.includes("sts3215")) {
             color = "#1a1a1a";
             metalness = 0.7;
             roughness = 0.3;
@@ -281,11 +347,15 @@ function RobotScene({
         robot.scale.set(scale, scale, scale);
         scene.add(robot);
 
-        const tipNames = isOpenArm ? DUAL_ARM_TIP_NAMES : SINGLE_ARM_TIP_NAMES;
+        const tipNames = isG1
+          ? G1_TIP_NAMES
+          : isOpenArm
+            ? DUAL_ARM_TIP_NAMES
+            : SINGLE_ARM_TIP_NAMES;
         const tips: THREE.Object3D[] = [];
         for (const name of tipNames) {
           if (robot.frames[name]) tips.push(robot.frames[name]);
-          if (!isOpenArm && tips.length === 1) break;
+          if (!isOpenArm && !isG1 && tips.length === 1) break;
         }
         tipLinksRef.current = tips;
         ensureTrails(tips.length);
@@ -461,7 +531,7 @@ export default function URDFViewer({
     () => getRobotConfig(datasetInfo.robot_type),
     [datasetInfo.robot_type],
   );
-  const { urdfUrl, scale } = robotConfig;
+  const { urdfUrl, scale, isHumanoid } = robotConfig;
   const repoId = org && dataset ? `${org}/${dataset}` : null;
   const datasetInfoRef = useRef<{
     version: string;
@@ -686,7 +756,9 @@ export default function URDFViewer({
         )}
         <Canvas
           camera={{
-            position: [0.3 * scale, 0.25 * scale, 0.3 * scale],
+            position: isHumanoid
+              ? [1.5, 1.0, 1.5]
+              : [0.3 * scale, 0.25 * scale, 0.3 * scale],
             fov: 45,
             near: 0.01,
             far: 100,
@@ -703,19 +775,20 @@ export default function URDFViewer({
             trailEnabled={trailEnabled}
             trailResetKey={selectedEpisode}
             scale={scale}
+            isHumanoid={isHumanoid}
           />
           <Grid
             args={[10, 10]}
-            cellSize={0.2}
+            cellSize={isHumanoid ? 0.5 : 0.2}
             cellThickness={0.5}
             cellColor="#334155"
-            sectionSize={1}
+            sectionSize={isHumanoid ? 2 : 1}
             sectionThickness={1}
             sectionColor="#475569"
-            fadeDistance={10}
+            fadeDistance={isHumanoid ? 20 : 10}
             position={[0, 0, 0]}
           />
-          <OrbitControls target={[0, 0.8, 0]} />
+          <OrbitControls target={isHumanoid ? [0, 0.5, 0] : [0, 0.8, 0]} />
           <PlaybackDriver
             playing={playing}
             fps={fps}
