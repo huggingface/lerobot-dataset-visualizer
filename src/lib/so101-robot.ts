@@ -13,6 +13,14 @@ export function isOpenArmRobot(robotType: string | null): boolean {
   return robotType.toLowerCase().includes("openarm");
 }
 
+export function isG1Robot(robotType: string | null): boolean {
+  if (!robotType) return false;
+  const lower = robotType.toLowerCase();
+  return lower.includes("g1") || lower.includes("unitree");
+}
+
 export function hasURDFSupport(robotType: string | null): boolean {
-  return isSO101Robot(robotType) || isOpenArmRobot(robotType);
+  return (
+    isSO101Robot(robotType) || isOpenArmRobot(robotType) || isG1Robot(robotType)
+  );
 }
