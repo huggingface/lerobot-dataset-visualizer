@@ -188,6 +188,17 @@ function EpisodeViewerInner({
     setCrossEpData(null);
   }, [datasetInfo.repoId]);
 
+  // Eagerly load the URDFViewer bundle + warm the STL geometry cache while
+  // the user is on the Episodes tab, so the 3D Replay tab opens faster.
+  useEffect(() => {
+    if (
+      hasURDFSupport(datasetInfo.robot_type) &&
+      datasetInfo.codebase_version >= "v3.0"
+    ) {
+      void import("@/components/urdf-viewer");
+    }
+  }, [datasetInfo.robot_type, datasetInfo.codebase_version]);
+
   // Hydrate UI state from sessionStorage after mount (avoids SSR/client mismatch)
   useEffect(() => {
     const stored = sessionStorage.getItem("activeTab");
