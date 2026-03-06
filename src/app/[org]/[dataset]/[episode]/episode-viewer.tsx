@@ -654,7 +654,22 @@ function EpisodeViewerInner({
                 />
               </div>
 
-              <PlaybackBar />
+              <div className="sticky bottom-0 bg-slate-900/95 px-4 py-3 rounded-3xl mt-auto">
+                <PlaybackBar
+                  playing={isPlaying}
+                  onPlayPause={() => setIsPlaying((p) => !p)}
+                  value={currentTime}
+                  max={data.duration}
+                  step={0.01}
+                  onSeek={setCurrentTime}
+                  onDragStart={() => setIsPlaying(false)}
+                  onDragEnd={(v, wasPlaying) => {
+                    setCurrentTime(v);
+                    if (wasPlaying) setIsPlaying(true);
+                  }}
+                  timeLabel={`${currentTime.toFixed(1)}s / ${data.duration.toFixed(1)}s`}
+                />
+              </div>
             </>
           )}
 
