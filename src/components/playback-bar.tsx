@@ -1,5 +1,5 @@
 import React from "react";
-import { useTime } from "../context/time-context";
+import { useTimeControl } from "../context/time-context";
 import {
   FaPlay,
   FaPause,
@@ -10,25 +10,38 @@ import {
   FaArrowUp,
 } from "react-icons/fa";
 
+// PlaybackBar uses useTimeControl (stable context) so it is never re-rendered
+// by time updates. The slider thumb and time display are updated imperatively
+// via the subscribe callback instead, which runs at the full timeupdate rate
+// without going through React's render cycle.
 const PlaybackBar: React.FC = () => {
-  const { duration, isPlaying, setIsPlaying, currentTime, setCurrentTime } =
-    useTime();
+  const { duration, isPlaying, setIsPlaying, setCurrentTime, subscribe } =
+    useTimeControl();
 
+  const sliderRef = React.useRef<HTMLInputElement>(null);
+  const timeDisplayRef = React.useRef<HTMLSpanElement>(null);
   const sliderActiveRef = React.useRef(false);
   const wasPlayingRef = React.useRef(false);
-  const [sliderValue, setSliderValue] = React.useState(currentTime);
+  // Track current time in a ref so click handlers can read it without
+  // needing currentTime as React state (which would cause re-renders).
+  const currentTimeRef = React.useRef(0);
 
-  // Only update sliderValue from context if not dragging
+  // Imperatively move the slider and update the time display on every tick.
   React.useEffect(() => {
-    if (!sliderActiveRef.current) {
-      setSliderValue(currentTime);
-    }
-  }, [currentTime]);
+    return subscribe((t) => {
+      currentTimeRef.current = t;
+      if (sliderRef.current && !sliderActiveRef.current) {
+        sliderRef.current.value = String(t);
+      }
+      if (timeDisplayRef.current) {
+        timeDisplayRef.current.textContent = `${Math.floor(t)} / ${Math.floor(duration)}`;
+      }
+    });
+  }, [subscribe, duration]);
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const t = Number(e.target.value);
-    setSliderValue(t);
-    // Seek videos immediately while dragging (no debounce)
+    currentTimeRef.current = t;
     setCurrentTime(t);
   };
 
@@ -40,8 +53,7 @@ const PlaybackBar: React.FC = () => {
 
   const handleSliderMouseUp = () => {
     sliderActiveRef.current = false;
-    // Final seek to exact slider position
-    setCurrentTime(sliderValue);
+    setCurrentTime(currentTimeRef.current);
     if (wasPlayingRef.current) {
       setIsPlaying(true);
     }
@@ -51,7 +63,7 @@ const PlaybackBar: React.FC = () => {
     <div className="flex items-center gap-4 w-full max-w-4xl mx-auto sticky bottom-0 bg-slate-900/95 px-4 py-3 rounded-3xl mt-auto">
       <button
         title="Jump backward 5 seconds"
-        onClick={() => setCurrentTime(Math.max(0, currentTime - 5))}
+        onClick={() => setCurrentTime(Math.max(0, currentTimeRef.current - 5))}
         className="text-2xl hidden md:block"
       >
         <FaBackward size={24} />
@@ -74,7 +86,7 @@ const PlaybackBar: React.FC = () => {
       </button>
       <button
         title="Jump forward 5 seconds"
-        onClick={() => setCurrentTime(Math.min(duration, currentTime + 5))}
+        onClick={() => setCurrentTime(Math.min(duration, currentTimeRef.current + 5))}
         className="text-2xl hidden md:block"
       >
         <FaForward size={24} />
@@ -87,11 +99,12 @@ const PlaybackBar: React.FC = () => {
         <FaUndoAlt size={24} />
       </button>
       <input
+        ref={sliderRef}
         type="range"
         min={0}
         max={duration}
         step={0.01}
-        value={sliderValue}
+        defaultValue={0}
         onChange={handleSliderChange}
         onMouseDown={handleSliderMouseDown}
         onMouseUp={handleSliderMouseUp}
@@ -100,8 +113,11 @@ const PlaybackBar: React.FC = () => {
         className="flex-1 mx-2 accent-orange-500 focus:outline-none focus:ring-0"
         aria-label="Seek video"
       />
-      <span className="w-16 text-right tabular-nums text-xs text-slate-200 shrink-0">
-        {Math.floor(sliderValue)} / {Math.floor(duration)}
+      <span
+        ref={timeDisplayRef}
+        className="w-16 text-right tabular-nums text-xs text-slate-200 shrink-0"
+      >
+        0 / {Math.floor(duration)}
       </span>
 
       <div className="text-xs text-slate-300 select-none ml-8 flex-col gap-y-0.5 hidden md:flex">

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useCallback } from "react";
-import { useTime } from "../context/time-context";
+import { useTimeControl } from "../context/time-context";
 import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
 import type { VideoInfo } from "@/types";
 
@@ -25,7 +25,7 @@ export const SimpleVideosPlayer = ({
   videosInfo,
   onVideosReady,
 }: VideoPlayerProps) => {
-  const { setCurrentTime, subscribe, isPlaying, setIsPlaying } = useTime();
+  const { setCurrentTime, subscribe, isPlaying, setIsPlaying } = useTimeControl();
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const [hiddenVideos, setHiddenVideos] = React.useState<string[]>([]);
   const [enlargedVideo, setEnlargedVideo] = React.useState<string | null>(null);

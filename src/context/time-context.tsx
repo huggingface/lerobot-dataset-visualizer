@@ -5,11 +5,23 @@ import React, {
   useState,
   useCallback,
   useEffect,
+  useMemo,
 } from "react";
 
-type TimeContextType = {
-  currentTime: number;
+// ── Volatile context ──────────────────────────────────────────────────────────
+// Re-renders every consumer on each throttled time update.
+// Only subscribe to this if you genuinely need currentTime as React state
+// (e.g. URL sync, conditional rendering based on playhead position).
+type TimeValueContextType = { currentTime: number };
+const TimeValueContext = createContext<TimeValueContextType>({ currentTime: 0 });
+
+// ── Stable context ────────────────────────────────────────────────────────────
+// Values here change only rarely (play/pause, duration change).
+// Components that use useTimeControl() are never re-rendered by time updates,
+// which eliminates cascading renders in PlaybackBar, video players, etc.
+type TimeControlContextType = {
   setCurrentTime: (t: number) => void;
+  /** Subscribe to every time update imperatively without causing re-renders. */
   subscribe: (cb: (t: number) => void) => () => void;
   isPlaying: boolean;
   setIsPlaying: React.Dispatch<React.SetStateAction<boolean>>;
@@ -17,12 +29,25 @@ type TimeContextType = {
   setDuration: React.Dispatch<React.SetStateAction<number>>;
 };
 
-const TimeContext = createContext<TimeContextType | undefined>(undefined);
+const TimeControlContext = createContext<TimeControlContextType | undefined>(
+  undefined,
+);
 
+/** Full context — re-renders on every throttled time update. */
 export const useTime = () => {
-  const ctx = useContext(TimeContext);
-  if (!ctx) throw new Error("useTime must be used within a TimeProvider");
-  return ctx;
+  const value = useContext(TimeValueContext);
+  const control = useContext(TimeControlContext);
+  if (!control) throw new Error("useTime must be used within a TimeProvider");
+  return { ...value, ...control };
+};
+
+/** Stable context — never re-renders due to time updates. Use subscribe() for
+ *  imperative time-driven updates (video sync, slider position, chart cursor). */
+export const useTimeControl = () => {
+  const control = useContext(TimeControlContext);
+  if (!control)
+    throw new Error("useTimeControl must be used within a TimeProvider");
+  return control;
 };
 
 const TIME_RENDER_THROTTLE_MS = 80;
@@ -48,7 +73,7 @@ export const TimeProvider: React.FC<{
 
     // Throttle React state updates — during playback, timeupdate fires ~4×/sec
     // per video. Coalescing into rAF + a minimum interval avoids cascading
-    // re-renders across PlaybackBar, charts, etc.
+    // re-renders in any component that still reads currentTime as React state.
     if (rafId.current === null) {
       rafId.current = requestAnimationFrame(() => {
         rafId.current = null;
@@ -80,19 +105,26 @@ export const TimeProvider: React.FC<{
     return () => listeners.current.delete(cb);
   }, []);
 
+  // Stable control value — only re-creates when isPlaying/duration change,
+  // never on time updates. Components using useTimeControl() are insulated
+  // from the high-frequency setCurrentTimeState calls above.
+  const controlValue = useMemo(
+    () => ({
+      setCurrentTime: updateTime,
+      subscribe,
+      isPlaying,
+      setIsPlaying,
+      duration,
+      setDuration,
+    }),
+    [updateTime, subscribe, isPlaying, duration],
+  );
+
   return (
-    <TimeContext.Provider
-      value={{
-        currentTime,
-        setCurrentTime: updateTime,
-        subscribe,
-        isPlaying,
-        setIsPlaying,
-        duration,
-        setDuration,
-      }}
-    >
-      {children}
-    </TimeContext.Provider>
+    <TimeControlContext.Provider value={controlValue}>
+      <TimeValueContext.Provider value={{ currentTime }}>
+        {children}
+      </TimeValueContext.Provider>
+    </TimeControlContext.Provider>
   );
 };

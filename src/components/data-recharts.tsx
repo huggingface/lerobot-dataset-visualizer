@@ -1,7 +1,14 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useTime } from "../context/time-context";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useTime, useTimeControl } from "../context/time-context";
 import {
   LineChart,
   Line,
@@ -10,7 +17,6 @@ import {
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
-  ReferenceLine,
 } from "recharts";
 
 type ChartRow = Record<string, number | Record<string, number>>;
@@ -155,7 +161,8 @@ const SingleDataGraph = React.memo(
     setHoveredTime: (t: number | null) => void;
     tall?: boolean;
   }) => {
-    const { currentTime, setCurrentTime } = useTime();
+    const { setCurrentTime } = useTime();
+    const { subscribe } = useTimeControl();
     const flattenRow = useCallback(
       (row: Record<string, number | Record<string, number>>, prefix = "") => {
         const result: Record<string, number> = {};
@@ -231,12 +238,129 @@ const SingleDataGraph = React.memo(
     // Find the closest data point to the current time for highlighting
     const findClosestDataIndex = (time: number) => {
       if (!chartData.length) return 0;
-      // Find the index of the first data point whose timestamp is >= time (ceiling)
       const idx = chartData.findIndex((point) => point.timestamp >= time);
       if (idx !== -1) return idx;
-      // If all timestamps are less than time, return the last index
       return chartData.length - 1;
     };
+
+    // ── Imperative cursor ────────────────────────────────────────────────────
+    // Instead of a Recharts ReferenceLine (which re-renders the entire SVG on
+    // every time update), we overlay a plain div and move it via style.left.
+    const containerRef = useRef<HTMLDivElement>(null);
+    const cursorRef = useRef<HTMLDivElement>(null);
+    const plotBoundsRef = useRef({ left: 0, width: 0, top: 0, height: 0 });
+
+    const minTime = useMemo(() => chartData[0]?.timestamp ?? 0, [chartData]);
+    const maxTime = useMemo(
+      () => chartData[chartData.length - 1]?.timestamp ?? 1,
+      [chartData],
+    );
+    const minTimeRef = useRef(minTime);
+    const maxTimeRef = useRef(maxTime);
+    useEffect(() => {
+      minTimeRef.current = minTime;
+      maxTimeRef.current = maxTime;
+    }, [minTime, maxTime]);
+
+    const chartDataRef = useRef(chartData);
+    useEffect(() => { chartDataRef.current = chartData; }, [chartData]);
+
+    // Measure the cartesian-grid element to know the exact plot-area bounds.
+    const measurePlot = useCallback(() => {
+      const cont = containerRef.current;
+      if (!cont) return;
+      const grid = cont.querySelector(".recharts-cartesian-grid");
+      if (!grid) return;
+      const gr = grid.getBoundingClientRect();
+      const cr = cont.getBoundingClientRect();
+      plotBoundsRef.current = {
+        left: gr.left - cr.left,
+        width: gr.width,
+        top: gr.top - cr.top,
+        height: gr.height,
+      };
+    }, []);
+
+    useLayoutEffect(() => {
+      const id = setTimeout(measurePlot, 50);
+      return () => clearTimeout(id);
+    }, [measurePlot, chartData, dataKeys]);
+
+    useEffect(() => {
+      const el = containerRef.current;
+      if (!el) return;
+      const ro = new ResizeObserver(measurePlot);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }, [measurePlot]);
+
+    // ── Imperative legend values ─────────────────────────────────────────────
+    const legendValueRefs = useRef(new Map<string, HTMLSpanElement | null>());
+    const hoveredTimeRef = useRef(hoveredTime);
+    useEffect(() => { hoveredTimeRef.current = hoveredTime; }, [hoveredTime]);
+
+    const updateLegendValues = useCallback((time: number) => {
+      const idx = findClosestDataIndex(time);
+      const row = chartDataRef.current[idx] || {};
+      legendValueRefs.current.forEach((el, key) => {
+        if (el) {
+          el.textContent =
+            typeof row[key] === "number"
+              ? (row[key] as number).toFixed(3)
+              : "–";
+        }
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+      if (hoveredTime !== null) updateLegendValues(hoveredTime);
+    }, [hoveredTime, updateLegendValues]);
+
+    // ── Subscribe: move cursor div + update legend on every time tick ────────
+    const latestTimeRef = useRef(0);
+    const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+      return subscribe((t) => {
+        latestTimeRef.current = t;
+
+        if (cursorRef.current && plotBoundsRef.current.width > 0) {
+          const { left, width, top, height } = plotBoundsRef.current;
+          const tMin = minTimeRef.current;
+          const tMax = maxTimeRef.current;
+          const p =
+            tMax > tMin
+              ? Math.max(0, Math.min(1, (t - tMin) / (tMax - tMin)))
+              : 0;
+          const cur = cursorRef.current;
+          cur.style.left = `${left + p * width}px`;
+          cur.style.top = `${top}px`;
+          cur.style.height = `${height}px`;
+          cur.style.display = "block";
+        }
+
+        if (hoveredTimeRef.current === null) updateLegendValues(t);
+
+        // Settle: snap to exact position 100 ms after movement stops
+        if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+        settleTimerRef.current = setTimeout(() => {
+          if (cursorRef.current && plotBoundsRef.current.width > 0) {
+            const { left, width, top, height } = plotBoundsRef.current;
+            const tMin = minTimeRef.current;
+            const tMax = maxTimeRef.current;
+            const p =
+              tMax > tMin
+                ? Math.max(0, Math.min(1, (latestTimeRef.current - tMin) / (tMax - tMin)))
+                : 0;
+            cursorRef.current.style.left = `${left + p * width}px`;
+            cursorRef.current.style.top = `${top}px`;
+            cursorRef.current.style.height = `${height}px`;
+          }
+          if (hoveredTimeRef.current === null) updateLegendValues(latestTimeRef.current);
+        }, 100);
+      });
+    }, [subscribe, updateLegendValues]);
 
     const handleMouseLeave = () => {
       setHoveredTime(null);
@@ -250,13 +374,9 @@ const SingleDataGraph = React.memo(
       }
     };
 
-    // Custom legend to show current value next to each series
+    // Custom legend — series value spans are updated imperatively via
+    // legendValueRefs so the legend never re-renders on time updates.
     const CustomLegend = () => {
-      const closestIndex = findClosestDataIndex(
-        hoveredTime != null ? hoveredTime : currentTime,
-      );
-      const currentData = chartData[closestIndex] || {};
-
       const isGroupChecked = (group: string) =>
         groups[group].every((k) => visibleKeys.includes(k));
       const isGroupIndeterminate = (group: string) =>
@@ -325,11 +445,10 @@ const SingleDataGraph = React.memo(
                           {label}
                         </span>
                         <span
+                          ref={(el) => legendValueRefs.current.set(key, el)}
                           className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-orange-300/80" : "text-slate-600"}`}
                         >
-                          {typeof currentData[key] === "number"
-                            ? currentData[key].toFixed(2)
-                            : "–"}
+                          –
                         </span>
                       </label>
                     );
@@ -358,11 +477,10 @@ const SingleDataGraph = React.memo(
                   {key}
                 </span>
                 <span
+                  ref={(el) => legendValueRefs.current.set(key, el)}
                   className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-orange-300/80" : "text-slate-600"}`}
                 >
-                  {typeof currentData[key] === "number"
-                    ? currentData[key].toFixed(2)
-                    : "–"}
+                  –
                 </span>
               </label>
             );
@@ -394,10 +512,27 @@ const SingleDataGraph = React.memo(
             {chartTitle}
           </p>
         )}
+        {/* Relative wrapper so the imperative cursor div can be positioned
+            inside the chart area without affecting Recharts' own layout. */}
         <div
-          className={`w-full ${tall ? "h-[500px]" : "h-72"}`}
+          ref={containerRef}
+          className={`relative w-full ${tall ? "h-[500px]" : "h-72"}`}
           onMouseLeave={handleMouseLeave}
         >
+          {/* Cursor line — moved imperatively by the subscribe callback.
+              display:none until the first time update fires. */}
+          <div
+            ref={cursorRef}
+            style={{
+              display: "none",
+              position: "absolute",
+              width: 2,
+              background: "#f97316",
+              opacity: 0.7,
+              pointerEvents: "none",
+              zIndex: 10,
+            }}
+          />
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={chartData}
@@ -419,6 +554,8 @@ const SingleDataGraph = React.memo(
               />
               <XAxis
                 dataKey="timestamp"
+                type="number"
+                scale="linear"
                 domain={[
                   chartData.at(0)?.timestamp ?? 0,
                   chartData.at(-1)?.timestamp ?? 0,
@@ -443,21 +580,7 @@ const SingleDataGraph = React.memo(
                 }}
               />
 
-              <Tooltip
-                content={() => null}
-                active={true}
-                isAnimationActive={false}
-                defaultIndex={
-                  !hoveredTime ? findClosestDataIndex(currentTime) : undefined
-                }
-              />
-
-              <ReferenceLine
-                x={currentTime}
-                stroke="#f97316"
-                strokeWidth={1.5}
-                strokeOpacity={0.7}
-              />
+              <Tooltip content={() => null} isAnimationActive={false} />
 
               {dataKeys.map((key) => {
                 const group = key.includes(SERIES_NAME_DELIMITER)
