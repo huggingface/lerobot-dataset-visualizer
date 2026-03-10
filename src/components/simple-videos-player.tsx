@@ -6,7 +6,11 @@ import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
 import type { VideoInfo } from "@/types";
 
 const THRESHOLDS = {
-  VIDEO_SYNC_TOLERANCE: 0.2,
+  // Loose during playback — prevents the Chrome feedback loop where seeking
+  // triggers onTimeUpdate → setCurrentTime → re-seek → loop.
+  VIDEO_SYNC_PLAYING: 1.0,
+  // Tight when paused so manual frame-stepping is frame-accurate.
+  VIDEO_SYNC_PAUSED: 0.05,
   VIDEO_SEGMENT_BOUNDARY: 0.05,
 };
 
@@ -17,13 +21,11 @@ type VideoPlayerProps = {
   onVideosReady?: () => void;
 };
 
-const videoEventCleanup = new WeakMap<HTMLVideoElement, () => void>();
-
 export const SimpleVideosPlayer = ({
   videosInfo,
   onVideosReady,
 }: VideoPlayerProps) => {
-  const { currentTime, setCurrentTime, isPlaying, setIsPlaying } = useTime();
+  const { setCurrentTime, subscribe, isPlaying, setIsPlaying } = useTime();
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const [hiddenVideos, setHiddenVideos] = React.useState<string[]>([]);
   const [enlargedVideo, setEnlargedVideo] = React.useState<string | null>(null);
@@ -36,9 +38,10 @@ export const SimpleVideosPlayer = ({
     (video) => !hiddenSet.has(video.filename),
   );
 
-  // Tracks the last time value set by the primary video's onTimeUpdate.
-  // If currentTime differs from this, an external source (slider/chart click) changed it.
-  const lastVideoTimeRef = useRef(0);
+  // Keep a ref so the sync callback always sees the current play state
+  // without needing to re-subscribe whenever isPlaying changes.
+  const isPlayingRef = useRef(isPlaying);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
 
   // Initialize video refs array
   useEffect(() => {
@@ -66,66 +69,65 @@ export const SimpleVideosPlayer = ({
 
     const timeout = setTimeout(markReady, VIDEO_READY_TIMEOUT_MS);
 
+    // Capture cleanups in the closure so each effect run removes exactly the
+    // listeners it added — safe across React Strict Mode double-invocation
+    // (where the module-level WeakMap approach could lose the first cleanup).
+    const cleanups: (() => void)[] = [];
+
     videoRefs.current.forEach((video, index) => {
-      if (video) {
-        const info = videosInfo[index];
+      if (!video) return;
+      const info = videosInfo[index];
 
-        if (info.isSegmented) {
-          const handleTimeUpdate = () => {
-            const segmentEnd = info.segmentEnd || video.duration;
-            const segmentStart = info.segmentStart || 0;
+      if (info.isSegmented) {
+        const segmentStart = info.segmentStart || 0;
 
-            if (
-              video.currentTime >=
-              segmentEnd - THRESHOLDS.VIDEO_SEGMENT_BOUNDARY
-            ) {
-              video.currentTime = segmentStart;
-              if (index === firstVisibleIdx) {
-                setCurrentTime(0);
-              }
-            }
-          };
+        const handleTimeUpdate = () => {
+          const segmentEnd = info.segmentEnd || video.duration;
+          if (video.currentTime >= segmentEnd - THRESHOLDS.VIDEO_SEGMENT_BOUNDARY) {
+            video.currentTime = segmentStart;
+            if (index === firstVisibleIdx) setCurrentTime(0);
+          }
+        };
 
-          const handleLoadedData = () => {
-            video.currentTime = info.segmentStart || 0;
-            checkReady();
-          };
+        const handleLoadedData = () => {
+          video.currentTime = segmentStart;
+          checkReady();
+        };
 
-          video.addEventListener("timeupdate", handleTimeUpdate);
-          video.addEventListener("loadeddata", handleLoadedData);
+        video.addEventListener("timeupdate", handleTimeUpdate);
+        cleanups.push(() => video.removeEventListener("timeupdate", handleTimeUpdate));
 
-          videoEventCleanup.set(video, () => {
-            video.removeEventListener("timeupdate", handleTimeUpdate);
-            video.removeEventListener("loadeddata", handleLoadedData);
-          });
+        // If the video already has frame data (e.g. navigating back to the same
+        // episode URL — browser doesn't reload the file so loadeddata never fires
+        // again; or React Strict Mode re-runs after a fast camera already loaded),
+        // call the handler immediately instead of waiting for the event.
+        if (video.readyState >= 2) {
+          handleLoadedData();
         } else {
-          const handleEnded = () => {
-            video.currentTime = 0;
-            if (index === firstVisibleIdx) {
-              setCurrentTime(0);
-            }
-          };
+          video.addEventListener("loadeddata", handleLoadedData);
+          cleanups.push(() => video.removeEventListener("loadeddata", handleLoadedData));
+        }
+      } else {
+        const handleEnded = () => {
+          video.currentTime = 0;
+          if (index === firstVisibleIdx) setCurrentTime(0);
+        };
 
-          video.addEventListener("ended", handleEnded);
+        video.addEventListener("ended", handleEnded);
+        cleanups.push(() => video.removeEventListener("ended", handleEnded));
+
+        if (video.readyState >= 3) {
+          checkReady();
+        } else {
           video.addEventListener("canplaythrough", checkReady, { once: true });
-
-          videoEventCleanup.set(video, () => {
-            video.removeEventListener("ended", handleEnded);
-          });
+          cleanups.push(() => video.removeEventListener("canplaythrough", checkReady));
         }
       }
     });
 
     return () => {
       clearTimeout(timeout);
-      videoRefs.current.forEach((video) => {
-        if (!video) return;
-        const cleanup = videoEventCleanup.get(video);
-        if (cleanup) {
-          cleanup();
-          videoEventCleanup.delete(video);
-        }
-      });
+      cleanups.forEach((fn) => fn());
     };
   }, [
     videosInfo,
@@ -153,34 +155,33 @@ export const SimpleVideosPlayer = ({
     });
   }, [isPlaying, videosReady, hiddenSet, videosInfo]);
 
-  // Sync all video times when currentTime changes.
-  // For the primary video, only seek when the change came from an external source
-  // (slider drag, chart click, etc.) — detected by comparing against lastVideoTimeRef.
+  // Sync video times via subscribe rather than a currentTime useEffect.
+  // subscribe fires synchronously on every setCurrentTime call without going
+  // through React's render cycle, which eliminates two problems:
+  //   1. Chrome feedback loop: onTimeUpdate → setCurrentTime → React re-render
+  //      → sync effect → video.currentTime = t → onTimeUpdate → ... (loop)
+  //   2. ~1 frame of lag introduced by React scheduling the effect.
+  // Adaptive threshold: loose (1 s) during playback so normal drift doesn't
+  // trigger unnecessary seeks; tight (0.05 s) when paused for frame accuracy.
   useEffect(() => {
     if (!videosReady) return;
 
-    const isExternalSeek =
-      Math.abs(currentTime - lastVideoTimeRef.current) > 0.3;
+    return subscribe((t) => {
+      videoRefs.current.forEach((video, index) => {
+        if (!video || hiddenSet.has(videosInfo[index].filename)) return;
 
-    videoRefs.current.forEach((video, index) => {
-      if (!video) return;
-      if (hiddenSet.has(videosInfo[index].filename)) return;
-      if (index === firstVisibleIdx && !isExternalSeek) return;
+        const info = videosInfo[index];
+        const targetTime = info.isSegmented ? (info.segmentStart || 0) + t : t;
+        const threshold = isPlayingRef.current
+          ? THRESHOLDS.VIDEO_SYNC_PLAYING
+          : THRESHOLDS.VIDEO_SYNC_PAUSED;
 
-      const info = videosInfo[index];
-      let targetTime = currentTime;
-      if (info.isSegmented) {
-        targetTime = (info.segmentStart || 0) + currentTime;
-      }
-
-      if (
-        Math.abs(video.currentTime - targetTime) >
-        THRESHOLDS.VIDEO_SYNC_TOLERANCE
-      ) {
-        video.currentTime = targetTime;
-      }
+        if (Math.abs(video.currentTime - targetTime) > threshold) {
+          video.currentTime = targetTime;
+        }
+      });
     });
-  }, [currentTime, videosInfo, videosReady, hiddenSet, firstVisibleIdx]);
+  }, [subscribe, videosInfo, videosReady, hiddenSet]);
 
   // Stable per-index timeupdate handlers avoid findIndex scan on every event
   const makeTimeUpdateHandler = useCallback(
@@ -190,11 +191,9 @@ export const SimpleVideosPlayer = ({
         const info = videosInfo[index];
         if (!video || !info) return;
 
-        let globalTime = video.currentTime;
-        if (info.isSegmented) {
-          globalTime = video.currentTime - (info.segmentStart || 0);
-        }
-        lastVideoTimeRef.current = globalTime;
+        const globalTime = info.isSegmented
+          ? video.currentTime - (info.segmentStart || 0)
+          : video.currentTime;
         setCurrentTime(globalTime);
       };
     },
