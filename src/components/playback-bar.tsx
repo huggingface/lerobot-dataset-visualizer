@@ -131,6 +131,13 @@ const PlaybackBar: React.FC = () => {
         </p>
         <p>
           <span className="inline-flex items-center gap-1 font-mono align-middle">
+            <span className="px-1.5 py-0.5 rounded border border-slate-400 bg-slate-800 text-slate-200 text-xs shadow-inner">◀</span>
+            <span className="px-1.5 py-0.5 rounded border border-slate-400 bg-slate-800 text-slate-200 text-xs shadow-inner">▶</span>
+          </span>{" "}
+          step 1 frame (paused) / 10 frames (playing)
+        </p>
+        <p>
+          <span className="inline-flex items-center gap-1 font-mono align-middle">
             <FaArrowUp size={14} />/<FaArrowDown size={14} />
           </span>{" "}
           to previous/next episode

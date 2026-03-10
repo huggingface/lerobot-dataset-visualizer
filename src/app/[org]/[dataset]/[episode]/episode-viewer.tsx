@@ -331,7 +331,16 @@ function EpisodeViewerInner({
   };
 
   // Use context for time sync
-  const { currentTime, setCurrentTime, setIsPlaying, isPlaying } = useTime();
+  const { currentTime, setCurrentTime, setIsPlaying, isPlaying, subscribe, duration } = useTime();
+
+  // Refs so the keydown handler always reads current values without
+  // needing them as dependencies (which would recreate the handler constantly).
+  const latestTimeRef = useRef(currentTime);
+  const isPlayingRef = useRef(isPlaying);
+  useEffect(() => {
+    return subscribe((t) => { latestTimeRef.current = t; });
+  }, [subscribe]);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
 
   // URDFViewer episode changer and play toggle — populated by URDFViewer on mount
   const urdfChangerRef = useRef<((ep: number) => void) | undefined>(undefined);
@@ -393,6 +402,9 @@ function EpisodeViewerInner({
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
       const { key } = e;
 
       if (key === " ") {
@@ -401,6 +413,17 @@ function EpisodeViewerInner({
           urdfPlayToggleRef.current?.();
         } else {
           setIsPlaying((prev: boolean) => !prev);
+        }
+      } else if (key === "ArrowLeft" || key === "ArrowRight") {
+        e.preventDefault();
+        if (activeTab !== "urdf") {
+          const fps = datasetInfo.fps || 30;
+          // 1 frame when paused for precise inspection, 10 frames when playing.
+          const frames = isPlayingRef.current ? 10 : 1;
+          const step = frames / fps;
+          const delta = key === "ArrowRight" ? step : -step;
+          const next = Math.max(0, Math.min(duration, latestTimeRef.current + delta));
+          setCurrentTime(next);
         }
       } else if (key === "ArrowDown" || key === "ArrowUp") {
         e.preventDefault();
@@ -427,7 +450,7 @@ function EpisodeViewerInner({
         }
       }
     },
-    [activeTab, episodeId, episodes, router, setIsPlaying, urdfEpisode],
+    [activeTab, episodeId, episodes, router, setIsPlaying, urdfEpisode, datasetInfo.fps, duration, setCurrentTime],
   );
 
   // Initialize based on URL time parameter
