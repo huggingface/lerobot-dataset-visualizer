@@ -27,6 +27,12 @@ import type { DatasetMetadata } from "@/utils/parquetUtils";
 const SERIES_DELIM = CHART_CONFIG.SERIES_NAME_DELIMITER;
 const DEG2RAD = Math.PI / 180;
 
+// Module-level geometry cache — survives component remounts (tab switches,
+// episode navigations). Avoids re-fetching and re-parsing STL files.
+const stlGeometryCache = new Map<string, THREE.BufferGeometry>();
+// In-flight promise cache — prevents duplicate simultaneous fetches
+const stlGeometryLoading = new Map<string, Promise<THREE.BufferGeometry>>();
+
 function getRobotConfig(robotType: string | null) {
   const lower = (robotType ?? "").toLowerCase();
   if (lower.includes("g1") || lower.includes("unitree")) {
@@ -292,46 +298,64 @@ function RobotScene({
         );
         return;
       }
-      // STL files — apply custom materials
-      const stlLoader = new STLLoader(mgr);
-      stlLoader.load(
-        url,
-        (geometry) => {
-          let color = "#FFD700";
-          let metalness = 0.1;
-          let roughness = 0.6;
-          if (isG1) {
-            const lower = url.toLowerCase();
-            const isWhitePart =
-              lower.includes("contour") ||
-              lower.includes("roll_link") ||
-              lower.includes("logo") ||
-              lower.includes("rubber") ||
-              lower.includes("constraint") ||
-              lower.includes("support");
-            color = isWhitePart ? "#c0c0c0" : "#2a2a2a";
-            metalness = 0.3;
-            roughness = 0.5;
-          } else if (url.includes("sts3215")) {
-            color = "#1a1a1a";
-            metalness = 0.7;
-            roughness = 0.3;
-          } else if (isOpenArm) {
-            color = url.includes("body_link0") ? "#3a3a4a" : "#f5f5f5";
-            metalness = 0.15;
-            roughness = 0.6;
-          }
-          const material = new THREE.MeshStandardMaterial({
+      // STL files — apply custom materials, with module-level geometry cache
+      const makeMesh = (geometry: THREE.BufferGeometry) => {
+        let color = "#FFD700";
+        let metalness = 0.1;
+        let roughness = 0.6;
+        if (isG1) {
+          const lower = url.toLowerCase();
+          const isWhitePart =
+            lower.includes("contour") ||
+            lower.includes("roll_link") ||
+            lower.includes("logo") ||
+            lower.includes("rubber") ||
+            lower.includes("constraint") ||
+            lower.includes("support");
+          color = isWhitePart ? "#c0c0c0" : "#2a2a2a";
+          metalness = 0.3;
+          roughness = 0.5;
+        } else if (url.includes("sts3215")) {
+          color = "#1a1a1a";
+          metalness = 0.7;
+          roughness = 0.3;
+        } else if (isOpenArm) {
+          color = url.includes("body_link0") ? "#3a3a4a" : "#f5f5f5";
+          metalness = 0.15;
+          roughness = 0.6;
+        }
+        return new THREE.Mesh(
+          geometry,
+          new THREE.MeshStandardMaterial({
             color,
             metalness,
             roughness,
             side: isOpenArm ? THREE.DoubleSide : THREE.FrontSide,
-          });
-          onLoad(new THREE.Mesh(geometry, material));
-        },
-        undefined,
-        (err) => onLoad(new THREE.Object3D(), err as Error),
-      );
+          }),
+        );
+      };
+
+      const cached = stlGeometryCache.get(url);
+      if (cached) {
+        onLoad(makeMesh(cached));
+        return;
+      }
+
+      // Deduplicate in-flight requests for the same URL
+      let loading = stlGeometryLoading.get(url);
+      if (!loading) {
+        loading = new Promise<THREE.BufferGeometry>((resolve, reject) => {
+          new STLLoader(mgr).load(url, resolve, undefined, reject);
+        }).then((geometry) => {
+          stlGeometryCache.set(url, geometry);
+          stlGeometryLoading.delete(url);
+          return geometry;
+        });
+        stlGeometryLoading.set(url, loading);
+      }
+      loading
+        .then((geometry) => onLoad(makeMesh(geometry)))
+        .catch((err) => onLoad(new THREE.Object3D(), err as Error));
     };
     loader.load(
       urdfUrl,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useTime } from "../context/time-context";
 import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
 import type { VideoInfo } from "@/types";
@@ -13,24 +13,25 @@ type VideoPlayerProps = {
 const videoCleanupHandlers = new WeakMap<HTMLVideoElement, () => void>();
 const videoReadyHandlers = new WeakMap<HTMLVideoElement, EventListener>();
 
+const VIDEO_SYNC_TOLERANCE = 0.2;
+
 export const VideosPlayer = ({
   videosInfo,
   onVideosReady,
 }: VideoPlayerProps) => {
   const { currentTime, setCurrentTime, isPlaying, setIsPlaying } = useTime();
   const videoRefs = useRef<HTMLVideoElement[]>([]);
-  // Hidden/enlarged state and hidden menu
   const [hiddenVideos, setHiddenVideos] = useState<string[]>([]);
-  // Find the index of the first visible (not hidden) video
+
+  const hiddenSet = useMemo(() => new Set(hiddenVideos), [hiddenVideos]);
+
   const firstVisibleIdx = videosInfo.findIndex(
-    (video) => !hiddenVideos.includes(video.filename),
+    (video) => !hiddenSet.has(video.filename),
   );
-  // Count of visible videos
   const visibleCount = videosInfo.filter(
-    (video) => !hiddenVideos.includes(video.filename),
+    (video) => !hiddenSet.has(video.filename),
   ).length;
   const [enlargedVideo, setEnlargedVideo] = useState<string | null>(null);
-  // Track previous hiddenVideos for comparison
   const prevHiddenVideosRef = useRef<string[]>([]);
   const videoContainerRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [showHiddenMenu, setShowHiddenMenu] = useState(false);
@@ -47,16 +48,16 @@ export const VideosPlayer = ({
     videoRefs.current = videoRefs.current.slice(0, videosInfo.length);
   }, [videosInfo]);
 
-  // When videos get unhidden, start playing them if it was playing
+  // When videos get unhidden, sync their time and resume playback
   useEffect(() => {
-    // Find which videos were just unhidden
     const prevHidden = prevHiddenVideosRef.current;
     const newlyUnhidden = prevHidden.filter(
-      (filename) => !hiddenVideos.includes(filename),
+      (filename) => !hiddenSet.has(filename),
     );
     if (newlyUnhidden.length > 0) {
+      const unhiddenNames = new Set(newlyUnhidden);
       videosInfo.forEach((video, idx) => {
-        if (newlyUnhidden.includes(video.filename)) {
+        if (unhiddenNames.has(video.filename)) {
           const ref = videoRefs.current[idx];
           if (ref) {
             ref.currentTime = currentTime;
@@ -68,7 +69,7 @@ export const VideosPlayer = ({
       });
     }
     prevHiddenVideosRef.current = hiddenVideos;
-  }, [hiddenVideos, isPlaying, videosInfo, currentTime]);
+  }, [hiddenVideos, hiddenSet, isPlaying, videosInfo, currentTime]);
 
   // Check video codec support
   useEffect(() => {
@@ -83,18 +84,17 @@ export const VideosPlayer = ({
     checkCodecSupport();
   }, []);
 
-  // Handle play/pause
+  // Handle play/pause — skip hidden videos to avoid wasting decoder time
   useEffect(() => {
-    videoRefs.current.forEach((video) => {
-      if (video) {
-        if (isPlaying) {
-          video.play().catch(() => console.error("Error playing video"));
-        } else {
-          video.pause();
-        }
+    videoRefs.current.forEach((video, idx) => {
+      if (!video || hiddenSet.has(videosInfo[idx]?.filename)) return;
+      if (isPlaying) {
+        video.play().catch(() => console.error("Error playing video"));
+      } else {
+        video.pause();
       }
     });
-  }, [isPlaying]);
+  }, [isPlaying, hiddenSet, videosInfo]);
 
   // Minimize enlarged video on Escape key
   useEffect(() => {
@@ -154,43 +154,45 @@ export const VideosPlayer = ({
 
     videoRefs.current.forEach((video, index) => {
       if (!video) return;
-
-      // Skip the primary video unless the time was changed externally
+      if (hiddenSet.has(videosInfo[index]?.filename)) return;
       if (index === firstVisibleIdx && !isExternalSeek) return;
 
       const videoInfo = videosInfo[index];
       if (videoInfo?.isSegmented) {
         const segmentStart = videoInfo.segmentStart || 0;
         const segmentTime = segmentStart + currentTime;
-        if (Math.abs(video.currentTime - segmentTime) > 0.2) {
+        if (Math.abs(video.currentTime - segmentTime) > VIDEO_SYNC_TOLERANCE) {
           video.currentTime = segmentTime;
         }
       } else {
-        if (Math.abs(video.currentTime - currentTime) > 0.2) {
+        if (Math.abs(video.currentTime - currentTime) > VIDEO_SYNC_TOLERANCE) {
           video.currentTime = currentTime;
         }
       }
     });
-  }, [currentTime, videosInfo, firstVisibleIdx]);
+  }, [currentTime, videosInfo, firstVisibleIdx, hiddenSet]);
 
-  // Handle time update
-  const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
-    const video = e.target as HTMLVideoElement;
-    if (video && video.duration) {
-      const videoIndex = videoRefs.current.findIndex((ref) => ref === video);
-      const videoInfo = videosInfo[videoIndex];
+  // Stable per-index timeupdate handlers avoid findIndex scan on every event
+  const makeTimeUpdateHandler = useCallback(
+    (index: number) => {
+      return () => {
+        const video = videoRefs.current[index];
+        if (!video || !video.duration) return;
+        const videoInfo = videosInfo[index];
 
-      if (videoInfo?.isSegmented) {
-        const segmentStart = videoInfo.segmentStart || 0;
-        const globalTime = Math.max(0, video.currentTime - segmentStart);
-        lastVideoTimeRef.current = globalTime;
-        setCurrentTime(globalTime);
-      } else {
-        lastVideoTimeRef.current = video.currentTime;
-        setCurrentTime(video.currentTime);
-      }
-    }
-  };
+        if (videoInfo?.isSegmented) {
+          const segmentStart = videoInfo.segmentStart || 0;
+          const globalTime = Math.max(0, video.currentTime - segmentStart);
+          lastVideoTimeRef.current = globalTime;
+          setCurrentTime(globalTime);
+        } else {
+          lastVideoTimeRef.current = video.currentTime;
+          setCurrentTime(video.currentTime);
+        }
+      };
+    },
+    [videosInfo, setCurrentTime],
+  );
 
   // Handle video ready and setup segmentation
   useEffect(() => {
@@ -400,9 +402,12 @@ export const VideosPlayer = ({
                 muted
                 loop
                 preload="auto"
+                crossOrigin="anonymous"
                 className={`w-full object-contain ${isEnlarged ? "max-h-[90vh] max-w-[90vw]" : ""}`}
                 onTimeUpdate={
-                  idx === firstVisibleIdx ? handleTimeUpdate : undefined
+                  idx === firstVisibleIdx
+                    ? makeTimeUpdateHandler(idx)
+                    : undefined
                 }
                 style={isEnlarged ? { zIndex: 41 } : {}}
               >
