@@ -3,6 +3,8 @@ import { useEffect, useRef, useState, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
+import { isLocalMode } from "@/utils/localDatasetShared";
+import type { LocalDatasetEntry } from "@/app/api/local-datasets/route";
 
 declare global {
   interface Window {
@@ -19,7 +21,7 @@ declare global {
 export default function Home() {
   return (
     <Suspense fallback={null}>
-      <HomeInner />
+      {isLocalMode() ? <LocalDatasetBrowser /> : <HomeInner />}
     </Suspense>
   );
 }
@@ -29,6 +31,174 @@ const EXAMPLE_DATASETS = [
   "imstevenpmwork/thanos_picking_power_gem",
   "lerobot/aloha_static_cups_open",
 ];
+
+function LocalDatasetBrowser() {
+  const router = useRouter();
+  const [datasets, setDatasets] = useState<LocalDatasetEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/local-datasets", { cache: "no-store" });
+        if (!res.ok) throw new Error("Failed to list local datasets");
+        const data = (await res.json()) as { datasets: LocalDatasetEntry[] };
+        setDatasets(data.datasets);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Unknown error");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-white">
+      <div className="mx-auto max-w-4xl px-6 py-16">
+        {/* Header */}
+        <h1 className="text-3xl font-bold mb-1 tracking-tight">
+          LeRobot{" "}
+          <span className="bg-gradient-to-r from-sky-400 to-indigo-400 bg-clip-text text-transparent">
+            Dataset
+          </span>{" "}
+          Visualizer
+        </h1>
+        <p className="text-white/50 text-sm mb-8">
+          Local mode &mdash; browsing datasets from{" "}
+          <code className="text-sky-400/80 bg-white/5 px-1.5 py-0.5 rounded text-xs">
+            LOCAL_DATASET_PATH
+          </code>
+        </p>
+
+        {/* Loading state */}
+        {loading && (
+          <div className="flex items-center gap-2 text-white/50 text-sm">
+            <svg
+              className="animate-spin w-4 h-4"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8v8H4z"
+              />
+            </svg>
+            Scanning datasets…
+          </div>
+        )}
+
+        {/* Error state */}
+        {error && <p className="text-red-400 text-sm">Error: {error}</p>}
+
+        {/* Empty state */}
+        {!loading && !error && datasets.length === 0 && (
+          <p className="text-white/40 text-sm">
+            No datasets found. Make sure each dataset folder contains{" "}
+            <code className="text-white/60">meta/info.json</code>.
+          </p>
+        )}
+
+        {/* Dataset list */}
+        {!loading && datasets.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs text-white/40 uppercase tracking-widest mb-3 font-medium">
+              {datasets.length} dataset{datasets.length !== 1 ? "s" : ""} found
+            </p>
+            <div className="grid gap-3">
+              {datasets.map((ds) => (
+                <button
+                  key={ds.name}
+                  type="button"
+                  className="group w-full text-left rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] hover:border-sky-500/40 px-5 py-4 transition-all"
+                  onClick={() =>
+                    router.push(`/local/${encodeURIComponent(ds.name)}`)
+                  }
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {/* Folder icon */}
+                      <svg
+                        className="w-5 h-5 text-sky-400/70 shrink-0"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={1.5}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.06-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z"
+                        />
+                      </svg>
+                      <span className="font-medium text-white group-hover:text-sky-300 transition-colors truncate">
+                        {ds.name}
+                      </span>
+                    </div>
+                    {/* Arrow */}
+                    <svg
+                      className="w-4 h-4 text-white/20 group-hover:text-sky-400 transition-colors shrink-0"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="m8.25 4.5 7.5 7.5-7.5 7.5"
+                      />
+                    </svg>
+                  </div>
+                  {/* Metadata row */}
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/40">
+                    {ds.robotType && (
+                      <span>
+                        Robot:{" "}
+                        <span className="text-white/60">{ds.robotType}</span>
+                      </span>
+                    )}
+                    <span>
+                      Episodes:{" "}
+                      <span className="text-white/60">{ds.totalEpisodes}</span>
+                    </span>
+                    <span>
+                      Frames:{" "}
+                      <span className="text-white/60">
+                        {ds.totalFrames.toLocaleString()}
+                      </span>
+                    </span>
+                    <span>
+                      FPS: <span className="text-white/60">{ds.fps}</span>
+                    </span>
+                    <span>
+                      Version:{" "}
+                      <span className="text-white/60">
+                        {ds.codebaseVersion}
+                      </span>
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function HomeInner() {
   const searchParams = useSearchParams();
