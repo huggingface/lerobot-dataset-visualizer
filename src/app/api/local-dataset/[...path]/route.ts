@@ -22,7 +22,7 @@ export async function GET(
     );
   }
 
-  const pathSegments = (await params).path;
+  const pathSegments = (await params).path.map((s) => decodeURIComponent(s));
 
   // Validate: all segments must be safe (no ".." or absolute paths)
   if (pathSegments.some((s) => s === ".." || s.startsWith("/"))) {
