@@ -77,6 +77,16 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `src/app/page.tsx` or other files in the `src/` directory. The app supports hot-reloading for rapid development.
 
+### Loading Local Datasets
+
+You can also open a local LeRobot dataset directory instead of fetching a dataset from the Hub.
+
+- Enter an absolute local path such as `/data/lerobot/my_dataset` on the home page
+- The app expects a standard LeRobot layout with `meta/`, `data/`, and `videos/`
+- The Next.js server process must be able to read the dataset directory
+
+When using Docker, mount the dataset directory into the container and use the in-container path when opening it from the app.
+
 ### Other Commands
 
 ```bash

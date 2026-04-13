@@ -21,20 +21,19 @@ import OverviewPanel from "@/components/overview-panel";
 import Loading from "@/components/loading-component";
 import { hasURDFSupport } from "@/lib/so101-robot";
 import {
-  getAdjacentEpisodesVideoInfo,
-  computeColumnMinMax,
-  getEpisodeDataSafe,
-  loadAllEpisodeLengthsV3,
-  loadAllEpisodeFrameInfo,
-  loadCrossEpisodeActionVariance,
   type EpisodeData,
+  type ChartRow,
   type ColumnMinMax,
   type EpisodeLengthStats,
   type EpisodeFramesData,
   type CrossEpisodeVarianceData,
 } from "./fetch-data";
-import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
-import type { DatasetMetadata } from "@/utils/parquetUtils";
+import {
+  fetchAdjacentEpisodeVideos,
+  fetchCrossEpisodeVariance,
+  fetchEpisodeFrames,
+  fetchEpisodeLengthStats,
+} from "./actions";
 
 const URDFViewer = lazy(() => import("@/components/urdf-viewer"));
 const ActionInsightsPanel = lazy(
@@ -54,41 +53,22 @@ export default function EpisodeViewer({
   org,
   dataset,
   episodeId,
+  initialData,
+  initialError,
 }: {
   org: string;
   dataset: string;
   episodeId: number;
+  initialData: EpisodeData | null;
+  initialError: string | null;
 }) {
-  const [data, setData] = useState<EpisodeData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const requestIdRef = useRef(0);
+  const [data, setData] = useState<EpisodeData | null>(initialData);
+  const [error, setError] = useState<string | null>(initialError);
 
   useEffect(() => {
-    if (Number.isNaN(episodeId)) {
-      setError("Invalid episode id.");
-      setData(null);
-      return;
-    }
-    const requestId = ++requestIdRef.current;
-    setError(null);
-    setData(null);
-    getEpisodeDataSafe(org, dataset, episodeId)
-      .then(({ data: loaded, error: loadError }) => {
-        if (requestIdRef.current !== requestId) return;
-        if (loadError) {
-          setError(loadError);
-          setData(null);
-          return;
-        }
-        setData(loaded ?? null);
-      })
-      .catch((err) => {
-        if (requestIdRef.current !== requestId) return;
-        const message = err instanceof Error ? err.message : String(err);
-        setError(message || "Unknown error");
-        setData(null);
-      });
-  }, [org, dataset, episodeId]);
+    setData(initialData);
+    setError(initialError);
+  }, [initialData, initialError, org, dataset, episodeId]);
 
   if (error) {
     return (
@@ -171,6 +151,56 @@ function EpisodeViewerInner({
   const [insightsLoading, setInsightsLoading] = useState(false);
   const insightsLoadedRef = useRef(false);
   const mountedRef = useRef(true);
+  const datasetId = org && dataset ? `${org}/${dataset}` : null;
+
+  const computeColumnMinMax = useCallback(
+    (groups: ChartRow[][]): ColumnMinMax[] => {
+      const stats: Record<string, { min: number; max: number }> = {};
+
+      for (const group of groups) {
+        for (const row of group) {
+          for (const [key, value] of Object.entries(row)) {
+            if (key === "timestamp") continue;
+
+            if (typeof value === "number" && Number.isFinite(value)) {
+              if (!stats[key]) {
+                stats[key] = { min: value, max: value };
+              } else {
+                if (value < stats[key].min) stats[key].min = value;
+                if (value > stats[key].max) stats[key].max = value;
+              }
+              continue;
+            }
+
+            if (typeof value !== "object" || value === null) {
+              continue;
+            }
+
+            for (const [subKey, subVal] of Object.entries(value)) {
+              if (typeof subVal !== "number" || !Number.isFinite(subVal)) {
+                continue;
+              }
+
+              const fullKey = `${key} | ${subKey}`;
+              if (!stats[fullKey]) {
+                stats[fullKey] = { min: subVal, max: subVal };
+              } else {
+                if (subVal < stats[fullKey].min) stats[fullKey].min = subVal;
+                if (subVal > stats[fullKey].max) stats[fullKey].max = subVal;
+              }
+            }
+          }
+        }
+      }
+
+      return Object.entries(stats).map(([column, { min, max }]) => ({
+        column,
+        min: Math.round(min * 1000) / 1000,
+        max: Math.round(max * 1000) / 1000,
+      }));
+    },
+    [],
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -232,18 +262,13 @@ function EpisodeViewerInner({
     sessionStorage.setItem("framesFlaggedOnly", String(framesFlaggedOnly));
   }, [framesFlaggedOnly]);
 
-  const loadStats = () => {
+  const loadStats = useCallback(() => {
     if (statsLoadedRef.current) return;
     statsLoadedRef.current = true;
     setStatsLoading(true);
     setColumnMinMax(computeColumnMinMax(data.chartDataGroups));
-    if (org && dataset) {
-      const repoId = `${org}/${dataset}`;
-      getDatasetVersionAndInfo(repoId)
-        .then(({ version, info }) => {
-          if (version !== "v3.0") return null;
-          return loadAllEpisodeLengthsV3(repoId, version, info.fps);
-        })
+    if (datasetId) {
+      fetchEpisodeLengthStats(org!, dataset!)
         .then((result) => {
           if (!mountedRef.current) return;
           setEpisodeLengthStats(result);
@@ -255,21 +280,13 @@ function EpisodeViewerInner({
     } else {
       setStatsLoading(false);
     }
-  };
+  }, [computeColumnMinMax, data.chartDataGroups, datasetId, dataset, org]);
 
-  const loadFrames = () => {
-    if (framesLoadedRef.current || !org || !dataset) return;
+  const loadFrames = useCallback(() => {
+    if (framesLoadedRef.current || !datasetId) return;
     framesLoadedRef.current = true;
     setFramesLoading(true);
-    const repoId = `${org}/${dataset}`;
-    getDatasetVersionAndInfo(repoId)
-      .then(({ version, info }) =>
-        loadAllEpisodeFrameInfo(
-          repoId,
-          version,
-          info as unknown as DatasetMetadata,
-        ),
-      )
+    fetchEpisodeFrames(org!, dataset!)
       .then((result) => {
         if (!mountedRef.current) return;
         setEpisodeFramesData(result);
@@ -281,22 +298,13 @@ function EpisodeViewerInner({
       .finally(() => {
         if (mountedRef.current) setFramesLoading(false);
       });
-  };
+  }, [datasetId, dataset, org]);
 
-  const loadInsights = () => {
-    if (insightsLoadedRef.current || !org || !dataset) return;
+  const loadInsights = useCallback(() => {
+    if (insightsLoadedRef.current || !datasetId) return;
     insightsLoadedRef.current = true;
     setInsightsLoading(true);
-    const repoId = `${org}/${dataset}`;
-    getDatasetVersionAndInfo(repoId)
-      .then(({ version, info }) =>
-        loadCrossEpisodeActionVariance(
-          repoId,
-          version,
-          info as unknown as DatasetMetadata,
-          info.fps,
-        ),
-      )
+    fetchCrossEpisodeVariance(org!, dataset!)
       .then((result) => {
         if (!mountedRef.current) return;
         setCrossEpData(result);
@@ -305,7 +313,7 @@ function EpisodeViewerInner({
       .finally(() => {
         if (mountedRef.current) setInsightsLoading(false);
       });
-  };
+  }, [datasetId, dataset, org]);
 
   // Re-trigger data loading for the restored tab on mount
   useEffect(() => {
@@ -319,16 +327,19 @@ function EpisodeViewerInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleTabChange = (tab: ActiveTab) => {
-    setActiveTab(tab);
-    if (tab === "statistics") loadStats();
-    if (tab === "frames") loadFrames();
-    if (tab === "insights") loadInsights();
-    if (tab === "filtering") {
-      loadStats();
-      loadInsights();
-    }
-  };
+  const handleTabChange = useCallback(
+    (tab: ActiveTab) => {
+      setActiveTab(tab);
+      if (tab === "statistics") loadStats();
+      if (tab === "frames") loadFrames();
+      if (tab === "insights") loadInsights();
+      if (tab === "filtering") {
+        loadStats();
+        loadInsights();
+      }
+    },
+    [loadFrames, loadInsights, loadStats],
+  );
 
   // Use context for time sync
   const { currentTime, setCurrentTime, setIsPlaying, isPlaying } = useTime();
@@ -353,7 +364,7 @@ function EpisodeViewerInner({
     if (!org || !dataset) return;
     const links: HTMLLinkElement[] = [];
 
-    getAdjacentEpisodesVideoInfo(org, dataset, episodeId, 2)
+    fetchAdjacentEpisodeVideos(org, dataset, episodeId, 2)
       .then((adjacentVideos) => {
         for (const ep of adjacentVideos) {
           for (const v of ep.videosInfo) {

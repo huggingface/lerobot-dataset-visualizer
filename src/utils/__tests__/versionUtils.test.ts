@@ -55,6 +55,17 @@ describe("buildVersionedUrl", () => {
       "https://huggingface.co/datasets/myorg/mydataset/resolve/main/meta/info.json",
     );
   });
+
+  test("builds local dataset urls for server-side asset access", () => {
+    const url = buildVersionedUrl(
+      "local:/tmp/aloha_static_cups_open",
+      "v3.0",
+      "meta/info.json",
+    );
+    expect(url).toBe(
+      "local://dataset-file?root=%2Ftmp%2Faloha_static_cups_open&path=meta%2Finfo.json",
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

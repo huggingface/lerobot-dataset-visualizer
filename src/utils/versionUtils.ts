@@ -2,6 +2,13 @@
  * Utility functions for checking dataset version compatibility
  */
 
+import {
+  buildLocalDatasetAssetUrl,
+  buildLocalDatasetUrl,
+  getLocalDatasetPath,
+  isLocalDatasetId,
+} from "@/utils/datasetSource";
+
 const DATASET_URL =
   process.env.DATASET_URL || "https://huggingface.co/datasets";
 
@@ -58,6 +65,44 @@ function pruneDatasetInfoCache(now: number) {
   }
 }
 
+async function getLocalDatasetInfo(repoId: string): Promise<DatasetInfo> {
+  const localDatasetPath = getLocalDatasetPath(repoId);
+
+  if (typeof window !== "undefined") {
+    const response = await fetch(
+      buildLocalDatasetAssetUrl(localDatasetPath, "meta/info.json"),
+      {
+        method: "GET",
+        cache: "no-store",
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch local dataset info: ${response.status}`);
+    }
+
+    return (await response.json()) as DatasetInfo;
+  }
+
+  const runtimeImport = Function("specifier", "return import(specifier)") as (
+    specifier: string,
+  ) => Promise<unknown>;
+  const fs = (await runtimeImport(
+    "fs/promises",
+  )) as typeof import("fs/promises");
+  const path = (await runtimeImport("path")) as typeof import("path");
+  const home = process.env.HOME ?? "~";
+  const expandedPath =
+    localDatasetPath === "~"
+      ? home
+      : localDatasetPath.startsWith("~/")
+        ? path.join(home, localDatasetPath.slice(2))
+        : localDatasetPath;
+  const infoPath = path.join(path.resolve(expandedPath), "meta", "info.json");
+  const raw = await fs.readFile(infoPath, "utf8");
+  return JSON.parse(raw) as DatasetInfo;
+}
+
 export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
   const now = Date.now();
   pruneDatasetInfoCache(now);
@@ -73,6 +118,23 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
   console.log(`[perf] getDatasetInfo cache MISS for ${repoId} — fetching`);
 
   try {
+    if (isLocalDatasetId(repoId)) {
+      const data = await getLocalDatasetInfo(repoId);
+
+      if (!data.features) {
+        throw new Error(
+          "Dataset info.json does not have the expected features structure",
+        );
+      }
+
+      datasetInfoCache.set(repoId, {
+        data: data as DatasetInfo,
+        expiry: Date.now() + CACHE_TTL_MS,
+      });
+      pruneDatasetInfoCache(Date.now());
+      return data as DatasetInfo;
+    }
+
     const testUrl = `${DATASET_URL}/${repoId}/resolve/main/meta/info.json`;
 
     const controller = new AbortController();
@@ -149,5 +211,21 @@ export function buildVersionedUrl(
   version: string,
   path: string,
 ): string {
+  if (isLocalDatasetId(repoId)) {
+    return buildLocalDatasetUrl(getLocalDatasetPath(repoId), path);
+  }
+
   return `${DATASET_URL}/${repoId}/resolve/main/${path}`;
+}
+
+export function buildDatasetAssetUrl(
+  repoId: string,
+  version: string,
+  path: string,
+): string {
+  if (isLocalDatasetId(repoId)) {
+    return buildLocalDatasetAssetUrl(getLocalDatasetPath(repoId), path);
+  }
+
+  return buildVersionedUrl(repoId, version, path);
 }
