@@ -211,7 +211,11 @@ export const SimpleVideosPlayer = ({
         video.currentTime = segmentStart;
       }
     }
-    video.play();
+    video.play().catch((e: unknown) => {
+      if ((e as Error)?.name !== "AbortError") {
+        console.error("Error playing video", e);
+      }
+    });
   };
 
   return (
