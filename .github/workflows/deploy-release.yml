@@ -15,13 +15,13 @@ jobs:
   sync-to-hub:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           lfs: true
           ref: main
       - name: Sync to HF Space
-        uses: huggingface/hub-sync@4d340790b2a7cc86e598dce1c29a0c7c6adf3d62  # main
+        uses: huggingface/hub-sync@4d340790b2a7cc86e598dce1c29a0c7c6adf3d62 # main
         with:
           github_repo_id: huggingface/lerobot-dataset-visualizer
           huggingface_repo_id: lerobot/visualize_dataset
