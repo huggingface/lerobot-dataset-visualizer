@@ -58,7 +58,7 @@ export async function GET(
       const end = match[2] ? parseInt(match[2], 10) : total - 1;
       const safeEnd = Math.min(end, total - 1);
       const chunk = new Uint8Array(buffer).subarray(start, safeEnd + 1);
-      return new NextResponse(chunk.buffer as ArrayBuffer, {
+      return new NextResponse(chunk, {
         status: 206,
         headers: {
           "Content-Type": "video/mp4",
@@ -71,7 +71,7 @@ export async function GET(
   }
 
   const bytes = new Uint8Array(buffer);
-  return new NextResponse(bytes.buffer as ArrayBuffer, {
+  return new NextResponse(bytes, {
     status: 200,
     headers: {
       "Content-Type": contentType,
