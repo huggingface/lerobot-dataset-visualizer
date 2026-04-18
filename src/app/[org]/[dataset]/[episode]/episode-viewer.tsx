@@ -48,6 +48,7 @@ type ActiveTab =
   | "frames"
   | "insights"
   | "filtering"
+  | "doctor"
   | "urdf";
 
 export default function EpisodeViewer({
@@ -548,6 +549,20 @@ function EpisodeViewerInner({
             <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
           )}
         </button>
+        <button
+          className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
+            activeTab === "doctor"
+              ? "text-orange-400"
+              : "text-slate-400 hover:text-slate-200"
+          }`}
+          onClick={() => handleTabChange("doctor")}
+          title="Dataset quality diagnostics (powered by lerobot-doctor)"
+        >
+          Doctor
+          {activeTab === "doctor" && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
+          )}
+        </button>
         {hasURDFSupport(datasetInfo.robot_type) &&
           datasetInfo.codebase_version >= "v3.0" && (
             <button
@@ -711,6 +726,38 @@ function EpisodeViewerInner({
                 }}
               />
             </Suspense>
+          )}
+
+          {activeTab === "doctor" && (
+            <div className="flex flex-col h-full">
+              <div className="flex items-center justify-between px-1 pb-2 text-xs text-slate-400">
+                <span>
+                  Dataset quality diagnostics &mdash; powered by{" "}
+                  <a
+                    href="https://github.com/jashshah999/lerobot-doctor"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:text-slate-200"
+                  >
+                    lerobot-doctor
+                  </a>
+                </span>
+                <a
+                  href={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${org}/${dataset}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-slate-200"
+                >
+                  Open in new tab
+                </a>
+              </div>
+              <iframe
+                src={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${org}/${dataset}`}
+                title="lerobot-doctor"
+                className="flex-1 w-full rounded border border-slate-700 bg-white"
+                sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+              />
+            </div>
           )}
 
           {activeTab === "urdf" && (
