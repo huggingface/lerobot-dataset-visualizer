@@ -1,11 +1,13 @@
 import {
   DatasetMetadata,
+  fetchText,
   fetchParquetFile,
   formatStringWithVars,
   readParquetAsObjects,
 } from "@/utils/parquetUtils";
 import { pick } from "@/utils/pick";
 import {
+  buildDatasetAssetUrl,
   getDatasetVersionAndInfo,
   buildVersionedUrl,
 } from "@/utils/versionUtils";
@@ -20,6 +22,7 @@ import {
   buildV3EpisodesMetadataPath,
 } from "@/utils/stringFormatting";
 import { bigIntToNumber } from "@/utils/typeGuards";
+import { buildDatasetId } from "@/utils/datasetSource";
 import type { VideoInfo, AdjacentEpisodeVideos } from "@/types";
 
 const SERIES_NAME_DELIMITER = CHART_CONFIG.SERIES_NAME_DELIMITER;
@@ -296,11 +299,13 @@ export async function getEpisodeData(
   dataset: string,
   episodeId: number,
 ): Promise<EpisodeData> {
-  const repoId = `${org}/${dataset}`;
+  const repoId = buildDatasetId(org, dataset);
   try {
-    console.time(`[perf] getDatasetVersionAndInfo`);
+    const datasetVersionStart = performance.now();
     const { version, info: rawInfo } = await getDatasetVersionAndInfo(repoId);
-    console.timeEnd(`[perf] getDatasetVersionAndInfo`);
+    console.log(
+      `[perf] getDatasetVersionAndInfo ${repoId} ${(performance.now() - datasetVersionStart).toFixed(0)}ms`,
+    );
     const info = rawInfo as unknown as DatasetMetadata;
 
     if (info.video_path === null) {
@@ -309,12 +314,14 @@ export async function getEpisodeData(
       );
     }
 
-    console.time(`[perf] getEpisodeData (${version})`);
+    const episodeDataStart = performance.now();
     const result =
       version === "v3.0"
         ? await getEpisodeDataV3(repoId, version, info, episodeId)
         : await getEpisodeDataV2(repoId, version, info, episodeId);
-    console.timeEnd(`[perf] getEpisodeData (${version})`);
+    console.log(
+      `[perf] getEpisodeData (${version}) ${repoId} episode_${episodeId} ${(performance.now() - episodeDataStart).toFixed(0)}ms`,
+    );
 
     // Extract camera resolutions from features
     const cameras: CameraInfo[] = Object.entries(rawInfo.features)
@@ -358,7 +365,7 @@ export async function getAdjacentEpisodesVideoInfo(
   currentEpisodeId: number,
   radius: number = 2,
 ): Promise<AdjacentEpisodeVideos[]> {
-  const repoId = `${org}/${dataset}`;
+  const repoId = buildDatasetId(org, dataset);
   try {
     const { version, info: rawInfo } = await getDatasetVersionAndInfo(repoId);
     const info = rawInfo as unknown as DatasetMetadata;
@@ -406,7 +413,7 @@ export async function getAdjacentEpisodesVideoInfo(
                   });
                   return {
                     filename: key,
-                    url: buildVersionedUrl(repoId, version, videoPath),
+                    url: buildDatasetAssetUrl(repoId, version, videoPath),
                   };
                 });
             }
@@ -477,7 +484,7 @@ async function getEpisodeDataV2(
             });
             return {
               filename: key,
-              url: buildVersionedUrl(repoId, version, videoPath),
+              url: buildDatasetAssetUrl(repoId, version, videoPath),
             };
           })
       : [];
@@ -570,25 +577,21 @@ async function getEpisodeDataV2(
   if (!task && allData.length > 0) {
     try {
       const tasksUrl = buildVersionedUrl(repoId, version, "meta/tasks.jsonl");
-      const tasksResponse = await fetch(tasksUrl, { cache: "no-store" });
+      const tasksText = await fetchText(tasksUrl);
+      const tasksData = tasksText
+        .split("\n")
+        .filter((line) => line.trim())
+        .map((line) => JSON.parse(line));
 
-      if (tasksResponse.ok) {
-        const tasksText = await tasksResponse.text();
-        const tasksData = tasksText
-          .split("\n")
-          .filter((line) => line.trim())
-          .map((line) => JSON.parse(line));
-
-        if (tasksData && tasksData.length > 0) {
-          const taskIndex = allData[0].task_index;
-          const taskIndexNum =
-            typeof taskIndex === "bigint" ? Number(taskIndex) : taskIndex;
-          const taskData = tasksData.find(
-            (t: Record<string, unknown>) => t.task_index === taskIndexNum,
-          );
-          if (taskData) {
-            task = taskData.task;
-          }
+      if (tasksData && tasksData.length > 0) {
+        const taskIndex = allData[0].task_index;
+        const taskIndexNum =
+          typeof taskIndex === "bigint" ? Number(taskIndex) : taskIndex;
+        const taskData = tasksData.find(
+          (t: Record<string, unknown>) => t.task_index === taskIndexNum,
+        );
+        if (taskData) {
+          task = taskData.task;
         }
       }
     } catch {
@@ -1138,11 +1141,9 @@ function extractVideoInfoV3WithSegmentation(
       bigIntToNumber(chunkIndex, 0),
       bigIntToNumber(fileIndex, 0),
     );
-    const fullUrl = buildVersionedUrl(repoId, version, videoPath);
-
     return {
       filename: videoKey,
-      url: fullUrl,
+      url: buildDatasetAssetUrl(repoId, version, videoPath),
       // Enable segmentation with timestamps from metadata
       isSegmented: true,
       segmentStart: startNum,
@@ -1554,7 +1555,7 @@ export async function loadAllEpisodeFrameInfo(
             const videoPath = `videos/${cam}/chunk-${cIdx.toString().padStart(3, "0")}/file-${fIdx.toString().padStart(3, "0")}.mp4`;
             framesByCamera[cam].push({
               episodeIndex: epIdx,
-              videoUrl: buildVersionedUrl(repoId, version, videoPath),
+              videoUrl: buildDatasetAssetUrl(repoId, version, videoPath),
               firstFrameTime: fromTs,
               lastFrameTime: Math.max(0, toTs - 0.05),
             });
@@ -1580,7 +1581,7 @@ export async function loadAllEpisodeFrameInfo(
       });
       framesByCamera[cam].push({
         episodeIndex: i,
-        videoUrl: buildVersionedUrl(repoId, version, videoPath),
+        videoUrl: buildDatasetAssetUrl(repoId, version, videoPath),
         firstFrameTime: 0,
         lastFrameTime: null,
       });
