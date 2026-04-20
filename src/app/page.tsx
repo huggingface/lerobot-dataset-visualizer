@@ -25,9 +25,9 @@ export default function Home() {
 }
 
 const EXAMPLE_DATASETS = [
-  "lerobot-data-collection/level12_rac_2_2026-02-07",
-  "imstevenpmwork/thanos_picking_power_gem",
+  "lerobot/high_quality_folding",
   "lerobot/aloha_static_cups_open",
+  "imstevenpmwork/thanos_picking_power_gem",
 ];
 
 function HomeInner() {
