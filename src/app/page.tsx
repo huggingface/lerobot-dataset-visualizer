@@ -4,18 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 
-declare global {
-  interface Window {
-    YT?: {
-      Player: new (
-        id: string,
-        config: Record<string, unknown>,
-      ) => { destroy?: () => void };
-    };
-    onYouTubeIframeAPIReady?: () => void;
-  }
-}
-
 export default function Home() {
   return (
     <Suspense fallback={null}>
@@ -71,58 +59,9 @@ function HomeInner() {
     }
   }, [searchParams, router]);
 
-  const playerRef = useRef<{ destroy?: () => void } | null>(null);
-
+  const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
-    // Load YouTube IFrame API if not already present
-    if (!window.YT) {
-      const tag = document.createElement("script");
-      tag.src = "https://www.youtube.com/iframe_api";
-      document.body.appendChild(tag);
-    }
-    let interval: NodeJS.Timeout;
-    window.onYouTubeIframeAPIReady = () => {
-      if (!window.YT) return;
-      playerRef.current = new window.YT.Player("yt-bg-player", {
-        videoId: "Er8SPJsIYr0",
-        playerVars: {
-          autoplay: 1,
-          mute: 1,
-          controls: 0,
-          showinfo: 0,
-          modestbranding: 1,
-          rel: 0,
-          loop: 1,
-          fs: 0,
-          playlist: "Er8SPJsIYr0",
-          start: 0,
-        },
-        events: {
-          onReady: (event: {
-            target: {
-              playVideo: () => void;
-              mute: () => void;
-              seekTo: (t: number) => void;
-              getCurrentTime: () => number;
-            };
-          }) => {
-            event.target.playVideo();
-            event.target.mute();
-            interval = setInterval(() => {
-              const t = event.target.getCurrentTime();
-              if (t >= 60) {
-                event.target.seekTo(0);
-              }
-            }, 500);
-          },
-        },
-      });
-    };
-    return () => {
-      if (interval) clearInterval(interval);
-      if (playerRef.current && playerRef.current.destroy)
-        playerRef.current.destroy();
-    };
+    if (videoRef.current) videoRef.current.playbackRate = 1.5;
   }, []);
 
   const [query, setQuery] = useState("");
@@ -212,12 +151,19 @@ function HomeInner() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden">
-      {/* YouTube Video Background */}
+      {/* Video Background */}
       <div className="video-background">
-        <div id="yt-bg-player" />
+        <video
+          ref={videoRef}
+          src="https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/lerobot/level2.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+        />
       </div>
 
-      {/* Gradient overlay — darker at edges, lighter at center for depth */}
+      {/* Gradient overlay */}
       <div className="fixed inset-0 -z-0 bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.35)_0%,rgba(0,0,0,0.80)_100%)]" />
 
       {/* Centered Content */}
