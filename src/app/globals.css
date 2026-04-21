@@ -33,21 +33,15 @@ body {
 .video-background {
   @apply fixed top-0 right-0 bottom-0 left-0 -z-10 overflow-hidden w-screen h-screen;
 }
-.video-background iframe {
-  @apply absolute top-1/2 left-1/2 border-0 pointer-events-none bg-black;
-  width: 100vw;
-  height: 100vh;
+.video-background video {
+  @apply absolute top-1/2 left-1/2 pointer-events-none bg-black;
+  min-width: 100vw;
+  min-height: 100vh;
+  width: auto;
+  height: auto;
   transform: translate(-50%, -50%);
-}
-@media (min-aspect-ratio: 16/9) {
-  .video-background iframe {
-    height: 56.25vw;
-  }
-}
-@media (max-aspect-ratio: 16/9) {
-  .video-background iframe {
-    width: 177.78vh;
-  }
+  object-fit: cover;
+  filter: brightness(0.9);
 }
 
 @keyframes fadeInUp {
