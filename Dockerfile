@@ -12,6 +12,9 @@ RUN bun install --frozen-lockfile
 # Copy the rest of the application
 COPY . .
 
+# Set LOCAL_DATASET_PATH so NEXT_PUBLIC_LOCAL_MODE is baked into the build
+ENV LOCAL_DATASET_PATH=/data
+
 # Build the application
 RUN bun run build
 

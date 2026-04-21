@@ -2,6 +2,8 @@
  * Utility functions for checking dataset version compatibility
  */
 
+import { isLocalMode, buildLocalUrl } from "@/utils/localDatasetShared";
+
 const DATASET_URL =
   process.env.DATASET_URL || "https://huggingface.co/datasets";
 
@@ -73,26 +75,39 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
   console.log(`[perf] getDatasetInfo cache MISS for ${repoId} — fetching`);
 
   try {
-    const testUrl = `${DATASET_URL}/${repoId}/resolve/main/meta/info.json`;
+    let data: unknown;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    if (isLocalMode()) {
+      const localUrl = buildLocalUrl(repoId, "meta/info.json");
+      const response = await fetch(localUrl, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch local dataset info: ${response.status}`,
+        );
+      }
+      data = await response.json();
+    } else {
+      const testUrl = `${DATASET_URL}/${repoId}/resolve/main/meta/info.json`;
 
-    const response = await fetch(testUrl, {
-      method: "GET",
-      cache: "no-store",
-      signal: controller.signal,
-    });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-    clearTimeout(timeoutId);
+      const response = await fetch(testUrl, {
+        method: "GET",
+        cache: "no-store",
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch dataset info: ${response.status}`);
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch dataset info: ${response.status}`);
+      }
+
+      data = await response.json();
     }
 
-    const data = await response.json();
-
-    if (!data.features) {
+    if (!(data as Record<string, unknown>).features) {
       throw new Error(
         "Dataset info.json does not have the expected features structure",
       );
@@ -149,5 +164,8 @@ export function buildVersionedUrl(
   version: string,
   path: string,
 ): string {
+  if (isLocalMode()) {
+    return buildLocalUrl(repoId, path);
+  }
   return `${DATASET_URL}/${repoId}/resolve/main/${path}`;
 }

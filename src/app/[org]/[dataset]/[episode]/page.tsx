@@ -20,7 +20,8 @@ export default async function EpisodePage({
   params: Promise<{ org: string; dataset: string; episode: string }>;
 }) {
   // episode is like 'episode_1'
-  const { org, dataset, episode } = await params;
+  const { org, dataset: rawDataset, episode } = await params;
+  const dataset = decodeURIComponent(rawDataset);
   // fetchData should be updated if needed to support this path pattern
   const episodeNumber = Number(episode.replace(/^episode_/, ""));
   return (
