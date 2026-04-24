@@ -209,7 +209,7 @@ function RobotScene({
   trailResetKey: number;
   scale: number;
 }) {
-  const { scene, size } = useThree();
+  const { scene, camera, controls, size } = useThree();
   const robotRef = useRef<URDFRobot | null>(null);
   const tipLinksRef = useRef<THREE.Object3D[]>([]);
   const [loading, setLoading] = useState(true);
@@ -440,12 +440,85 @@ function RobotScene({
       (robot) => {
         robotRef.current = robot;
         robot.rotateOnAxis(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-        robot.traverse((c) => {
-          c.castShadow = true;
-        });
+
+        // URDFLoader applies <material rgba="...">-derived colors AFTER our
+        // loadMeshCb returns. For SO-arm URDFs those declarations override
+        // every PBR tweak we set in makeMesh with a flat default material,
+        // so rebuild after the fact: keep the URDF-assigned base color but
+        // wrap it in a MeshStandardMaterial with properly tuned PBR params.
+        // OpenArm has its own rebuild path in loadMeshCb, so skip it here.
+        if (!isOpenArm) {
+          robot.traverse((c) => {
+            c.castShadow = true;
+            c.receiveShadow = true;
+            if (!(c instanceof THREE.Mesh) || !c.material) return;
+            const originals = Array.isArray(c.material)
+              ? c.material
+              : [c.material];
+            const rebuilt = originals.map((orig) => {
+              const src =
+                (orig as THREE.MeshStandardMaterial).color ??
+                new THREE.Color("#c0c4cc");
+              const hsl = { h: 0, s: 0, l: 0 };
+              src.getHSL(hsl);
+              // Dark plastic (servos / black trim) → matte metallic-ish
+              if (hsl.l < 0.2) {
+                orig.dispose?.();
+                return new THREE.MeshStandardMaterial({
+                  color: new THREE.Color().setHSL(hsl.h, hsl.s * 0.3, 0.1),
+                  metalness: 0.55,
+                  roughness: 0.4,
+                });
+              }
+              // 3D-printed PLA (green/gold/etc.) → desaturate a hair, matte
+              orig.dispose?.();
+              return new THREE.MeshStandardMaterial({
+                color: new THREE.Color().setHSL(
+                  hsl.h,
+                  Math.min(hsl.s * 0.85, 0.65),
+                  Math.min(hsl.l, 0.55),
+                ),
+                metalness: 0.1,
+                roughness: 0.65,
+              });
+            });
+            c.material = Array.isArray(c.material) ? rebuilt : rebuilt[0];
+          });
+        } else {
+          robot.traverse((c) => {
+            c.castShadow = true;
+          });
+        }
         robot.updateMatrixWorld(true);
         robot.scale.set(scale, scale, scale);
         scene.add(robot);
+        robot.updateMatrixWorld(true);
+
+        // Auto-fit camera: URDFs can have world→base offsets (SO-arm ships
+        // one) that put the robot far from origin, so a fixed camera pose
+        // crops half the arm. Compute the robot's AABB and frame it with a
+        // bit of padding.
+        const bbox = new THREE.Box3().setFromObject(robot);
+        if (!bbox.isEmpty()) {
+          const center = bbox.getCenter(new THREE.Vector3());
+          const sizeVec = bbox.getSize(new THREE.Vector3());
+          const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z);
+          const fov =
+            ((camera as THREE.PerspectiveCamera).fov ?? 45) * (Math.PI / 180);
+          const distance = (maxDim / 2 / Math.tan(fov / 2)) * 1.6;
+          const dir = new THREE.Vector3(1, 0.85, 1).normalize();
+          camera.position.copy(center).addScaledVector(dir, distance);
+          camera.lookAt(center);
+          camera.updateProjectionMatrix();
+          const orbit = controls as unknown as {
+            target?: THREE.Vector3;
+            update?: () => void;
+          };
+          if (orbit?.target) {
+            orbit.target.copy(center);
+            orbit.update?.();
+          }
+        }
 
         const tipNames = isG1
           ? G1_TIP_NAMES
@@ -943,7 +1016,10 @@ export default function URDFViewer({
             fadeDistance={isG1 ? 20 : 10}
             position={[0, 0, 0]}
           />
-          <OrbitControls target={isG1 ? [0, 0.5, 0] : [0, 0.8, 0]} />
+          <OrbitControls
+            makeDefault
+            target={isG1 ? [0, 0.5, 0] : [0, 0.8, 0]}
+          />
           <PlaybackDriver
             playing={playing}
             fps={fps}
