@@ -284,6 +284,17 @@ function RobotScene({
     const isG1 = urdfUrl.includes("g1");
     const manager = new THREE.LoadingManager();
     const loader = new URDFLoader(manager);
+    // URDFLoader (node_modules/urdf-loader/src/URDFLoader.js ~line 556) does
+    //   `if (obj instanceof THREE.Mesh) obj.material = material;`
+    // on every mesh we hand back — overwriting our PBR material with the
+    // URDF's <material rgba="...">-derived MeshPhongMaterial. Wrapping the
+    // returned mesh in a Group dodges that check (same way DAE's collada.scene
+    // already avoids it) so our carefully-tuned materials survive.
+    const wrapForUrdf = (obj: THREE.Object3D): THREE.Object3D => {
+      const group = new THREE.Group();
+      group.add(obj);
+      return group;
+    };
     loader.loadMeshCb = (url, mgr, onLoad) => {
       // DAE (Collada) files — ColladaLoader yields whatever the .dae author
       // baked in: flat MeshPhongMaterial/MeshBasicMaterial colors plus, in
@@ -374,11 +385,23 @@ function RobotScene({
         );
         return;
       }
-      // STL files — apply custom materials, with module-level geometry cache
+      // STL files — apply final PBR materials directly here. We used to do a
+      // post-load archetype rebuild in manager.onLoad, but STLLoader calls
+      // `manager.itemEnd` *before* our Promise resolves — so when the last
+      // STL completes, manager.onLoad fires synchronously, our traverse runs,
+      // and THEN URDFLoader's inner `group.add(obj)` + `obj.material = urdf`
+      // runs in a microtask. Last-batch meshes ended up gold/green because
+      // they were added to the robot after our rebuild passed.
+      //
+      // Fix: pick the archetype color here, wrap the mesh in a Group so
+      // URDFLoader won't override our material (its override only triggers
+      // for direct `THREE.Mesh` instances), and skip the onLoad rebuild.
       const makeMesh = (geometry: THREE.BufferGeometry) => {
-        let color = "#FFD700";
+        // Defaults: neutral off-white plastic, matches OpenArm "light" archetype
+        let color = "#9ba1ab";
         let metalness = 0.1;
-        let roughness = 0.6;
+        let roughness = 0.5;
+        let side: THREE.Side = THREE.FrontSide;
         if (isG1) {
           const lower = url.toLowerCase();
           const isWhitePart =
@@ -392,13 +415,15 @@ function RobotScene({
           metalness = 0.25;
           roughness = 0.6;
         } else if (url.includes("sts3215")) {
-          color = "#1a1a1a";
-          metalness = 0.7;
-          roughness = 0.3;
+          // SO-arm / any STL servo housing — carbon-black archetype
+          color = "#171a20";
+          metalness = 0.15;
+          roughness = 0.75;
         } else if (isOpenArm) {
           color = url.includes("body_link0") ? "#3a3a4a" : "#f5f5f5";
           metalness = 0.15;
           roughness = 0.6;
+          side = THREE.DoubleSide;
         }
         return new THREE.Mesh(
           geometry,
@@ -406,14 +431,14 @@ function RobotScene({
             color,
             metalness,
             roughness,
-            side: isOpenArm ? THREE.DoubleSide : THREE.FrontSide,
+            side,
           }),
         );
       };
 
       const cached = stlGeometryCache.get(url);
       if (cached) {
-        onLoad(makeMesh(cached));
+        onLoad(wrapForUrdf(makeMesh(cached)));
         return;
       }
 
@@ -430,84 +455,50 @@ function RobotScene({
         stlGeometryLoading.set(url, loading);
       }
       loading
-        .then((geometry) => onLoad(makeMesh(geometry)))
+        .then((geometry) => onLoad(wrapForUrdf(makeMesh(geometry))))
         .catch((err) => onLoad(new THREE.Object3D(), err as Error));
     };
-    // URDFLoader's load callback fires when the URDF XML is parsed, but the
-    // actual STL/DAE meshes come back asynchronously via loadMeshCb. We defer
-    // both the material rebuild and the camera auto-fit to manager.onLoad
-    // (which fires once every tracked loader resolves) so the traverse walks
-    // a fully-populated robot.
+    // Materials are now set directly in loadMeshCb, so manager.onLoad only
+    // needs to (a) enable shadows, (b) auto-fit the camera. We defer the
+    // whole block one macrotask because STLLoader fires `manager.itemEnd`
+    // before the user callback runs, so if we worked synchronously here the
+    // last batch of meshes wouldn't yet be attached to the robot tree.
     manager.onLoad = () => {
-      const robot = robotRef.current;
-      if (!robot) return;
+      setTimeout(() => {
+        const robot = robotRef.current;
+        if (!robot) return;
 
-      // For non-OpenArm URDFs, URDFLoader applies <material rgba="...">
-      // colors that override every PBR tweak we'd set in loadMeshCb's
-      // makeMesh. Rebuild each mesh with a neutral OpenArm-style archetype
-      // so SO-100 (green PLA) and SO-101 (gold PLA) render consistently
-      // with the rest of the fleet instead of bright saturated hues.
-      if (!isOpenArm) {
         robot.traverse((c) => {
           c.castShadow = true;
-          c.receiveShadow = true;
-          if (!(c instanceof THREE.Mesh) || !c.material) return;
-          const originals = Array.isArray(c.material)
-            ? c.material
-            : [c.material];
-          const rebuilt = originals.map((orig) => {
-            const src =
-              (orig as THREE.MeshStandardMaterial).color ??
-              new THREE.Color("#c0c4cc");
-            const hsl = { h: 0, s: 0, l: 0 };
-            src.getHSL(hsl);
-            orig.dispose?.();
-            if (hsl.l < 0.2) {
-              return new THREE.MeshStandardMaterial({
-                color: new THREE.Color("#171a20"),
-                metalness: 0.15,
-                roughness: 0.75,
-              });
-            }
-            return new THREE.MeshStandardMaterial({
-              color: new THREE.Color("#9ba1ab"),
-              metalness: 0.1,
-              roughness: 0.5,
-            });
-          });
-          c.material = Array.isArray(c.material) ? rebuilt : rebuilt[0];
+          if (!isOpenArm) c.receiveShadow = true;
         });
-      } else {
-        robot.traverse((c) => {
-          c.castShadow = true;
-        });
-      }
-      robot.updateMatrixWorld(true);
+        robot.updateMatrixWorld(true);
 
-      // Auto-fit camera: URDFs can ship world→base offsets (SO-arm does)
-      // that put the robot far from origin, so a fixed camera pose crops
-      // the arm. Compute the world-space AABB and frame it.
-      const bbox = new THREE.Box3().setFromObject(robot);
-      if (!bbox.isEmpty()) {
-        const center = bbox.getCenter(new THREE.Vector3());
-        const sizeVec = bbox.getSize(new THREE.Vector3());
-        const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z);
-        const fov =
-          ((camera as THREE.PerspectiveCamera).fov ?? 45) * (Math.PI / 180);
-        const distance = (maxDim / 2 / Math.tan(fov / 2)) * 1.6;
-        const dir = new THREE.Vector3(1, 0.85, 1).normalize();
-        camera.position.copy(center).addScaledVector(dir, distance);
-        camera.lookAt(center);
-        camera.updateProjectionMatrix();
-        const orbit = controls as unknown as {
-          target?: THREE.Vector3;
-          update?: () => void;
-        };
-        if (orbit?.target) {
-          orbit.target.copy(center);
-          orbit.update?.();
+        // Auto-fit camera: URDFs can ship world→base offsets (SO-arm does)
+        // that put the robot far from origin, so a fixed camera pose crops
+        // the arm. Compute the world-space AABB and frame it.
+        const bbox = new THREE.Box3().setFromObject(robot);
+        if (!bbox.isEmpty()) {
+          const center = bbox.getCenter(new THREE.Vector3());
+          const sizeVec = bbox.getSize(new THREE.Vector3());
+          const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z);
+          const fov =
+            ((camera as THREE.PerspectiveCamera).fov ?? 45) * (Math.PI / 180);
+          const distance = (maxDim / 2 / Math.tan(fov / 2)) * 1.6;
+          const dir = new THREE.Vector3(1, 0.85, 1).normalize();
+          camera.position.copy(center).addScaledVector(dir, distance);
+          camera.lookAt(center);
+          camera.updateProjectionMatrix();
+          const orbit = controls as unknown as {
+            target?: THREE.Vector3;
+            update?: () => void;
+          };
+          if (orbit?.target) {
+            orbit.target.copy(center);
+            orbit.update?.();
+          }
         }
-      }
+      }, 0);
     };
 
     loader.load(
