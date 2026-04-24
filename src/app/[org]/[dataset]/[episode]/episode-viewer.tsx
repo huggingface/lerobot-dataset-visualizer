@@ -497,6 +497,22 @@ function EpisodeViewerInner({
             <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
           )}
         </button>
+        {hasURDFSupport(datasetInfo.robot_type) &&
+          datasetInfo.codebase_version >= "v3.0" && (
+            <button
+              className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
+                activeTab === "urdf"
+                  ? "text-orange-400"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+              onClick={() => handleTabChange("urdf")}
+            >
+              3D Replay
+              {activeTab === "urdf" && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
+              )}
+            </button>
+          )}
         <button
           className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
             activeTab === "statistics"
@@ -563,22 +579,6 @@ function EpisodeViewerInner({
             <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
           )}
         </button>
-        {hasURDFSupport(datasetInfo.robot_type) &&
-          datasetInfo.codebase_version >= "v3.0" && (
-            <button
-              className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
-                activeTab === "urdf"
-                  ? "text-orange-400"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-              onClick={() => handleTabChange("urdf")}
-            >
-              3D Replay
-              {activeTab === "urdf" && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
-              )}
-            </button>
-          )}
       </div>
 
       {/* Body: sidebar + content */}
