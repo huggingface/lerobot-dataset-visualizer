@@ -1,35 +1,88 @@
 @import "tailwindcss";
 
+/* ── Design tokens ────────────────────────────────────────────────
+   Consolidated palette + surface scale. Use via Tailwind arbitrary
+   values (bg-[var(--surface-1)]) or via the semantic helpers below. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* surface / depth scale */
+  --bg: #0a0e17;
+  --surface-0: #0d1220;
+  --surface-1: #11172a;
+  --surface-2: #151c33;
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-strong: rgba(255, 255, 255, 0.1);
+
+  /* text scale */
+  --text-primary: #e7ebf3;
+  --text-muted: #9aa3b5;
+  --text-faint: #5b6274;
+
+  /* single accent (cyan). Orange is reserved for destructive. */
+  --accent: #38bdf8;
+  --accent-soft: rgba(56, 189, 248, 0.18);
+  --accent-ring: rgba(56, 189, 248, 0.55);
+
+  --radius: 6px;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-accent: var(--accent);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 html {
-  /* Scale all rem-based sizes (text, padding, buttons) up ~12% */
   font-size: 18px;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-feature-settings:
+    "cv11" 1,
+    "ss01" 1;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
+/* Numeric readouts always use tabular figures so rows don't jitter. */
+.tabular,
+[data-tabular] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Semantic helpers ────────────────────────────────────────────── */
+.panel {
+  @apply rounded-md border border-white/5 bg-white/[0.02];
+}
+.panel-raised {
+  @apply rounded-md border border-white/10 bg-white/[0.03];
+}
+
+/* Scrollbar: thin, subtle, matches the surface palette. */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+  background-clip: padding-box;
+}
+
+/* ── Background video (used on the landing page) ─────────────────── */
 .video-background {
   @apply fixed top-0 right-0 bottom-0 left-0 -z-10 overflow-hidden w-screen h-screen;
 }
@@ -41,13 +94,13 @@ body {
   height: auto;
   transform: translate(-50%, -50%);
   object-fit: cover;
-  filter: brightness(0.9);
+  filter: brightness(0.55) saturate(0.85);
 }
 
 @keyframes fadeInUp {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(16px);
   }
   to {
     opacity: 1;
@@ -56,5 +109,5 @@ body {
 }
 
 .animate-fade-in-up {
-  animation: fadeInUp 0.6s ease-out forwards;
+  animation: fadeInUp 0.55s ease-out forwards;
 }

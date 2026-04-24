@@ -62,7 +62,7 @@ function FrameThumbnail({
 
   return (
     <div ref={containerRef} className="flex flex-col items-center">
-      <div className="w-full aspect-video bg-slate-800 rounded overflow-hidden relative group">
+      <div className="w-full aspect-video bg-[var(--surface-1)] rounded overflow-hidden relative group">
         {inView ? (
           <video
             ref={videoRef}
@@ -72,14 +72,14 @@ function FrameThumbnail({
             className="w-full h-full object-cover"
           />
         ) : (
-          <div className="w-full h-full animate-pulse bg-slate-700" />
+          <div className="w-full h-full animate-pulse bg-white/5" />
         )}
         <button
           onClick={() => toggle(info.episodeIndex)}
           className={`absolute top-1 right-1 p-1 rounded transition-opacity ${
             isFlagged
-              ? "opacity-100 text-orange-400"
-              : "opacity-0 group-hover:opacity-100 text-slate-400 hover:text-orange-400"
+              ? "opacity-100 text-cyan-300"
+              : "opacity-0 group-hover:opacity-100 text-slate-400 hover:text-cyan-300"
           }`}
           title={isFlagged ? "Unflag episode" : "Flag episode"}
         >
@@ -100,7 +100,7 @@ function FrameThumbnail({
         </button>
       </div>
       <p
-        className={`text-xs mt-1 tabular-nums ${isFlagged ? "text-orange-400" : "text-slate-400"}`}
+        className={`text-xs mt-1 tabular-nums ${isFlagged ? "text-cyan-300" : "text-slate-400"}`}
       >
         ep {info.episodeIndex}
         {isFlagged ? " ⚑" : ""}
@@ -181,7 +181,7 @@ export default function OverviewPanel({
         {flaggedOnly && onFlaggedOnlyChange && (
           <button
             onClick={() => onFlaggedOnlyChange(false)}
-            className="text-xs text-orange-400 hover:text-orange-300 underline"
+            className="text-xs text-cyan-300 hover:text-cyan-200 underline"
           >
             Show all episodes
           </button>
@@ -209,7 +209,7 @@ export default function OverviewPanel({
             <select
               value={selectedCamera}
               onChange={handleCameraChange}
-              className="bg-slate-800 text-slate-200 text-sm rounded px-3 py-1.5 border border-slate-600 focus:outline-none focus:border-orange-500"
+              className="bg-[var(--surface-1)] text-slate-200 text-sm rounded px-3 py-1.5 border border-white/10 focus:outline-none focus:border-cyan-400"
             >
               {data.cameras.map((cam) => (
                 <option key={cam} value={cam}>
@@ -228,8 +228,8 @@ export default function OverviewPanel({
               }}
               className={`text-xs px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 ${
                 flaggedOnly
-                  ? "bg-orange-500/20 text-orange-400 border border-orange-500/40"
-                  : "text-slate-400 hover:text-slate-200 border border-slate-700"
+                  ? "bg-cyan-400/15 text-cyan-300 border border-cyan-400/40"
+                  : "text-slate-400 hover:text-slate-200 border border-white/10"
               }`}
             >
               <svg
@@ -259,7 +259,7 @@ export default function OverviewPanel({
             </span>
             <button
               onClick={() => setShowLast((v) => !v)}
-              className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors shrink-0 ${showLast ? "bg-orange-500" : "bg-slate-600"}`}
+              className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors shrink-0 ${showLast ? "bg-cyan-500" : "bg-white/10"}`}
               aria-label="Toggle first/last frame"
             >
               <span
@@ -280,7 +280,7 @@ export default function OverviewPanel({
             <button
               disabled={page === 0}
               onClick={() => setPage((p) => p - 1)}
-              className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="px-2 py-1 rounded bg-[var(--surface-1)] hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed"
             >
               ← Prev
             </button>
@@ -290,7 +290,7 @@ export default function OverviewPanel({
             <button
               disabled={page === totalPages - 1}
               onClick={() => setPage((p) => p + 1)}
-              className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="px-2 py-1 rounded bg-[var(--surface-1)] hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed"
             >
               Next →
             </button>

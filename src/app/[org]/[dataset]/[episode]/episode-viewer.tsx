@@ -93,10 +93,12 @@ export default function EpisodeViewer({
 
   if (error) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-950 text-red-400">
-        <div className="max-w-xl p-8 rounded bg-slate-900 border border-red-500 shadow-lg">
-          <h2 className="text-2xl font-bold mb-4">Something went wrong</h2>
-          <p className="text-lg font-mono whitespace-pre-wrap mb-4">{error}</p>
+      <div className="flex h-screen items-center justify-center bg-[var(--bg)] text-red-300">
+        <div className="panel-raised max-w-xl p-6 border-red-500/40">
+          <h2 className="text-xl font-medium mb-3">Something went wrong</h2>
+          <p className="text-sm font-mono whitespace-pre-wrap text-red-200/90">
+            {error}
+          </p>
         </div>
       </div>
     );
@@ -104,7 +106,7 @@ export default function EpisodeViewer({
 
   if (!data) {
     return (
-      <div className="relative h-screen bg-slate-950">
+      <div className="relative h-screen bg-[var(--bg)]">
         <Loading />
       </div>
     );
@@ -480,105 +482,54 @@ function EpisodeViewerInner({
     }
   };
 
-  return (
-    <div className="flex flex-col h-screen max-h-screen bg-slate-950 text-gray-200">
-      {/* Top tab bar */}
-      <div className="flex items-center border-b border-slate-700 bg-slate-900 shrink-0">
-        <button
-          className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
-            activeTab === "episodes"
-              ? "text-orange-400"
-              : "text-slate-400 hover:text-slate-200"
+  const TabButton = ({
+    tab,
+    label,
+    title,
+  }: {
+    tab: ActiveTab;
+    label: string;
+    title?: string;
+  }) => {
+    const active = activeTab === tab;
+    return (
+      <button
+        onClick={() => handleTabChange(tab)}
+        title={title}
+        className={`relative px-5 py-3 text-xs font-medium tracking-wide uppercase transition-colors ${
+          active ? "text-cyan-300" : "text-slate-400 hover:text-slate-100"
+        }`}
+      >
+        {label}
+        <span
+          className={`pointer-events-none absolute bottom-0 left-3 right-3 h-px transition-all ${
+            active
+              ? "bg-cyan-400 shadow-[0_0_8px_rgba(56,189,248,0.55)]"
+              : "bg-transparent"
           }`}
-          onClick={() => handleTabChange("episodes")}
-        >
-          Episodes
-          {activeTab === "episodes" && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
-          )}
-        </button>
+        />
+      </button>
+    );
+  };
+
+  return (
+    <div className="flex flex-col h-screen max-h-screen bg-[var(--bg)] text-[var(--text-primary)]">
+      {/* Top tab bar */}
+      <div className="flex items-center border-b border-white/5 bg-[var(--surface-0)] shrink-0">
+        <TabButton tab="episodes" label="Episodes" />
         {hasURDFSupport(datasetInfo.robot_type) &&
           datasetInfo.codebase_version >= "v3.0" && (
-            <button
-              className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
-                activeTab === "urdf"
-                  ? "text-orange-400"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-              onClick={() => handleTabChange("urdf")}
-            >
-              3D Replay
-              {activeTab === "urdf" && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
-              )}
-            </button>
+            <TabButton tab="urdf" label="3D Replay" />
           )}
-        <button
-          className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
-            activeTab === "statistics"
-              ? "text-orange-400"
-              : "text-slate-400 hover:text-slate-200"
-          }`}
-          onClick={() => handleTabChange("statistics")}
-        >
-          Statistics
-          {activeTab === "statistics" && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
-          )}
-        </button>
-        <button
-          className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
-            activeTab === "filtering"
-              ? "text-orange-400"
-              : "text-slate-400 hover:text-slate-200"
-          }`}
-          onClick={() => handleTabChange("filtering")}
-        >
-          Filtering
-          {activeTab === "filtering" && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
-          )}
-        </button>
-        <button
-          className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
-            activeTab === "frames"
-              ? "text-orange-400"
-              : "text-slate-400 hover:text-slate-200"
-          }`}
-          onClick={() => handleTabChange("frames")}
-        >
-          Frames
-          {activeTab === "frames" && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
-          )}
-        </button>
-        <button
-          className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
-            activeTab === "insights"
-              ? "text-orange-400"
-              : "text-slate-400 hover:text-slate-200"
-          }`}
-          onClick={() => handleTabChange("insights")}
-        >
-          Action Insights
-          {activeTab === "insights" && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
-          )}
-        </button>
-        <button
-          className={`px-6 py-2.5 text-sm font-medium transition-colors relative ${
-            activeTab === "doctor"
-              ? "text-orange-400"
-              : "text-slate-400 hover:text-slate-200"
-          }`}
-          onClick={() => handleTabChange("doctor")}
+        <TabButton tab="statistics" label="Statistics" />
+        <TabButton tab="filtering" label="Filtering" />
+        <TabButton tab="frames" label="Frames" />
+        <TabButton tab="insights" label="Action Insights" />
+        <TabButton
+          tab="doctor"
+          label="Doctor"
           title="Dataset quality diagnostics (powered by lerobot-doctor)"
-        >
-          Doctor
-          {activeTab === "doctor" && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-500" />
-          )}
-        </button>
+        />
       </div>
 
       {/* Body: sidebar + content */}
@@ -614,32 +565,32 @@ function EpisodeViewerInner({
 
           {activeTab === "episodes" && (
             <>
-              <div className="flex items-center justify-start my-4">
+              <div className="flex items-center gap-4 mb-2">
                 <a
                   href="https://github.com/huggingface/lerobot"
                   target="_blank"
-                  className="block"
+                  className="block shrink-0 opacity-90 hover:opacity-100 transition-opacity"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src="https://github.com/huggingface/lerobot/raw/main/media/readme/lerobot-logo-thumbnail.png"
                     alt="LeRobot Logo"
-                    className="w-32"
+                    className="w-24"
                   />
                 </a>
 
-                <div>
+                <div className="min-w-0">
                   <a
                     href={`https://huggingface.co/datasets/${datasetInfo.repoId}`}
                     target="_blank"
+                    className="text-slate-200 hover:text-cyan-300 transition-colors"
                   >
-                    <p className="text-lg font-semibold">
+                    <p className="text-base font-medium truncate">
                       {datasetInfo.repoId}
                     </p>
                   </a>
-
-                  <p className="font-mono text-lg font-semibold">
-                    episode {episodeId}
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mt-0.5 tabular">
+                    Episode · {episodeId}
                   </p>
                 </div>
               </div>
@@ -654,19 +605,15 @@ function EpisodeViewerInner({
 
               {/* Language Instruction */}
               {task && (
-                <div className="mb-6 p-4 bg-slate-800 rounded-lg border border-slate-600">
-                  <p className="text-slate-300">
-                    <span className="font-semibold text-slate-100">
-                      Language Instruction:
-                    </span>
+                <div className="mb-6 panel p-4">
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500">
+                    Language Instruction
                   </p>
-                  <div className="mt-2 text-slate-300">
+                  <div className="mt-1.5 space-y-0.5 text-sm text-slate-200">
                     {task
                       .split("\n")
                       .map((instruction: string, index: number) => (
-                        <p key={index} className="mb-1">
-                          {instruction}
-                        </p>
+                        <p key={index}>{instruction}</p>
                       ))}
                   </div>
                 </div>

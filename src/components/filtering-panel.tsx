@@ -22,7 +22,7 @@ function FlagBtn({ id }: { id: number }) {
     <button
       onClick={() => toggle(id)}
       title={flagged ? "Unflag episode" : "Flag for review"}
-      className={`p-0.5 rounded transition-colors ${flagged ? "text-orange-400" : "text-slate-600 hover:text-slate-400"}`}
+      className={`p-0.5 rounded transition-colors ${flagged ? "text-cyan-300" : "text-slate-600 hover:text-slate-400"}`}
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -47,7 +47,7 @@ function FlagAllBtn({ ids, label }: { ids: number[]; label?: string }) {
   return (
     <button
       onClick={() => addMany(ids)}
-      className="text-xs text-slate-500 hover:text-orange-400 transition-colors flex items-center gap-1"
+      className="text-xs text-slate-500 hover:text-cyan-300 transition-colors flex items-center gap-1"
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -75,7 +75,7 @@ function LowMovementSection({ episodes }: { episodes: LowMovementEpisode[] }) {
   const maxMovement = Math.max(...episodes.map((e) => e.totalMovement), 1e-10);
 
   return (
-    <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-3">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-200">
           Lowest-Movement Episodes
@@ -94,14 +94,14 @@ function LowMovementSection({ episodes }: { episodes: LowMovementEpisode[] }) {
         {episodes.map((ep) => (
           <div
             key={ep.episodeIndex}
-            className="bg-slate-900/50 rounded-md px-3 py-2 flex items-center gap-3"
+            className="bg-[var(--surface-0)]/50 rounded-md px-3 py-2 flex items-center gap-3"
           >
             <FlagBtn id={ep.episodeIndex} />
             <span className="text-xs text-slate-300 font-medium shrink-0">
               ep {ep.episodeIndex}
             </span>
             <div className="flex-1 min-w-0">
-              <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+              <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full"
                   style={{
@@ -157,7 +157,7 @@ function EpisodeLengthFilter({ episodes }: { episodes: EpisodeLengthInfo[] }) {
     0.01;
 
   return (
-    <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10 space-y-4">
       <h3 className="text-sm font-semibold text-slate-200">
         Episode Length Filter
       </h3>
@@ -168,9 +168,9 @@ function EpisodeLengthFilter({ episodes }: { episodes: EpisodeLengthInfo[] }) {
           <span className="tabular-nums">{rangeMax.toFixed(1)}s</span>
         </div>
         <div className="relative h-5">
-          <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1 rounded bg-slate-700" />
+          <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1 rounded bg-white/5" />
           <div
-            className="absolute top-1/2 -translate-y-1/2 h-1 rounded bg-orange-500"
+            className="absolute top-1/2 -translate-y-1/2 h-1 rounded bg-cyan-500"
             style={{
               left: `${((rangeMin - globalMin) / (globalMax - globalMin || 1)) * 100}%`,
               right: `${100 - ((rangeMax - globalMin) / (globalMax - globalMin || 1)) * 100}%`,
@@ -185,7 +185,7 @@ function EpisodeLengthFilter({ episodes }: { episodes: EpisodeLengthInfo[] }) {
             onChange={(e) =>
               setRangeMin(Math.min(Number(e.target.value), rangeMax))
             }
-            className="absolute inset-0 w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-orange-500 [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-orange-500 [&::-moz-range-thumb]:cursor-pointer"
+            className="absolute inset-0 w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-cyan-400 [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-cyan-400 [&::-moz-range-thumb]:cursor-pointer"
           />
           <input
             type="range"
@@ -196,7 +196,7 @@ function EpisodeLengthFilter({ episodes }: { episodes: EpisodeLengthInfo[] }) {
             onChange={(e) =>
               setRangeMax(Math.max(Number(e.target.value), rangeMin))
             }
-            className="absolute inset-0 w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-orange-500 [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-orange-500 [&::-moz-range-thumb]:cursor-pointer"
+            className="absolute inset-0 w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-cyan-400 [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-cyan-400 [&::-moz-range-thumb]:cursor-pointer"
           />
         </div>
       </div>
@@ -210,7 +210,7 @@ function EpisodeLengthFilter({ episodes }: { episodes: EpisodeLengthInfo[] }) {
           {outsideIds.length > 0 && (
             <button
               onClick={() => addMany(outsideIds)}
-              className="text-xs bg-orange-500/20 text-orange-400 border border-orange-500/40 rounded px-2 py-1 hover:bg-orange-500/30 transition-colors"
+              className="text-xs bg-cyan-400/15 text-cyan-300 border border-cyan-400/40 rounded px-2 py-1 hover:bg-cyan-400/20 transition-colors"
             >
               Flag {outsideIds.length} outside range
             </button>
@@ -254,9 +254,9 @@ function FlaggedIdsCopyBar({
   if (count === 0) return null;
 
   return (
-    <div className="bg-slate-800/60 rounded-lg p-4 border border-orange-500/30 space-y-3">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-4 border border-cyan-400/30 space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-orange-400">
+        <h3 className="text-sm font-semibold text-cyan-300">
           Flagged Episodes
           <span className="text-xs text-slate-500 ml-2 font-normal">
             ({count})
@@ -311,7 +311,7 @@ function FlaggedIdsCopyBar({
       {onViewEpisodes && (
         <button
           onClick={onViewEpisodes}
-          className="w-full text-xs py-1.5 rounded bg-slate-700/80 hover:bg-slate-600 text-slate-300 hover:text-white transition-colors flex items-center justify-center gap-1.5"
+          className="w-full text-xs py-1.5 rounded bg-white/5/80 hover:bg-white/5 text-slate-300 hover:text-white transition-colors flex items-center justify-center gap-1.5"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -330,20 +330,20 @@ function FlaggedIdsCopyBar({
           View flagged episodes
         </button>
       )}
-      <div className="bg-slate-900/60 rounded-md px-3 py-2 border border-slate-700/60 space-y-2.5">
+      <div className="bg-[var(--surface-0)]/60 rounded-md px-3 py-2 border border-white/10/60 space-y-2.5">
         <p className="text-xs text-slate-400">
           <a
             href="https://github.com/huggingface/lerobot"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-orange-400 underline"
+            className="text-cyan-300 underline"
           >
             LeRobot CLI
           </a>{" "}
           — delete flagged episodes:
         </p>
-        <pre className="text-xs text-slate-300 bg-slate-950/50 rounded px-2 py-1.5 overflow-x-auto select-all">{`# Delete episodes (modifies original dataset)\nlerobot-edit-dataset \\\n    --repo_id ${repoId} \\\n    --operation.type delete_episodes \\\n    --operation.episode_indices "[${ids.join(", ")}]"`}</pre>
-        <pre className="text-xs text-slate-300 bg-slate-950/50 rounded px-2 py-1.5 overflow-x-auto select-all">{`# Delete episodes and save to a new dataset (preserves original)\nlerobot-edit-dataset \\\n    --repo_id ${repoId} \\\n    --new_repo_id ${repoId}_filtered \\\n    --operation.type delete_episodes \\\n    --operation.episode_indices "[${ids.join(", ")}]"`}</pre>
+        <pre className="text-xs text-slate-300 bg-[var(--bg)]/50 rounded px-2 py-1.5 overflow-x-auto select-all">{`# Delete episodes (modifies original dataset)\nlerobot-edit-dataset \\\n    --repo_id ${repoId} \\\n    --operation.type delete_episodes \\\n    --operation.episode_indices "[${ids.join(", ")}]"`}</pre>
+        <pre className="text-xs text-slate-300 bg-[var(--bg)]/50 rounded px-2 py-1.5 overflow-x-auto select-all">{`# Delete episodes and save to a new dataset (preserves original)\nlerobot-edit-dataset \\\n    --repo_id ${repoId} \\\n    --new_repo_id ${repoId}_filtered \\\n    --operation.type delete_episodes \\\n    --operation.episode_indices "[${ids.join(", ")}]"`}</pre>
       </div>
     </div>
   );
@@ -377,7 +377,7 @@ function FilteringPanel({
       )}
 
       {crossEpisodeLoading && (
-        <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700">
+        <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10">
           <div className="flex items-center gap-2 text-slate-400 text-sm py-4 justify-center">
             <svg
               className="animate-spin h-4 w-4"

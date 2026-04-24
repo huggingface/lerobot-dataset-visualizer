@@ -70,7 +70,7 @@ function FullscreenWrapper({ children }: { children: React.ReactNode }) {
     <div className="relative">
       <button
         onClick={() => setFs((v) => !v)}
-        className="absolute top-3 right-3 z-10 p-1.5 rounded bg-slate-700/60 hover:bg-slate-600 text-slate-400 hover:text-slate-200 transition-colors backdrop-blur-sm"
+        className="absolute top-3 right-3 z-10 p-1.5 rounded bg-white/5/60 hover:bg-white/5 text-slate-400 hover:text-slate-200 transition-colors backdrop-blur-sm"
         title={fs ? "Exit fullscreen" : "Fullscreen"}
       >
         <svg
@@ -102,10 +102,10 @@ function FullscreenWrapper({ children }: { children: React.ReactNode }) {
         </svg>
       </button>
       {fs ? (
-        <div className="fixed inset-0 z-50 bg-slate-950/95 overflow-auto p-6">
+        <div className="fixed inset-0 z-50 bg-[var(--bg)]/95 overflow-auto p-6">
           <button
             onClick={() => setFs(false)}
-            className="fixed top-4 right-4 z-50 p-2 rounded bg-slate-700/80 hover:bg-slate-600 text-slate-300 hover:text-white transition-colors"
+            className="fixed top-4 right-4 z-50 p-2 rounded bg-white/5/80 hover:bg-white/5 text-slate-300 hover:text-white transition-colors"
             title="Exit fullscreen (Esc)"
           >
             <svg
@@ -145,7 +145,7 @@ function FlagBtn({ id }: { id: number }) {
     <button
       onClick={() => toggle(id)}
       title={flagged ? "Unflag episode" : "Flag for review"}
-      className={`p-0.5 rounded transition-colors ${flagged ? "text-orange-400" : "text-slate-600 hover:text-slate-400"}`}
+      className={`p-0.5 rounded transition-colors ${flagged ? "text-cyan-300" : "text-slate-600 hover:text-slate-400"}`}
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -170,7 +170,7 @@ function FlagAllBtn({ ids, label }: { ids: number[]; label?: string }) {
   return (
     <button
       onClick={() => addMany(ids)}
-      className="text-xs text-slate-500 hover:text-orange-400 transition-colors flex items-center gap-1"
+      className="text-xs text-slate-500 hover:text-cyan-300 transition-colors flex items-center gap-1"
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -329,7 +329,7 @@ function AutocorrelationSection({
     return <p className="text-slate-500 italic">No action columns found.</p>;
 
   return (
-    <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10 space-y-4">
       <div>
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-slate-200">
@@ -343,7 +343,7 @@ function AutocorrelationSection({
               Shows how correlated each action dimension is with itself over
               increasing time lags. Where autocorrelation drops below 0.5
               suggests a{" "}
-              <span className="text-orange-400 font-medium">
+              <span className="text-cyan-300 font-medium">
                 natural action chunk boundary
               </span>{" "}
               — actions beyond this lag are essentially independent, so
@@ -368,12 +368,12 @@ function AutocorrelationSection({
       </div>
 
       {suggestedChunk && (
-        <div className="flex items-center gap-3 bg-orange-500/10 border border-orange-500/30 rounded-md px-4 py-2.5">
-          <span className="text-orange-400 font-bold text-lg tabular-nums">
+        <div className="flex items-center gap-3 bg-cyan-400/10 border border-cyan-400/30 rounded-md px-4 py-2.5">
+          <span className="text-cyan-300 font-bold text-lg tabular-nums">
             {suggestedChunk}
           </span>
           <div>
-            <p className="text-sm text-orange-300 font-medium">
+            <p className="text-sm text-cyan-200 font-medium">
               Suggested chunk length: {suggestedChunk} steps (
               {(suggestedChunk / fps).toFixed(2)}s)
             </p>
@@ -639,7 +639,7 @@ function ActionVelocitySection({
     );
 
   return (
-    <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10 space-y-4">
       <div>
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-slate-200">
@@ -700,7 +700,7 @@ function ActionVelocitySection({
           return (
             <div
               key={s.name}
-              className={`rounded-md px-2.5 py-2 space-y-1 ${dimmed ? "bg-slate-900/30 opacity-50" : "bg-slate-900/50"}`}
+              className={`rounded-md px-2.5 py-2 space-y-1 ${dimmed ? "bg-[var(--surface-0)]/30 opacity-50" : "bg-[var(--surface-0)]/50"}`}
             >
               <p
                 className={`text-xs font-medium truncate ${dimmed ? "text-slate-500" : "text-slate-200"}`}
@@ -743,7 +743,7 @@ function ActionVelocitySection({
                   );
                 })}
               </svg>
-              <div className="h-1 w-full bg-slate-700 rounded-full overflow-hidden">
+              <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full"
                   style={{
@@ -764,7 +764,7 @@ function ActionVelocitySection({
       </div>
 
       {insight && (
-        <div className="bg-slate-900/60 rounded-md px-4 py-3 border border-slate-700/60 space-y-1.5">
+        <div className="bg-[var(--surface-0)]/60 rounded-md px-4 py-3 border border-white/10/60 space-y-1.5">
           <p className="text-sm font-medium text-slate-200">
             Overall:{" "}
             <span className={insight.verdict.color}>
@@ -792,7 +792,7 @@ function JerkyEpisodesList({ episodes }: { episodes: JerkyEpisode[] }) {
   const display = showAll ? episodes : episodes.slice(0, 15);
 
   return (
-    <div className="bg-slate-900/60 rounded-md px-4 py-3 border border-slate-700/60 space-y-2">
+    <div className="bg-[var(--surface-0)]/60 rounded-md px-4 py-3 border border-white/10/60 space-y-2">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-slate-200">
           Most Jerky Episodes{" "}
@@ -815,7 +815,7 @@ function JerkyEpisodesList({ episodes }: { episodes: JerkyEpisode[] }) {
       <div className="max-h-48 overflow-y-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="text-slate-500 border-b border-slate-700">
+            <tr className="text-slate-500 border-b border-white/10">
               <th className="w-5 py-1" />
               <th className="text-left py-1 pr-3">Episode</th>
               <th className="text-right py-1">Mean |Δa|</th>
@@ -825,7 +825,7 @@ function JerkyEpisodesList({ episodes }: { episodes: JerkyEpisode[] }) {
             {display.map((e) => (
               <tr
                 key={e.episodeIndex}
-                className="border-b border-slate-800/40 text-slate-300"
+                className="border-b border-white/5/40 text-slate-300"
               >
                 <td className="py-1">
                   <FlagBtn id={e.episodeIndex} />
@@ -856,7 +856,7 @@ function VarianceHeatmap({
 
   if (loading) {
     return (
-      <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700">
+      <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10">
         <h3 className="text-sm font-semibold text-slate-200 mb-2">
           Cross-Episode Action Variance
         </h3>
@@ -884,7 +884,7 @@ function VarianceHeatmap({
 
   if (!data) {
     return (
-      <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700">
+      <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10">
         <h3 className="text-sm font-semibold text-slate-200 mb-2">
           Cross-Episode Action Variance
         </h3>
@@ -924,7 +924,7 @@ function VarianceHeatmap({
   }
 
   return (
-    <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10 space-y-4">
       <div>
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-slate-200">
@@ -937,10 +937,7 @@ function VarianceHeatmap({
             <p className="text-xs text-slate-400">
               Shows how much each action dimension varies across episodes at
               each point in time (normalized 0–100%).
-              <span className="text-orange-400">
-                {" "}
-                High-variance regions
-              </span>{" "}
+              <span className="text-cyan-300"> High-variance regions</span>{" "}
               indicate multi-modal or inconsistent demonstrations — generative
               policies (diffusion, flow-matching) and action chunking help here
               by modeling multiple modes.
@@ -1135,7 +1132,7 @@ function SpeedVarianceSection({
   const barW = Math.max(8, Math.floor((isFs ? 900 : 500) / bins.length));
 
   return (
-    <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10 space-y-4">
       <div>
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-slate-200">
@@ -1148,11 +1145,11 @@ function SpeedVarianceSection({
             <p className="text-xs text-slate-400">
               Distribution of average execution speed (mean ‖Δa<sub>t</sub>‖ per
               frame) across all episodes. Different human demonstrators often
-              execute at{" "}
-              <span className="text-orange-400">different speeds</span>,
-              creating artificial multimodality in the action distribution that
-              confuses the policy. A coefficient of variation (CV) above 0.3
-              strongly suggests normalizing trajectory speed before training.
+              execute at <span className="text-cyan-300">different speeds</span>
+              , creating artificial multimodality in the action distribution
+              that confuses the policy. A coefficient of variation (CV) above
+              0.3 strongly suggests normalizing trajectory speed before
+              training.
               <br />
               <span className="text-slate-500">
                 Based on &quot;Is Diversity All You Need&quot; (AGI-Bot, 2025)
@@ -1234,7 +1231,7 @@ function SpeedVarianceSection({
         </div>
       </div>
 
-      <div className="bg-slate-900/60 rounded-md px-4 py-3 border border-slate-700/60 space-y-1.5">
+      <div className="bg-[var(--surface-0)]/60 rounded-md px-4 py-3 border border-white/10/60 space-y-1.5">
         <p className="text-sm font-medium text-slate-200">
           Verdict: <span className={verdict.color}>{verdict.label}</span>
         </p>
@@ -1402,7 +1399,7 @@ function StateActionAlignmentSection({
     : "current episode";
 
   return (
-    <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700 space-y-4">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10 space-y-4">
       <div>
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-slate-200">
@@ -1415,11 +1412,11 @@ function StateActionAlignmentSection({
             <p className="text-xs text-slate-400">
               Per-dimension cross-correlation between Δaction<sub>d</sub>(t) and
               Δstate<sub>d</sub>(t+lag), aggregated as
-              <span className="text-orange-400"> max</span>,{" "}
+              <span className="text-cyan-300"> max</span>,{" "}
               <span className="text-slate-200">mean</span>, and
               <span className="text-blue-400"> min</span> across all matched
               action–state pairs. The{" "}
-              <span className="text-orange-400">peak lag</span> reveals the
+              <span className="text-cyan-300">peak lag</span> reveals the
               effective control delay — the time between when an action is
               commanded and when the corresponding state changes.
               <br />
@@ -1461,12 +1458,12 @@ function StateActionAlignmentSection({
       </div>
 
       {meanPeakLag !== 0 && (
-        <div className="flex items-center gap-3 bg-orange-500/10 border border-orange-500/30 rounded-md px-4 py-2.5">
-          <span className="text-orange-400 font-bold text-lg tabular-nums">
+        <div className="flex items-center gap-3 bg-cyan-400/10 border border-cyan-400/30 rounded-md px-4 py-2.5">
+          <span className="text-cyan-300 font-bold text-lg tabular-nums">
             {meanPeakLag}
           </span>
           <div>
-            <p className="text-sm text-orange-300 font-medium">
+            <p className="text-sm text-cyan-200 font-medium">
               Mean control delay: {meanPeakLag} step
               {Math.abs(meanPeakLag) !== 1 ? "s" : ""} (
               {(meanPeakLag / fps).toFixed(3)}s)
@@ -1555,7 +1552,7 @@ function StateActionAlignmentSection({
 
       <div className="flex flex-wrap gap-x-4 gap-y-1 px-1">
         <div className="flex items-center gap-1.5">
-          <span className="w-3 h-[3px] rounded-full shrink-0 bg-orange-500" />
+          <span className="w-3 h-[3px] rounded-full shrink-0 bg-cyan-500" />
           <span className="text-xs text-slate-400">
             max (peak: lag {maxPeakLag}, r={maxPeakCorr.toFixed(3)})
           </span>
@@ -1622,7 +1619,7 @@ function ActionInsightsPanel({
             onClick={() =>
               setMode((m) => (m === "episode" ? "dataset" : "episode"))
             }
-            className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors shrink-0 ${mode === "dataset" ? "bg-orange-500" : "bg-slate-600"}`}
+            className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors shrink-0 ${mode === "dataset" ? "bg-cyan-500" : "bg-white/10"}`}
             aria-label="Toggle episode/dataset scope"
           >
             <span

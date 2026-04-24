@@ -104,7 +104,7 @@ function EpisodeLengthHistogram({
 
 function Card({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="bg-slate-800/60 rounded-lg p-4 border border-slate-700">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-4 border border-white/10">
       <p className="text-xs text-slate-400 uppercase tracking-wide">{label}</p>
       <p className="text-xl font-bold tabular-nums mt-1">{value}</p>
     </div>
@@ -154,13 +154,16 @@ function StatsPanel({
 
       {/* Camera resolutions */}
       {datasetInfo.cameras.length > 0 && (
-        <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700">
+        <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10">
           <h3 className="text-sm font-semibold text-slate-200 mb-3">
             Camera Resolutions
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {datasetInfo.cameras.map((cam: CameraInfo) => (
-              <div key={cam.name} className="bg-slate-900/50 rounded-md p-3">
+              <div
+                key={cam.name}
+                className="bg-[var(--surface-0)]/50 rounded-md p-3"
+              >
                 <p
                   className="text-xs text-slate-400 mb-1 truncate"
                   title={cam.name}
@@ -201,7 +204,7 @@ function StatsPanel({
       {/* Episode length section */}
       {els && (
         <>
-          <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700">
+          <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10">
             <h3 className="text-sm font-semibold text-slate-200 mb-4">
               Episode Lengths
             </h3>
@@ -221,7 +224,7 @@ function StatsPanel({
           </div>
 
           {els.episodeLengthHistogram.length > 0 && (
-            <div className="bg-slate-800/60 rounded-lg p-5 border border-slate-700">
+            <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10">
               <h3 className="text-sm font-semibold text-slate-200 mb-4">
                 Episode Length Distribution
                 <span className="text-xs text-slate-500 ml-2 font-normal">
