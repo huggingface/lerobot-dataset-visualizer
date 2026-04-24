@@ -212,7 +212,6 @@ function RobotScene({
   const { scene, camera, controls, size } = useThree();
   const robotRef = useRef<URDFRobot | null>(null);
   const tipLinksRef = useRef<THREE.Object3D[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   type TrailState = {
@@ -280,7 +279,6 @@ function RobotScene({
   );
 
   useEffect(() => {
-    setLoading(true);
     setError(null);
     const isOpenArm = urdfUrl.includes("openarm");
     const isG1 = urdfUrl.includes("g1");
@@ -557,13 +555,11 @@ function RobotScene({
           )
           .map((j) => j.name);
         onJointsLoaded(movable);
-        setLoading(false);
       },
       undefined,
       (err) => {
         console.error("Error loading URDF:", err);
         setError(String(err));
-        setLoading(false);
       },
     );
     return () => {
@@ -640,12 +636,9 @@ function RobotScene({
     }
   });
 
-  if (loading)
-    return (
-      <Html center>
-        <span className="text-white text-lg">Loading robot…</span>
-      </Html>
-    );
+  // Loading state is rendered by the outer overlay (via urdfLoading) so we
+  // don't show two stacked spinners. The error state still surfaces inline
+  // since the overlay doesn't have an error path.
   if (error)
     return (
       <Html center>
