@@ -1154,65 +1154,57 @@ function extractVideoInfoV3WithSegmentation(
   return videosInfo;
 }
 
+// Walks v3.0 episode-metadata parquet files across chunks/files. A new chunk
+// begins when the current chunk's files run out (404 or empty); iteration ends
+// when file-000 of the next chunk 404s. `chunks_size` caps files per chunk, so
+// large datasets can spill past chunk-000.
+async function* iterateEpisodeMetadataFilesV3(
+  repoId: string,
+  version: string,
+): AsyncGenerator<Record<string, unknown>[], void, unknown> {
+  let chunkIndex = 0;
+  let fileIndex = 0;
+
+  while (true) {
+    const path = buildV3EpisodesMetadataPath(chunkIndex, fileIndex);
+    const url = buildVersionedUrl(repoId, version, path);
+    let rows: Record<string, unknown>[];
+    try {
+      const buf = await fetchParquetFile(url);
+      rows = await readParquetAsObjects(buf, []);
+    } catch {
+      if (fileIndex === 0) return;
+      chunkIndex++;
+      fileIndex = 0;
+      continue;
+    }
+
+    if (rows.length === 0) {
+      if (fileIndex === 0) return;
+      chunkIndex++;
+      fileIndex = 0;
+      continue;
+    }
+
+    yield rows;
+    fileIndex++;
+  }
+}
+
 // Metadata loading for v3.0 episodes
 async function loadEpisodeMetadataV3Simple(
   repoId: string,
   version: string,
   episodeId: number,
 ): Promise<EpisodeMetadataV3> {
-  // Pattern: meta/episodes/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet
-  // Most datasets have all episodes in chunk-000/file-000, but episodes can be split across files
-
-  let episodeRow = null;
-  let fileIndex = 0;
-  const chunkIndex = 0; // Episodes are typically in chunk-000
-
-  // Try loading episode metadata files until we find the episode
-  while (!episodeRow) {
-    const episodesMetadataPath = buildV3EpisodesMetadataPath(
-      chunkIndex,
-      fileIndex,
-    );
-    const episodesMetadataUrl = buildVersionedUrl(
-      repoId,
-      version,
-      episodesMetadataPath,
-    );
-
-    try {
-      const arrayBuffer = await fetchParquetFile(episodesMetadataUrl);
-      const episodesData = await readParquetAsObjects(arrayBuffer, []);
-
-      if (episodesData.length === 0) {
-        // Empty file, try next one
-        fileIndex++;
-        continue;
+  for await (const rows of iterateEpisodeMetadataFilesV3(repoId, version)) {
+    for (const row of rows) {
+      if (parseEpisodeRowSimple(row).episode_index === episodeId) {
+        return parseEpisodeRowSimple(row);
       }
-
-      // Find the row for the requested episode by episode_index
-      for (const row of episodesData) {
-        const parsedRow = parseEpisodeRowSimple(row);
-
-        if (parsedRow.episode_index === episodeId) {
-          episodeRow = row;
-          break;
-        }
-      }
-
-      if (!episodeRow) {
-        // Not in this file, try the next one
-        fileIndex++;
-      }
-    } catch {
-      // File doesn't exist - episode not found
-      throw new Error(
-        `Episode ${episodeId} not found in metadata (searched up to file-${fileIndex.toString().padStart(PADDING.CHUNK_INDEX, "0")}.parquet)`,
-      );
     }
   }
-
-  // Convert the row to a usable format
-  return parseEpisodeRowSimple(episodeRow);
+  throw new Error(`Episode ${episodeId} not found in metadata`);
 }
 
 // Simple parser for episode row - focuses on key fields for episodes
@@ -1522,47 +1514,35 @@ export async function loadAllEpisodeFrameInfo(
   );
 
   if (version === "v3.0") {
-    let fileIndex = 0;
-    while (true) {
-      const path = `meta/episodes/chunk-000/file-${fileIndex.toString().padStart(3, "0")}.parquet`;
-      try {
-        const buf = await fetchParquetFile(
-          buildVersionedUrl(repoId, version, path),
-        );
-        const rows = await readParquetAsObjects(buf, []);
-        if (rows.length === 0 && fileIndex > 0) break;
-        for (const row of rows) {
-          const epIdx = Number(row["episode_index"] ?? 0);
-          if (sampledEpisodeSet && !sampledEpisodeSet.has(epIdx)) continue;
-          for (const cam of cameras) {
-            const cIdx = Number(
-              row[`videos/${cam}/chunk_index`] ?? row["video_chunk_index"] ?? 0,
-            );
-            const fIdx = Number(
-              row[`videos/${cam}/file_index`] ?? row["video_file_index"] ?? 0,
-            );
-            const fromTs = Number(
-              row[`videos/${cam}/from_timestamp`] ??
-                row["video_from_timestamp"] ??
-                0,
-            );
-            const toTs = Number(
-              row[`videos/${cam}/to_timestamp`] ??
-                row["video_to_timestamp"] ??
-                30,
-            );
-            const videoPath = `videos/${cam}/chunk-${cIdx.toString().padStart(3, "0")}/file-${fIdx.toString().padStart(3, "0")}.mp4`;
-            framesByCamera[cam].push({
-              episodeIndex: epIdx,
-              videoUrl: buildVersionedUrl(repoId, version, videoPath),
-              firstFrameTime: fromTs,
-              lastFrameTime: Math.max(0, toTs - 0.05),
-            });
-          }
+    for await (const rows of iterateEpisodeMetadataFilesV3(repoId, version)) {
+      for (const row of rows) {
+        const epIdx = Number(row["episode_index"] ?? 0);
+        if (sampledEpisodeSet && !sampledEpisodeSet.has(epIdx)) continue;
+        for (const cam of cameras) {
+          const cIdx = Number(
+            row[`videos/${cam}/chunk_index`] ?? row["video_chunk_index"] ?? 0,
+          );
+          const fIdx = Number(
+            row[`videos/${cam}/file_index`] ?? row["video_file_index"] ?? 0,
+          );
+          const fromTs = Number(
+            row[`videos/${cam}/from_timestamp`] ??
+              row["video_from_timestamp"] ??
+              0,
+          );
+          const toTs = Number(
+            row[`videos/${cam}/to_timestamp`] ??
+              row["video_to_timestamp"] ??
+              30,
+          );
+          const videoPath = `videos/${cam}/chunk-${cIdx.toString().padStart(3, "0")}/file-${fIdx.toString().padStart(3, "0")}.mp4`;
+          framesByCamera[cam].push({
+            episodeIndex: epIdx,
+            videoUrl: buildVersionedUrl(repoId, version, videoPath),
+            firstFrameTime: fromTs,
+            lastFrameTime: Math.max(0, toTs - 0.05),
+          });
         }
-        fileIndex++;
-      } catch {
-        break;
       }
     }
     return { cameras, framesByCamera };
@@ -1704,28 +1684,16 @@ export async function loadCrossEpisodeActionVariance(
   const allEps: EpMeta[] = [];
 
   if (version === "v3.0") {
-    let fileIndex = 0;
-    while (true) {
-      const path = `meta/episodes/chunk-000/file-${fileIndex.toString().padStart(3, "0")}.parquet`;
-      try {
-        const buf = await fetchParquetFile(
-          buildVersionedUrl(repoId, version, path),
-        );
-        const rows = await readParquetAsObjects(buf, []);
-        if (rows.length === 0 && fileIndex > 0) break;
-        for (const row of rows) {
-          const parsed = parseEpisodeRowSimple(row);
-          allEps.push({
-            index: parsed.episode_index,
-            chunkIdx: parsed.data_chunk_index,
-            fileIdx: parsed.data_file_index,
-            from: parsed.dataset_from_index,
-            to: parsed.dataset_to_index,
-          });
-        }
-        fileIndex++;
-      } catch {
-        break;
+    for await (const rows of iterateEpisodeMetadataFilesV3(repoId, version)) {
+      for (const row of rows) {
+        const parsed = parseEpisodeRowSimple(row);
+        allEps.push({
+          index: parsed.episode_index,
+          chunkIdx: parsed.data_chunk_index,
+          fileIdx: parsed.data_file_index,
+          from: parsed.dataset_from_index,
+          to: parsed.dataset_to_index,
+        });
       }
     }
   } else {
