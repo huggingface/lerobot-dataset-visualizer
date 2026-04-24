@@ -435,81 +435,96 @@ function RobotScene({
         .then((geometry) => onLoad(makeMesh(geometry)))
         .catch((err) => onLoad(new THREE.Object3D(), err as Error));
     };
+    // URDFLoader's load callback fires when the URDF XML is parsed, but the
+    // actual STL/DAE meshes come back asynchronously via loadMeshCb. We defer
+    // both the material rebuild and the camera auto-fit to manager.onLoad
+    // (which fires once every tracked loader resolves) so the traverse walks
+    // a fully-populated robot.
+    manager.onLoad = () => {
+      const robot = robotRef.current;
+      if (!robot) return;
+
+      // For non-OpenArm URDFs, URDFLoader applies <material rgba="...">
+      // colors that override every PBR tweak we'd set in loadMeshCb's
+      // makeMesh. Rebuild each mesh with a neutral OpenArm-style archetype
+      // so SO-100 (green PLA) and SO-101 (gold PLA) render consistently
+      // with the rest of the fleet instead of bright saturated hues.
+      if (!isOpenArm) {
+        robot.traverse((c) => {
+          c.castShadow = true;
+          c.receiveShadow = true;
+          if (!(c instanceof THREE.Mesh) || !c.material) return;
+          const originals = Array.isArray(c.material)
+            ? c.material
+            : [c.material];
+          const rebuilt = originals.map((orig) => {
+            const src =
+              (orig as THREE.MeshStandardMaterial).color ??
+              new THREE.Color("#c0c4cc");
+            const hsl = { h: 0, s: 0, l: 0 };
+            src.getHSL(hsl);
+            orig.dispose?.();
+            if (hsl.l < 0.2) {
+              return new THREE.MeshStandardMaterial({
+                color: new THREE.Color("#171a20"),
+                metalness: 0.15,
+                roughness: 0.75,
+              });
+            }
+            return new THREE.MeshStandardMaterial({
+              color: new THREE.Color("#9ba1ab"),
+              metalness: 0.1,
+              roughness: 0.5,
+            });
+          });
+          c.material = Array.isArray(c.material) ? rebuilt : rebuilt[0];
+        });
+      } else {
+        robot.traverse((c) => {
+          c.castShadow = true;
+        });
+      }
+      robot.updateMatrixWorld(true);
+
+      // Auto-fit camera: URDFs can ship world→base offsets (SO-arm does)
+      // that put the robot far from origin, so a fixed camera pose crops
+      // the arm. Compute the world-space AABB and frame it.
+      const bbox = new THREE.Box3().setFromObject(robot);
+      if (!bbox.isEmpty()) {
+        const center = bbox.getCenter(new THREE.Vector3());
+        const sizeVec = bbox.getSize(new THREE.Vector3());
+        const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z);
+        const fov =
+          ((camera as THREE.PerspectiveCamera).fov ?? 45) * (Math.PI / 180);
+        const distance = (maxDim / 2 / Math.tan(fov / 2)) * 1.6;
+        const dir = new THREE.Vector3(1, 0.85, 1).normalize();
+        camera.position.copy(center).addScaledVector(dir, distance);
+        camera.lookAt(center);
+        camera.updateProjectionMatrix();
+        const orbit = controls as unknown as {
+          target?: THREE.Vector3;
+          update?: () => void;
+        };
+        if (orbit?.target) {
+          orbit.target.copy(center);
+          orbit.update?.();
+        }
+      }
+    };
+
     loader.load(
       urdfUrl,
       (robot) => {
         robotRef.current = robot;
         robot.rotateOnAxis(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-
-        // URDFLoader applies <material rgba="...">-derived colors AFTER our
-        // loadMeshCb returns. For SO-arm URDFs those declarations override
-        // every PBR tweak we set in makeMesh with a flat default material,
-        // so rebuild after the fact: keep the URDF-assigned base color but
-        // wrap it in a MeshStandardMaterial with properly tuned PBR params.
-        // OpenArm has its own rebuild path in loadMeshCb, so skip it here.
-        if (!isOpenArm) {
-          robot.traverse((c) => {
-            c.castShadow = true;
-            c.receiveShadow = true;
-            if (!(c instanceof THREE.Mesh) || !c.material) return;
-            const originals = Array.isArray(c.material)
-              ? c.material
-              : [c.material];
-            const rebuilt = originals.map((orig) => {
-              const src =
-                (orig as THREE.MeshStandardMaterial).color ??
-                new THREE.Color("#c0c4cc");
-              const hsl = { h: 0, s: 0, l: 0 };
-              src.getHSL(hsl);
-              // Dark plastic (servos / black trim) → matte metallic-ish
-              if (hsl.l < 0.2) {
-                orig.dispose?.();
-                return new THREE.MeshStandardMaterial({
-                  color: new THREE.Color().setHSL(hsl.h, hsl.s * 0.3, 0.1),
-                  metalness: 0.55,
-                  roughness: 0.4,
-                });
-              }
-              // 3D-printed PLA (green/gold/etc.) → desaturate a hair, matte
-              orig.dispose?.();
-              return new THREE.MeshStandardMaterial({
-                color: new THREE.Color().setHSL(
-                  hsl.h,
-                  Math.min(hsl.s * 0.85, 0.65),
-                  Math.min(hsl.l, 0.55),
-                ),
-                metalness: 0.1,
-                roughness: 0.65,
-              });
-            });
-            c.material = Array.isArray(c.material) ? rebuilt : rebuilt[0];
-          });
-        } else {
-          robot.traverse((c) => {
-            c.castShadow = true;
-          });
-        }
-        robot.updateMatrixWorld(true);
         robot.scale.set(scale, scale, scale);
         scene.add(robot);
-        robot.updateMatrixWorld(true);
 
-        // Auto-fit camera: URDFs can have world→base offsets (SO-arm ships
-        // one) that put the robot far from origin, so a fixed camera pose
-        // crops half the arm. Compute the robot's AABB and frame it with a
-        // bit of padding.
+        // Fallback center/frame if manager.onLoad was starved (no async
+        // tracked loads — can happen if meshes are all cached synchronously).
         const bbox = new THREE.Box3().setFromObject(robot);
         if (!bbox.isEmpty()) {
           const center = bbox.getCenter(new THREE.Vector3());
-          const sizeVec = bbox.getSize(new THREE.Vector3());
-          const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z);
-          const fov =
-            ((camera as THREE.PerspectiveCamera).fov ?? 45) * (Math.PI / 180);
-          const distance = (maxDim / 2 / Math.tan(fov / 2)) * 1.6;
-          const dir = new THREE.Vector3(1, 0.85, 1).normalize();
-          camera.position.copy(center).addScaledVector(dir, distance);
-          camera.lookAt(center);
-          camera.updateProjectionMatrix();
           const orbit = controls as unknown as {
             target?: THREE.Vector3;
             update?: () => void;
