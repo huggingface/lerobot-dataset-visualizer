@@ -11,6 +11,7 @@ interface UrdfPlaybackBarProps {
   trailEnabled: boolean;
   onTrailToggle: () => void;
   onFrameChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  disabled?: boolean;
 }
 
 export default function UrdfPlaybackBar({
@@ -22,16 +23,21 @@ export default function UrdfPlaybackBar({
   trailEnabled,
   onTrailToggle,
   onFrameChange,
+  disabled = false,
 }: UrdfPlaybackBarProps) {
   const currentTime = totalFrames > 0 ? (frame / fps).toFixed(2) : "0.00";
   const totalTime = (totalFrames / fps).toFixed(2);
 
   return (
-    <div className="flex items-center gap-3">
+    <div
+      className={`flex items-center gap-3 ${disabled ? "opacity-50" : ""}`}
+      aria-busy={disabled}
+    >
       {/* Play/Pause */}
       <button
         onClick={onPlayPause}
-        className="w-8 h-8 flex items-center justify-center rounded bg-orange-600 hover:bg-orange-500 text-white transition-colors shrink-0"
+        disabled={disabled}
+        className="w-8 h-8 flex items-center justify-center rounded bg-orange-600 hover:bg-orange-500 disabled:bg-slate-700 disabled:hover:bg-slate-700 disabled:cursor-not-allowed text-white transition-colors shrink-0"
       >
         {playing ? (
           <svg width="12" height="14" viewBox="0 0 12 14">
@@ -48,7 +54,8 @@ export default function UrdfPlaybackBar({
       {/* Trail toggle */}
       <button
         onClick={onTrailToggle}
-        className={`px-2 h-8 text-xs rounded transition-colors shrink-0 ${
+        disabled={disabled}
+        className={`px-2 h-8 text-xs rounded transition-colors shrink-0 disabled:cursor-not-allowed ${
           trailEnabled
             ? "bg-orange-600/30 text-orange-400 border border-orange-500"
             : "bg-slate-700 text-slate-400 border border-slate-600"
@@ -65,7 +72,8 @@ export default function UrdfPlaybackBar({
         max={Math.max(totalFrames - 1, 0)}
         value={frame}
         onChange={onFrameChange}
-        className="flex-1 h-1.5 accent-orange-500 cursor-pointer"
+        disabled={disabled}
+        className="flex-1 h-1.5 accent-orange-500 cursor-pointer disabled:cursor-not-allowed"
       />
       <span className="text-xs text-slate-400 tabular-nums w-28 text-right shrink-0">
         {currentTime}s / {totalTime}s

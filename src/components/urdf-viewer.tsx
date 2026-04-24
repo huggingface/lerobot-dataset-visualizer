@@ -690,12 +690,22 @@ export default function URDFViewer({
     [],
   );
 
+  // URDF meshes download async from the Hub bucket. Until joints are reported
+  // back from URDFLoader, playback/scrub inputs would drive an empty scene, so
+  // we gate interactions (and pause if already playing).
+  const urdfLoading = urdfJointNames.length === 0;
+
+  useEffect(() => {
+    if (urdfLoading) setPlaying(false);
+  }, [urdfLoading]);
+
   const handlePlayPause = useCallback(() => {
+    if (urdfLoading) return;
     setPlaying((prev) => {
       if (!prev) frameRef.current = frame;
       return !prev;
     });
-  }, [frame]);
+  }, [frame, urdfLoading]);
 
   useEffect(() => {
     if (playToggleRef) playToggleRef.current = handlePlayPause;
@@ -785,10 +795,12 @@ export default function URDFViewer({
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* 3D Viewport */}
       <div className="flex-1 min-h-0 bg-slate-950 rounded-lg overflow-hidden border border-slate-700 relative">
-        {episodeLoading && (
+        {(episodeLoading || urdfLoading) && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/70">
             <span className="text-white text-lg animate-pulse">
-              Loading episode {selectedEpisode}…
+              {urdfLoading
+                ? "Loading 3D model…"
+                : `Loading episode ${selectedEpisode}…`}
             </span>
           </div>
         )}
@@ -847,6 +859,7 @@ export default function URDFViewer({
           trailEnabled={trailEnabled}
           onTrailToggle={() => setTrailEnabled((v) => !v)}
           onFrameChange={handleFrameChange}
+          disabled={urdfLoading}
         />
 
         {/* Collapsible joint mapping */}
