@@ -869,10 +869,18 @@ async function loadEpisodeDataV3(
         if (tasksData.length > 0) {
           const taskIndexNum = bigIntToNumber(episodeData[0].task_index, -1);
 
-          if (taskIndexNum >= 0 && taskIndexNum < tasksData.length) {
-            const taskData = tasksData[taskIndexNum];
-            const rawTask = taskData.__index_level_0__ ?? taskData.task;
-            task = typeof rawTask === "string" ? rawTask : undefined;
+          if (taskIndexNum >= 0) {
+            // lerobot writes tasks.parquet from a DataFrame with the task
+            // string as the (possibly named) index and `task_index` as a
+            // column. Row order is not guaranteed to match task_index, so
+            // match on the column value.
+            const taskData = tasksData.find(
+              (row) => bigIntToNumber(row.task_index, -1) === taskIndexNum,
+            );
+            if (taskData) {
+              const rawTask = taskData.__index_level_0__ ?? taskData.task;
+              task = typeof rawTask === "string" ? rawTask : undefined;
+            }
           }
         }
       } catch {
