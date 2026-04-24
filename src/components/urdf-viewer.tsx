@@ -33,12 +33,14 @@ const stlGeometryCache = new Map<string, THREE.BufferGeometry>();
 // In-flight promise cache — prevents duplicate simultaneous fetches
 const stlGeometryLoading = new Map<string, Promise<THREE.BufferGeometry>>();
 
-// URDFs + meshes are hosted on the Hub at https://hf.co/lerobot/robot-urdfs.
-// The URDFLoader resolves relative mesh paths against the URDF's own URL, so
-// the upstream directory layout must be preserved there.
+// URDFs + meshes are hosted in the Hub bucket at
+// https://huggingface.co/buckets/lerobot/robot-urdfs. URDFLoader resolves
+// relative mesh paths against the URDF's own URL, so the bucket layout
+// mirrors the upstream directory tree. Note: buckets don't have branches,
+// so the resolve URL has no "/main" segment.
 const URDF_BASE_URL =
   process.env.NEXT_PUBLIC_URDF_BASE_URL ??
-  "https://huggingface.co/lerobot/robot-urdfs/resolve/main";
+  "https://huggingface.co/buckets/lerobot/robot-urdfs/resolve";
 
 function getRobotConfig(robotType: string | null) {
   const lower = (robotType ?? "").toLowerCase();
