@@ -8,7 +8,7 @@ import React, {
   useCallback,
 } from "react";
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
-import { OrbitControls, Grid, Html } from "@react-three/drei";
+import { OrbitControls, Grid, Html, Environment } from "@react-three/drei";
 import * as THREE from "three";
 import URDFLoader from "urdf-loader";
 import type { URDFRobot } from "urdf-loader";
@@ -287,17 +287,31 @@ function RobotScene({
     const manager = new THREE.LoadingManager();
     const loader = new URDFLoader(manager);
     loader.loadMeshCb = (url, mgr, onLoad) => {
-      // DAE (Collada) files — ColladaLoader typically yields MeshPhongMaterial
-      // (or sometimes MeshBasicMaterial) with flat colors baked into the file.
-      // Those look cartoonish/binary under PBR lighting, so we rebuild each
-      // mesh with a MeshStandardMaterial that inherits the original base color
-      // but responds properly to highlights/shadows.
+      // DAE (Collada) files — ColladaLoader yields whatever the .dae author
+      // baked in: flat MeshPhongMaterial/MeshBasicMaterial colors plus, in
+      // OpenArm's case, ~23 per-file PointLight/SpotLight nodes. The stray
+      // lights caused the scene to look pure-white everywhere regardless of
+      // our own lighting, and the flat materials looked cartoonish. We strip
+      // both and rebuild every mesh with a MeshStandardMaterial bucketed into
+      // one of three archetypes (carbon-black, brushed metal, off-white paint)
+      // based on the original base-color lightness.
       if (url.endsWith(".dae")) {
         const colladaLoader = new ColladaLoader(mgr);
         colladaLoader.load(
           url,
           (collada) => {
             if (isOpenArm) {
+              const strayLights: THREE.Object3D[] = [];
+              collada.scene.traverse((child) => {
+                if (
+                  (child as THREE.Light).isLight &&
+                  !(child instanceof THREE.AmbientLight)
+                ) {
+                  strayLights.push(child);
+                }
+              });
+              for (const l of strayLights) l.parent?.remove(l);
+
               collada.scene.traverse((child) => {
                 if (!(child instanceof THREE.Mesh) || !child.material) return;
 
@@ -309,22 +323,41 @@ function RobotScene({
                   const srcColor =
                     (orig as THREE.MeshStandardMaterial).color ??
                     new THREE.Color("#c0c4cc");
-                  // DAE "white" parts come through near pure white — drop the
-                  // lightness so highlights have somewhere to roll off.
                   const hsl = { h: 0, s: 0, l: 0 };
                   srcColor.getHSL(hsl);
-                  const tempered = new THREE.Color().setHSL(
-                    hsl.h,
-                    hsl.s,
-                    Math.min(hsl.l, 0.7),
-                  );
+
+                  // Archetype classification by original lightness.
+                  let color: THREE.Color;
+                  let metalness: number;
+                  let roughness: number;
+                  let envMapIntensity: number;
+                  if (hsl.l < 0.3) {
+                    // Carbon / anodised structural parts
+                    color = new THREE.Color().setHSL(hsl.h, 0.02, 0.09);
+                    metalness = 0.15;
+                    roughness = 0.75;
+                    envMapIntensity = 0.6;
+                  } else if (hsl.l < 0.7) {
+                    // Brushed metal joint collars / accents
+                    color = new THREE.Color().setHSL(hsl.h, 0.04, 0.42);
+                    metalness = 0.75;
+                    roughness = 0.35;
+                    envMapIntensity = 1.1;
+                  } else {
+                    // Off-white painted plates
+                    color = new THREE.Color().setHSL(hsl.h, 0.03, 0.6);
+                    metalness = 0.1;
+                    roughness = 0.5;
+                    envMapIntensity = 0.9;
+                  }
+
                   const mat = new THREE.MeshStandardMaterial({
-                    color: tempered,
-                    metalness: 0.2,
-                    roughness: 0.55,
+                    color,
+                    metalness,
+                    roughness,
+                    envMapIntensity,
                     side: THREE.DoubleSide,
                   });
-                  // Dispose the source material so we don't leak GL resources.
                   orig.dispose?.();
                   return mat;
                 });
@@ -835,6 +868,7 @@ export default function URDFViewer({
           </div>
         )}
         <Canvas
+          shadows
           camera={{
             position: isG1
               ? [1.5, 1.0, 1.5]
@@ -848,12 +882,45 @@ export default function URDFViewer({
             toneMappingExposure: 0.9,
           }}
         >
-          {/* Scene background softens the stark contrast against white meshes */}
-          <color attach="background" args={["#1e293b"]} />
-          <ambientLight intensity={0.45} />
-          <directionalLight position={[3, 5, 4]} intensity={1.0} />
-          <directionalLight position={[-2, 3, -2]} intensity={0.35} />
-          <hemisphereLight args={["#b1e1ff", "#475569", 0.35]} />
+          <color attach="background" args={["#1a2433"]} />
+          {/* IBL: PMREM studio env gives mesh highlights somewhere to bounce */}
+          <Environment preset="studio" background={false} />
+          {/* 3-point studio rig — key is the only shadow caster */}
+          <ambientLight intensity={0.12} />
+          <directionalLight
+            color="#fff2e3"
+            position={[3, 5, 3]}
+            intensity={1.0}
+            castShadow
+            shadow-mapSize-width={2048}
+            shadow-mapSize-height={2048}
+            shadow-camera-near={0.1}
+            shadow-camera-far={15}
+            shadow-camera-left={-3}
+            shadow-camera-right={3}
+            shadow-camera-top={3}
+            shadow-camera-bottom={-3}
+            shadow-bias={-0.0005}
+          />
+          <directionalLight
+            color="#bfd9ff"
+            position={[-4, 2, -2]}
+            intensity={0.25}
+          />
+          <directionalLight
+            color="#ffffff"
+            position={[0, 3, -4]}
+            intensity={0.4}
+          />
+          {/* Ground-shadow catcher — invisible plane receives key-light shadow */}
+          <mesh
+            rotation={[-Math.PI / 2, 0, 0]}
+            position={[0, 0.001, 0]}
+            receiveShadow
+          >
+            <planeGeometry args={[10, 10]} />
+            <shadowMaterial opacity={0.35} />
+          </mesh>
           <RobotScene
             urdfUrl={urdfUrl}
             jointValues={jointValues}
