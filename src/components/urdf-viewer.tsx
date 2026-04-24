@@ -287,7 +287,11 @@ function RobotScene({
     const manager = new THREE.LoadingManager();
     const loader = new URDFLoader(manager);
     loader.loadMeshCb = (url, mgr, onLoad) => {
-      // DAE (Collada) files — load with embedded materials
+      // DAE (Collada) files — ColladaLoader typically yields MeshPhongMaterial
+      // (or sometimes MeshBasicMaterial) with flat colors baked into the file.
+      // Those look cartoonish/binary under PBR lighting, so we rebuild each
+      // mesh with a MeshStandardMaterial that inherits the original base color
+      // but responds properly to highlights/shadows.
       if (url.endsWith(".dae")) {
         const colladaLoader = new ColladaLoader(mgr);
         colladaLoader.load(
@@ -295,15 +299,41 @@ function RobotScene({
           (collada) => {
             if (isOpenArm) {
               collada.scene.traverse((child) => {
-                if (child instanceof THREE.Mesh && child.material) {
-                  const mat = child.material as THREE.MeshStandardMaterial;
-                  if (mat.side !== undefined) mat.side = THREE.DoubleSide;
-                  if (mat.color) {
-                    const hsl = { h: 0, s: 0, l: 0 };
-                    mat.color.getHSL(hsl);
-                    if (hsl.l > 0.7) mat.color.setHSL(hsl.h, hsl.s, 0.55);
-                  }
-                }
+                if (!(child instanceof THREE.Mesh) || !child.material) return;
+
+                const originals = Array.isArray(child.material)
+                  ? child.material
+                  : [child.material];
+
+                const rebuilt = originals.map((orig) => {
+                  const srcColor =
+                    (orig as THREE.MeshStandardMaterial).color ??
+                    new THREE.Color("#c0c4cc");
+                  // DAE "white" parts come through near pure white — drop the
+                  // lightness so highlights have somewhere to roll off.
+                  const hsl = { h: 0, s: 0, l: 0 };
+                  srcColor.getHSL(hsl);
+                  const tempered = new THREE.Color().setHSL(
+                    hsl.h,
+                    hsl.s,
+                    Math.min(hsl.l, 0.7),
+                  );
+                  const mat = new THREE.MeshStandardMaterial({
+                    color: tempered,
+                    metalness: 0.2,
+                    roughness: 0.55,
+                    side: THREE.DoubleSide,
+                  });
+                  // Dispose the source material so we don't leak GL resources.
+                  orig.dispose?.();
+                  return mat;
+                });
+
+                child.material = Array.isArray(child.material)
+                  ? rebuilt
+                  : rebuilt[0];
+                child.castShadow = true;
+                child.receiveShadow = true;
               });
             }
             onLoad(collada.scene);
