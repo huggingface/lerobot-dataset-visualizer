@@ -37,8 +37,29 @@ export const HTTP = {
   TIMEOUT_MS: 10000,
 } as const;
 
-// Excluded columns by dataset version
+// Excluded columns by dataset version.
+// Reserved names from lerobot: `next.reward`, `next.done`, `next.truncated` are
+// auto-populated step signals and should not be rendered as chart series.
+// `subtask_index` is the v3.0 subtask pointer (maps into meta/subtasks.parquet).
 export const EXCLUDED_COLUMNS = {
-  V2: ["timestamp", "frame_index", "episode_index", "index", "task_index"],
-  V3: ["index", "task_index", "episode_index", "frame_index", "next.done"],
+  V2: [
+    "timestamp",
+    "frame_index",
+    "episode_index",
+    "index",
+    "task_index",
+    "next.reward",
+    "next.done",
+    "next.truncated",
+  ],
+  V3: [
+    "index",
+    "task_index",
+    "episode_index",
+    "frame_index",
+    "next.reward",
+    "next.done",
+    "next.truncated",
+    "subtask_index",
+  ],
 } as const;
