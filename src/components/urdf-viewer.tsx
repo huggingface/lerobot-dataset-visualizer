@@ -8,7 +8,7 @@ import React, {
   useCallback,
 } from "react";
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
-import { OrbitControls, Grid, Html } from "@react-three/drei";
+import { OrbitControls, Grid, Html, Environment } from "@react-three/drei";
 import * as THREE from "three";
 import URDFLoader from "urdf-loader";
 import type { URDFRobot } from "urdf-loader";
@@ -209,7 +209,7 @@ function RobotScene({
   trailResetKey: number;
   scale: number;
 }) {
-  const { scene, size } = useThree();
+  const { scene, camera, controls, size } = useThree();
   const robotRef = useRef<URDFRobot | null>(null);
   const tipLinksRef = useRef<THREE.Object3D[]>([]);
   const [loading, setLoading] = useState(true);
@@ -287,23 +287,86 @@ function RobotScene({
     const manager = new THREE.LoadingManager();
     const loader = new URDFLoader(manager);
     loader.loadMeshCb = (url, mgr, onLoad) => {
-      // DAE (Collada) files — load with embedded materials
+      // DAE (Collada) files — ColladaLoader yields whatever the .dae author
+      // baked in: flat MeshPhongMaterial/MeshBasicMaterial colors plus, in
+      // OpenArm's case, ~23 per-file PointLight/SpotLight nodes. The stray
+      // lights caused the scene to look pure-white everywhere regardless of
+      // our own lighting, and the flat materials looked cartoonish. We strip
+      // both and rebuild every mesh with a MeshStandardMaterial bucketed into
+      // one of three archetypes (carbon-black, brushed metal, off-white paint)
+      // based on the original base-color lightness.
       if (url.endsWith(".dae")) {
         const colladaLoader = new ColladaLoader(mgr);
         colladaLoader.load(
           url,
           (collada) => {
             if (isOpenArm) {
+              const strayLights: THREE.Object3D[] = [];
               collada.scene.traverse((child) => {
-                if (child instanceof THREE.Mesh && child.material) {
-                  const mat = child.material as THREE.MeshStandardMaterial;
-                  if (mat.side !== undefined) mat.side = THREE.DoubleSide;
-                  if (mat.color) {
-                    const hsl = { h: 0, s: 0, l: 0 };
-                    mat.color.getHSL(hsl);
-                    if (hsl.l > 0.7) mat.color.setHSL(hsl.h, hsl.s, 0.55);
-                  }
+                if (
+                  (child as THREE.Light).isLight &&
+                  !(child instanceof THREE.AmbientLight)
+                ) {
+                  strayLights.push(child);
                 }
+              });
+              for (const l of strayLights) l.parent?.remove(l);
+
+              collada.scene.traverse((child) => {
+                if (!(child instanceof THREE.Mesh) || !child.material) return;
+
+                const originals = Array.isArray(child.material)
+                  ? child.material
+                  : [child.material];
+
+                const rebuilt = originals.map((orig) => {
+                  const srcColor =
+                    (orig as THREE.MeshStandardMaterial).color ??
+                    new THREE.Color("#c0c4cc");
+                  const hsl = { h: 0, s: 0, l: 0 };
+                  srcColor.getHSL(hsl);
+
+                  // Archetype classification by original lightness.
+                  let color: THREE.Color;
+                  let metalness: number;
+                  let roughness: number;
+                  let envMapIntensity: number;
+                  if (hsl.l < 0.3) {
+                    // Carbon / anodised structural parts
+                    color = new THREE.Color().setHSL(hsl.h, 0.02, 0.09);
+                    metalness = 0.15;
+                    roughness = 0.75;
+                    envMapIntensity = 0.6;
+                  } else if (hsl.l < 0.7) {
+                    // Brushed metal joint collars / accents
+                    color = new THREE.Color().setHSL(hsl.h, 0.04, 0.42);
+                    metalness = 0.75;
+                    roughness = 0.35;
+                    envMapIntensity = 1.1;
+                  } else {
+                    // Off-white painted plates
+                    color = new THREE.Color().setHSL(hsl.h, 0.03, 0.6);
+                    metalness = 0.1;
+                    roughness = 0.5;
+                    envMapIntensity = 0.9;
+                  }
+
+                  const mat = new THREE.MeshStandardMaterial({
+                    color,
+                    metalness,
+                    roughness,
+                    envMapIntensity,
+                    side: THREE.DoubleSide,
+                  });
+                  orig.dispose?.();
+                  return mat;
+                });
+
+                child.material = Array.isArray(child.material)
+                  ? rebuilt
+                  : rebuilt[0];
+                child.castShadow = true;
+                child.receiveShadow = true;
               });
             }
             onLoad(collada.scene);
@@ -327,9 +390,9 @@ function RobotScene({
             lower.includes("rubber") ||
             lower.includes("constraint") ||
             lower.includes("support");
-          color = isWhitePart ? "#c0c0c0" : "#2a2a2a";
-          metalness = 0.3;
-          roughness = 0.5;
+          color = isWhitePart ? "#9ca3af" : "#1f2937";
+          metalness = 0.25;
+          roughness = 0.6;
         } else if (url.includes("sts3215")) {
           color = "#1a1a1a";
           metalness = 0.7;
@@ -372,17 +435,105 @@ function RobotScene({
         .then((geometry) => onLoad(makeMesh(geometry)))
         .catch((err) => onLoad(new THREE.Object3D(), err as Error));
     };
+    // URDFLoader's load callback fires when the URDF XML is parsed, but the
+    // actual STL/DAE meshes come back asynchronously via loadMeshCb. We defer
+    // both the material rebuild and the camera auto-fit to manager.onLoad
+    // (which fires once every tracked loader resolves) so the traverse walks
+    // a fully-populated robot.
+    manager.onLoad = () => {
+      const robot = robotRef.current;
+      if (!robot) return;
+
+      // For non-OpenArm URDFs, URDFLoader applies <material rgba="...">
+      // colors that override every PBR tweak we'd set in loadMeshCb's
+      // makeMesh. Rebuild each mesh with a neutral OpenArm-style archetype
+      // so SO-100 (green PLA) and SO-101 (gold PLA) render consistently
+      // with the rest of the fleet instead of bright saturated hues.
+      if (!isOpenArm) {
+        robot.traverse((c) => {
+          c.castShadow = true;
+          c.receiveShadow = true;
+          if (!(c instanceof THREE.Mesh) || !c.material) return;
+          const originals = Array.isArray(c.material)
+            ? c.material
+            : [c.material];
+          const rebuilt = originals.map((orig) => {
+            const src =
+              (orig as THREE.MeshStandardMaterial).color ??
+              new THREE.Color("#c0c4cc");
+            const hsl = { h: 0, s: 0, l: 0 };
+            src.getHSL(hsl);
+            orig.dispose?.();
+            if (hsl.l < 0.2) {
+              return new THREE.MeshStandardMaterial({
+                color: new THREE.Color("#171a20"),
+                metalness: 0.15,
+                roughness: 0.75,
+              });
+            }
+            return new THREE.MeshStandardMaterial({
+              color: new THREE.Color("#9ba1ab"),
+              metalness: 0.1,
+              roughness: 0.5,
+            });
+          });
+          c.material = Array.isArray(c.material) ? rebuilt : rebuilt[0];
+        });
+      } else {
+        robot.traverse((c) => {
+          c.castShadow = true;
+        });
+      }
+      robot.updateMatrixWorld(true);
+
+      // Auto-fit camera: URDFs can ship world→base offsets (SO-arm does)
+      // that put the robot far from origin, so a fixed camera pose crops
+      // the arm. Compute the world-space AABB and frame it.
+      const bbox = new THREE.Box3().setFromObject(robot);
+      if (!bbox.isEmpty()) {
+        const center = bbox.getCenter(new THREE.Vector3());
+        const sizeVec = bbox.getSize(new THREE.Vector3());
+        const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z);
+        const fov =
+          ((camera as THREE.PerspectiveCamera).fov ?? 45) * (Math.PI / 180);
+        const distance = (maxDim / 2 / Math.tan(fov / 2)) * 1.6;
+        const dir = new THREE.Vector3(1, 0.85, 1).normalize();
+        camera.position.copy(center).addScaledVector(dir, distance);
+        camera.lookAt(center);
+        camera.updateProjectionMatrix();
+        const orbit = controls as unknown as {
+          target?: THREE.Vector3;
+          update?: () => void;
+        };
+        if (orbit?.target) {
+          orbit.target.copy(center);
+          orbit.update?.();
+        }
+      }
+    };
+
     loader.load(
       urdfUrl,
       (robot) => {
         robotRef.current = robot;
         robot.rotateOnAxis(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-        robot.traverse((c) => {
-          c.castShadow = true;
-        });
-        robot.updateMatrixWorld(true);
         robot.scale.set(scale, scale, scale);
         scene.add(robot);
+
+        // Fallback center/frame if manager.onLoad was starved (no async
+        // tracked loads — can happen if meshes are all cached synchronously).
+        const bbox = new THREE.Box3().setFromObject(robot);
+        if (!bbox.isEmpty()) {
+          const center = bbox.getCenter(new THREE.Vector3());
+          const orbit = controls as unknown as {
+            target?: THREE.Vector3;
+            update?: () => void;
+          };
+          if (orbit?.target) {
+            orbit.target.copy(center);
+            orbit.update?.();
+          }
+        }
 
         const tipNames = isG1
           ? G1_TIP_NAMES
@@ -570,6 +721,7 @@ export default function URDFViewer({
   );
   const { urdfUrl, scale } = robotConfig;
   const isG1 = urdfUrl.includes("g1");
+  const isOpenArm = urdfUrl.includes("openarm");
   const repoId = org && dataset ? `${org}/${dataset}` : null;
   const datasetInfoRef = useRef<{
     version: string;
@@ -794,9 +946,9 @@ export default function URDFViewer({
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* 3D Viewport */}
-      <div className="flex-1 min-h-0 bg-slate-950 rounded-lg overflow-hidden border border-slate-700 relative">
+      <div className="flex-1 min-h-0 bg-slate-900 rounded-lg overflow-hidden border border-slate-700 relative">
         {(episodeLoading || urdfLoading) && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/70">
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/70">
             <span className="text-white text-lg animate-pulse">
               {urdfLoading
                 ? "Loading 3D model…"
@@ -805,19 +957,61 @@ export default function URDFViewer({
           </div>
         )}
         <Canvas
+          shadows
           camera={{
             position: isG1
               ? [1.5, 1.0, 1.5]
-              : [0.3 * scale, 0.25 * scale, 0.3 * scale],
+              : isOpenArm
+                ? [0.95 * scale, 0.8 * scale, 0.95 * scale]
+                : [0.3 * scale, 0.25 * scale, 0.3 * scale],
             fov: 45,
             near: 0.01,
             far: 100,
           }}
+          gl={{
+            toneMapping: THREE.ACESFilmicToneMapping,
+            toneMappingExposure: 0.9,
+          }}
         >
-          <ambientLight intensity={0.7} />
-          <directionalLight position={[3, 5, 4]} intensity={1.5} />
-          <directionalLight position={[-2, 3, -2]} intensity={0.6} />
-          <hemisphereLight args={["#b1e1ff", "#666666", 0.5]} />
+          <color attach="background" args={["#1a2433"]} />
+          {/* IBL: PMREM studio env gives mesh highlights somewhere to bounce */}
+          <Environment preset="studio" background={false} />
+          {/* 3-point studio rig — key is the only shadow caster */}
+          <ambientLight intensity={0.12} />
+          <directionalLight
+            color="#fff2e3"
+            position={[3, 5, 3]}
+            intensity={1.0}
+            castShadow
+            shadow-mapSize-width={2048}
+            shadow-mapSize-height={2048}
+            shadow-camera-near={0.1}
+            shadow-camera-far={15}
+            shadow-camera-left={-3}
+            shadow-camera-right={3}
+            shadow-camera-top={3}
+            shadow-camera-bottom={-3}
+            shadow-bias={-0.0005}
+          />
+          <directionalLight
+            color="#bfd9ff"
+            position={[-4, 2, -2]}
+            intensity={0.25}
+          />
+          <directionalLight
+            color="#ffffff"
+            position={[0, 3, -4]}
+            intensity={0.4}
+          />
+          {/* Ground-shadow catcher — invisible plane receives key-light shadow */}
+          <mesh
+            rotation={[-Math.PI / 2, 0, 0]}
+            position={[0, 0.001, 0]}
+            receiveShadow
+          >
+            <planeGeometry args={[10, 10]} />
+            <shadowMaterial opacity={0.35} />
+          </mesh>
           <RobotScene
             urdfUrl={urdfUrl}
             jointValues={jointValues}
@@ -837,7 +1031,10 @@ export default function URDFViewer({
             fadeDistance={isG1 ? 20 : 10}
             position={[0, 0, 0]}
           />
-          <OrbitControls target={isG1 ? [0, 0.5, 0] : [0, 0.8, 0]} />
+          <OrbitControls
+            makeDefault
+            target={isG1 ? [0, 0.5, 0] : [0, 0.8, 0]}
+          />
           <PlaybackDriver
             playing={playing}
             fps={fps}
