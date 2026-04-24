@@ -97,7 +97,8 @@ type EpisodeMetadataV3 = {
   video_from_timestamp: number;
   video_to_timestamp: number;
   length: number;
-  [key: string]: string | number;
+  tasks?: string[];
+  [key: string]: string | number | string[] | undefined;
 };
 
 type ColumnDef = {
@@ -819,9 +820,15 @@ async function loadEpisodeDataV3(
     const { chartDataGroups, flatChartData, ignoredColumns } =
       processEpisodeDataForCharts(episodeData, info, episodeMetadata);
 
-    // First check for language_instruction fields in the data (preferred)
+    // Prefer the authoritative `tasks` list on the episode's own metadata
+    // (v3.0 stores it as list[str] — see lerobot dataset_metadata.save_episode).
     let task: string | undefined;
-    if (episodeData.length > 0) {
+    if (episodeMetadata.tasks && episodeMetadata.tasks.length > 0) {
+      task = episodeMetadata.tasks.join("\n");
+    }
+
+    // Fall back to per-frame language_instruction fields
+    if (!task && episodeData.length > 0) {
       const languageInstructions: string[] = [];
 
       const extractInstructions = (row: Record<string, unknown>) => {
@@ -1120,8 +1127,11 @@ function extractVideoInfoV3WithSegmentation(
       segmentStart: number,
       segmentEnd: number;
 
-    const toNum = (v: string | number): number =>
-      typeof v === "string" ? parseFloat(v) || 0 : v;
+    const toNum = (v: string | number | string[] | undefined): number => {
+      if (typeof v === "string") return parseFloat(v) || 0;
+      if (typeof v === "number") return v;
+      return 0;
+    };
 
     if (cameraSpecificKeys.length > 0) {
       chunkIndex = toNum(episodeMetadata[`videos/${videoKey}/chunk_index`]);
@@ -1255,6 +1265,12 @@ function parseEpisodeRowSimple(
         videoToTs = toNumSafe(row[`${videoBaseName}/to_timestamp`]) || 30;
       }
 
+      // lerobot writes episode.tasks as list[str] (v3.0 multi-task support).
+      const rawTasks = row["tasks"];
+      const tasks = Array.isArray(rawTasks)
+        ? rawTasks.filter((t): t is string => typeof t === "string")
+        : undefined;
+
       const episodeData: EpisodeMetadataV3 = {
         episode_index: toBigIntSafe(row["episode_index"]),
         data_chunk_index: toBigIntSafe(row["data/chunk_index"]),
@@ -1266,6 +1282,7 @@ function parseEpisodeRowSimple(
         video_file_index: videoFileIndex,
         video_from_timestamp: videoFromTs,
         video_to_timestamp: videoToTs,
+        ...(tasks && tasks.length > 0 ? { tasks } : {}),
       };
 
       // Store per-camera metadata for extractVideoInfoV3WithSegmentation
