@@ -26,14 +26,16 @@ export default function ExploreGrid({
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
 
   return (
-    <main className="p-8">
-      <h1 className="text-2xl font-bold mb-6">Explore LeRobot Datasets</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+    <main className="px-8 py-10 max-w-7xl mx-auto">
+      <h1 className="text-xl font-medium tracking-tight mb-6 text-slate-100">
+        Explore LeRobot datasets
+      </h1>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {datasets.map((ds, idx) => (
           <Link
             key={ds.id}
             href={`/${ds.id}`}
-            className="relative border rounded-lg p-4 bg-white shadow hover:shadow-lg transition overflow-hidden h-48 flex items-end group"
+            className="relative rounded-md overflow-hidden h-48 flex items-end group panel hover:border-cyan-400/40 transition-colors"
             onMouseEnter={() => {
               const vid = videoRefs.current[idx];
               if (vid) vid.play();
@@ -64,36 +66,36 @@ export default function ExploreGrid({
                 }
               }}
             />
-            <div className="absolute top-0 left-0 w-full h-full bg-black/40 z-10 pointer-events-none" />
-            <div className="relative z-20 font-mono text-blue-100 break-all text-sm bg-black/60 backdrop-blur px-2 py-1 rounded shadow">
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent z-10 pointer-events-none" />
+            <div className="relative z-20 w-full px-3 py-2 text-xs text-slate-200 truncate">
               {ds.id}
             </div>
           </Link>
         ))}
       </div>
-      <div className="flex justify-center mt-8 gap-4">
+      <div className="flex justify-center mt-8 gap-3">
         {currentPage > 1 && (
           <button
-            className="px-6 py-2 bg-gray-600 text-white rounded shadow hover:bg-gray-700 transition"
+            className="px-4 py-2 rounded-md panel text-sm text-slate-300 hover:text-slate-100 hover:bg-white/5 transition-colors"
             onClick={() => {
               const params = new URLSearchParams(window.location.search);
               params.set("p", (currentPage - 1).toString());
               window.location.search = params.toString();
             }}
           >
-            Previous
+            ‹ Previous
           </button>
         )}
         {currentPage < totalPages && (
           <button
-            className="px-6 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700 transition"
+            className="px-4 py-2 rounded-md bg-cyan-400/10 border border-cyan-400/30 text-cyan-300 text-sm hover:bg-cyan-400/15 transition-colors"
             onClick={() => {
               const params = new URLSearchParams(window.location.search);
               params.set("p", (currentPage + 1).toString());
               window.location.search = params.toString();
             }}
           >
-            Next
+            Next ›
           </button>
         )}
       </div>

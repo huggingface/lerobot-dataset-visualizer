@@ -171,7 +171,7 @@ function HomeInner() {
         {/* Title */}
         <h1 className="text-4xl md:text-5xl font-bold mb-2 drop-shadow-lg tracking-tight">
           LeRobot{" "}
-          <span className="bg-gradient-to-r from-sky-400 to-indigo-400 bg-clip-text text-transparent">
+          <span className="bg-gradient-to-r from-cyan-400 to-sky-300 bg-clip-text text-transparent">
             Dataset
           </span>{" "}
           Visualizer
@@ -208,13 +208,13 @@ function HomeInner() {
               onKeyDown={handleKeyDown}
               onFocus={() => query.trim() && setShowSuggestions(true)}
               placeholder="Enter dataset id (e.g. lerobot/pusht)"
-              className="pl-10 pr-4 py-2.5 rounded-md text-base text-white bg-white/10 backdrop-blur-sm border border-white/30 focus:outline-none focus:border-sky-400 focus:bg-white/15 w-[380px] shadow-md placeholder:text-white/40 transition-colors"
+              className="pl-10 pr-4 py-2.5 rounded-md text-base text-white bg-white/10 backdrop-blur-sm border border-white/30 focus:outline-none focus:border-cyan-400 focus:bg-white/15 w-[380px] shadow-md placeholder:text-white/40 transition-colors"
               autoComplete="off"
             />
 
             {/* Suggestions dropdown */}
             {showSuggestions && (
-              <ul className="absolute left-0 right-0 top-full mt-1 rounded-md bg-slate-900/95 backdrop-blur-sm border border-white/10 shadow-xl overflow-hidden z-50 max-h-64 overflow-y-auto">
+              <ul className="absolute left-0 right-0 top-full mt-1 rounded-md bg-[var(--surface-1)]/95 backdrop-blur-sm border border-white/10 shadow-xl overflow-hidden z-50 max-h-64 overflow-y-auto">
                 {isLoading ? (
                   <li className="flex items-center gap-2.5 px-4 py-3 text-sm text-white/50">
                     <svg
@@ -246,8 +246,8 @@ function HomeInner() {
                         type="button"
                         className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
                           i === activeIndex
-                            ? "bg-sky-600 text-white"
-                            : "text-slate-200 hover:bg-slate-700"
+                            ? "bg-cyan-500 text-white"
+                            : "text-slate-200 hover:bg-white/10"
                         }`}
                         onMouseDown={(e) => {
                           e.preventDefault();
@@ -272,7 +272,7 @@ function HomeInner() {
 
           <button
             type="submit"
-            className="px-5 py-2.5 rounded-md bg-sky-500 text-white font-semibold text-base hover:bg-sky-400 active:scale-95 transition-all shadow-md flex items-center gap-2"
+            className="px-5 py-2.5 rounded-md bg-cyan-500 text-white font-semibold text-base hover:bg-cyan-400 active:scale-95 transition-all shadow-md flex items-center gap-2"
           >
             Go
             <kbd className="text-xs font-mono bg-white/20 rounded px-1 py-0.5 leading-tight">
@@ -291,7 +291,7 @@ function HomeInner() {
               <button
                 key={ds}
                 type="button"
-                className="px-3 py-1.5 rounded-full border border-white/20 text-sm text-sky-200/80 hover:border-sky-400 hover:text-white hover:bg-sky-500/15 active:scale-95 transition-all backdrop-blur-sm"
+                className="px-3 py-1.5 rounded-full border border-white/20 text-sm text-cyan-200/80 hover:border-cyan-400 hover:text-white hover:bg-cyan-500/15 active:scale-95 transition-all backdrop-blur-sm"
                 onClick={() => navigate(ds)}
               >
                 {ds}
@@ -303,7 +303,7 @@ function HomeInner() {
         {/* Explore CTA */}
         <Link
           href="/explore"
-          className="inline-flex items-center gap-2 px-6 py-3 mt-8 rounded-md bg-sky-500/90 backdrop-blur-sm text-white font-semibold text-lg shadow-lg hover:bg-sky-400 active:scale-95 transition-all"
+          className="inline-flex items-center gap-2 px-6 py-3 mt-8 rounded-md bg-cyan-500/90 backdrop-blur-sm text-white font-semibold text-lg shadow-lg hover:bg-cyan-400 active:scale-95 transition-all"
         >
           Explore Open Datasets
           <svg

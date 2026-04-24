@@ -946,9 +946,9 @@ export default function URDFViewer({
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* 3D Viewport */}
-      <div className="flex-1 min-h-0 bg-slate-900 rounded-lg overflow-hidden border border-slate-700 relative">
+      <div className="flex-1 min-h-0 bg-[var(--surface-0)] rounded-lg overflow-hidden border border-white/10 relative">
         {(episodeLoading || urdfLoading) && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/70">
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-[var(--bg)]/80">
             <span className="text-white text-lg animate-pulse">
               {urdfLoading
                 ? "Loading 3D model…"
@@ -1046,7 +1046,7 @@ export default function URDFViewer({
       </div>
 
       {/* Controls */}
-      <div className="bg-slate-800/90 border-t border-slate-700 p-3 space-y-3 shrink-0">
+      <div className="bg-[var(--surface-1)]/90 border-t border-white/10 p-3 space-y-3 shrink-0">
         <UrdfPlaybackBar
           frame={frame}
           totalFrames={totalFrames}
@@ -1087,8 +1087,8 @@ export default function URDFViewer({
                     onClick={() => setSelectedGroup(name)}
                     className={`px-2 py-1 text-xs rounded transition-colors ${
                       selectedGroup === name
-                        ? "bg-orange-600 text-white"
-                        : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                        ? "bg-cyan-500 text-white"
+                        : "bg-white/5 text-slate-300 hover:bg-white/5"
                     }`}
                   >
                     {name}
@@ -1099,7 +1099,7 @@ export default function URDFViewer({
 
             <div className="flex-1 overflow-x-auto max-h-48 overflow-y-auto">
               <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-slate-800">
+                <thead className="sticky top-0 bg-[var(--surface-1)]">
                   <tr className="text-slate-500">
                     <th className="text-left font-normal px-1">URDF Joint</th>
                     <th className="text-left font-normal px-1">→</th>
@@ -1111,10 +1111,7 @@ export default function URDFViewer({
                 </thead>
                 <tbody>
                   {displayJointNames.map((jointName) => (
-                    <tr
-                      key={jointName}
-                      className="border-t border-slate-700/50"
-                    >
+                    <tr key={jointName} className="border-t border-white/10/50">
                       <td className="px-1 py-0.5 text-slate-300 font-mono">
                         {jointName}
                       </td>
@@ -1128,7 +1125,7 @@ export default function URDFViewer({
                               [jointName]: e.target.value,
                             }))
                           }
-                          className="bg-slate-900 text-slate-200 text-xs rounded px-1 py-0.5 border border-slate-600 w-full max-w-[200px]"
+                          className="bg-[var(--surface-0)] text-slate-200 text-xs rounded px-1 py-0.5 border border-white/10 w-full max-w-[200px]"
                         >
                           <option value="">-- unmapped --</option>
                           {selectedColumns.map((col) => {

@@ -37,7 +37,7 @@ export default function UrdfPlaybackBar({
       <button
         onClick={onPlayPause}
         disabled={disabled}
-        className="w-8 h-8 flex items-center justify-center rounded bg-orange-600 hover:bg-orange-500 disabled:bg-slate-700 disabled:hover:bg-slate-700 disabled:cursor-not-allowed text-white transition-colors shrink-0"
+        className="w-8 h-8 flex items-center justify-center rounded-md bg-cyan-400/10 border border-cyan-400/30 text-cyan-300 hover:bg-cyan-400/15 disabled:bg-white/5 disabled:border-white/5 disabled:text-slate-500 disabled:cursor-not-allowed transition-colors shrink-0"
       >
         {playing ? (
           <svg width="12" height="14" viewBox="0 0 12 14">
@@ -57,8 +57,8 @@ export default function UrdfPlaybackBar({
         disabled={disabled}
         className={`px-2 h-8 text-xs rounded transition-colors shrink-0 disabled:cursor-not-allowed ${
           trailEnabled
-            ? "bg-orange-600/30 text-orange-400 border border-orange-500"
-            : "bg-slate-700 text-slate-400 border border-slate-600"
+            ? "bg-cyan-400/15 text-cyan-300 border border-cyan-400/40"
+            : "bg-white/5 text-slate-400 border border-white/10"
         }`}
         title={trailEnabled ? "Hide trail" : "Show trail"}
       >
@@ -73,7 +73,7 @@ export default function UrdfPlaybackBar({
         value={frame}
         onChange={onFrameChange}
         disabled={disabled}
-        className="flex-1 h-1.5 accent-orange-500 cursor-pointer disabled:cursor-not-allowed"
+        className="flex-1 h-1.5 accent-cyan-400 cursor-pointer disabled:cursor-not-allowed"
       />
       <span className="text-xs text-slate-400 tabular-nums w-28 text-right shrink-0">
         {currentTime}s / {totalTime}s
@@ -85,7 +85,7 @@ export default function UrdfPlaybackBar({
       {/* Keyboard hints */}
       <div className="text-xs text-slate-500 select-none hidden md:flex flex-col gap-y-0.5 ml-2 shrink-0">
         <p>
-          <span className="px-1.5 py-0.5 rounded border border-slate-600 bg-slate-800 text-slate-400 text-xs">
+          <span className="px-1.5 py-0.5 rounded border border-white/10 bg-[var(--surface-1)] text-slate-400 text-xs">
             Space
           </span>{" "}
           pause/unpause

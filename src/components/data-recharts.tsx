@@ -83,8 +83,8 @@ export const DataRecharts = React.memo(
               onClick={() => setExpanded((v) => !v)}
               className={`text-xs px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 ${
                 expanded
-                  ? "bg-orange-500/20 text-orange-400 border border-orange-500/40"
-                  : "bg-slate-800/60 text-slate-400 hover:text-slate-200 border border-slate-700/50"
+                  ? "bg-cyan-400/15 text-cyan-300 border border-cyan-400/40"
+                  : "bg-[var(--surface-1)]/60 text-slate-400 hover:text-slate-200 border border-white/10/50"
               }`}
             >
               <svg
@@ -325,7 +325,7 @@ const SingleDataGraph = React.memo(
                           {label}
                         </span>
                         <span
-                          className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-orange-300/80" : "text-slate-600"}`}
+                          className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-cyan-200/80" : "text-slate-600"}`}
                         >
                           {typeof currentData[key] === "number"
                             ? currentData[key].toFixed(2)
@@ -358,7 +358,7 @@ const SingleDataGraph = React.memo(
                   {key}
                 </span>
                 <span
-                  className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-orange-300/80" : "text-slate-600"}`}
+                  className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-cyan-200/80" : "text-slate-600"}`}
                 >
                   {typeof currentData[key] === "number"
                     ? currentData[key].toFixed(2)
@@ -385,7 +385,7 @@ const SingleDataGraph = React.memo(
     }, [groups, singles]);
 
     return (
-      <div className="w-full bg-slate-800/40 rounded-lg border border-slate-700/50 p-3">
+      <div className="w-full bg-[var(--surface-1)]/40 rounded-lg border border-white/10/50 p-3">
         {chartTitle && (
           <p
             className="text-xs font-medium text-slate-300 mb-1 px-1 truncate"

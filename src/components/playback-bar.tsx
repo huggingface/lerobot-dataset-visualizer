@@ -48,43 +48,36 @@ const PlaybackBar: React.FC = () => {
   };
 
   return (
-    <div className="flex items-center gap-4 w-full max-w-4xl mx-auto sticky bottom-0 bg-slate-900/95 px-4 py-3 rounded-3xl mt-auto">
+    <div className="sticky bottom-0 mt-auto w-full max-w-4xl mx-auto flex items-center gap-3 panel-raised bg-[var(--surface-0)]/90 backdrop-blur px-3 py-2">
       <button
         title="Jump backward 5 seconds"
         onClick={() => setCurrentTime(Math.max(0, currentTime - 5))}
-        className="text-2xl hidden md:block"
+        className="hidden md:flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:text-slate-100 hover:bg-white/5 transition-colors"
       >
-        <FaBackward size={24} />
+        <FaBackward size={14} />
       </button>
       <button
-        className={`text-3xl transition-transform ${isPlaying ? "scale-90 opacity-60" : "scale-110"}`}
-        title="Play. Toggle with Space"
-        onClick={() => setIsPlaying(true)}
-        style={{ display: isPlaying ? "none" : "inline-block" }}
+        className="flex h-9 w-9 items-center justify-center rounded-md bg-cyan-400/10 border border-cyan-400/30 text-cyan-300 hover:bg-cyan-400/15 transition-colors"
+        title={
+          isPlaying ? "Pause. Toggle with Space" : "Play. Toggle with Space"
+        }
+        onClick={() => setIsPlaying(!isPlaying)}
       >
-        <FaPlay size={24} />
-      </button>
-      <button
-        className={`text-3xl transition-transform ${!isPlaying ? "scale-90 opacity-60" : "scale-110"}`}
-        title="Pause. Toggle with Space"
-        onClick={() => setIsPlaying(false)}
-        style={{ display: !isPlaying ? "none" : "inline-block" }}
-      >
-        <FaPause size={24} />
+        {isPlaying ? <FaPause size={14} /> : <FaPlay size={14} />}
       </button>
       <button
         title="Jump forward 5 seconds"
         onClick={() => setCurrentTime(Math.min(duration, currentTime + 5))}
-        className="text-2xl hidden md:block"
+        className="hidden md:flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:text-slate-100 hover:bg-white/5 transition-colors"
       >
-        <FaForward size={24} />
+        <FaForward size={14} />
       </button>
       <button
         title="Rewind from start"
         onClick={() => setCurrentTime(0)}
-        className="text-2xl hidden md:block"
+        className="hidden md:flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:text-slate-100 hover:bg-white/5 transition-colors"
       >
-        <FaUndoAlt size={24} />
+        <FaUndoAlt size={14} />
       </button>
       <input
         type="range"
@@ -97,27 +90,26 @@ const PlaybackBar: React.FC = () => {
         onMouseUp={handleSliderMouseUp}
         onTouchStart={handleSliderMouseDown}
         onTouchEnd={handleSliderMouseUp}
-        className="flex-1 mx-2 accent-orange-500 focus:outline-none focus:ring-0"
+        className="flex-1 mx-1 h-1 accent-cyan-400 cursor-pointer focus:outline-none focus:ring-0"
         aria-label="Seek video"
       />
-      <span className="w-16 text-right tabular-nums text-xs text-slate-200 shrink-0">
+      <span className="w-16 text-right tabular text-[11px] text-slate-400 shrink-0">
         {Math.floor(sliderValue)} / {Math.floor(duration)}
       </span>
 
-      <div className="text-xs text-slate-300 select-none ml-8 flex-col gap-y-0.5 hidden md:flex">
-        <p>
-          <span className="inline-flex items-center gap-1 font-mono align-middle">
-            <span className="px-2 py-0.5 rounded border border-slate-400 bg-slate-800 text-slate-200 text-xs shadow-inner">
-              Space
-            </span>
-          </span>{" "}
-          to pause/unpause
+      <div className="hidden lg:flex flex-col gap-y-0.5 ml-4 text-[10px] text-slate-500 select-none">
+        <p className="inline-flex items-center gap-1.5">
+          <kbd className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-slate-300 text-[10px]">
+            Space
+          </kbd>
+          <span>pause/unpause</span>
         </p>
-        <p>
-          <span className="inline-flex items-center gap-1 font-mono align-middle">
-            <FaArrowUp size={14} />/<FaArrowDown size={14} />
-          </span>{" "}
-          to previous/next episode
+        <p className="inline-flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-0.5 text-slate-300">
+            <FaArrowUp size={10} />
+            <FaArrowDown size={10} />
+          </span>
+          <span>prev/next episode</span>
         </p>
       </div>
     </div>

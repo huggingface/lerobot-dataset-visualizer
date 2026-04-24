@@ -42,98 +42,131 @@ const Sidebar: React.FC<SidebarProps> = ({
   return (
     <div className="flex z-10 shrink-0">
       <nav
-        className={`shrink-0 overflow-y-auto bg-slate-900 p-5 break-words w-60 ${
+        className={`shrink-0 overflow-y-auto bg-[var(--surface-0)] border-r border-white/5 p-4 break-words w-60 ${
           mobileVisible ? "block" : "hidden"
         } md:block`}
         aria-label="Sidebar navigation"
       >
-        <ul className="text-sm text-slate-300 space-y-0.5">
-          <li>Frames: {datasetInfo.total_frames.toLocaleString()}</li>
-          <li>Episodes: {datasetInfo.total_episodes.toLocaleString()}</li>
-          <li>FPS: {datasetInfo.fps}</li>
-        </ul>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-slate-400 tabular">
+          <dt className="uppercase tracking-wide text-[10px] text-slate-500">
+            Frames
+          </dt>
+          <dd className="text-slate-200">
+            {datasetInfo.total_frames.toLocaleString()}
+          </dd>
+          <dt className="uppercase tracking-wide text-[10px] text-slate-500">
+            Episodes
+          </dt>
+          <dd className="text-slate-200">
+            {datasetInfo.total_episodes.toLocaleString()}
+          </dd>
+          <dt className="uppercase tracking-wide text-[10px] text-slate-500">
+            FPS
+          </dt>
+          <dd className="text-slate-200">{datasetInfo.fps}</dd>
+        </dl>
 
-        <div className="mt-4 flex items-center justify-between">
-          <p className="text-sm font-semibold text-slate-200">Episodes:</p>
+        <div className="mt-5 flex items-center justify-between">
+          <p className="text-[10px] uppercase tracking-wide text-slate-500">
+            Episodes
+          </p>
           {count > 0 && (
             <button
               onClick={() => onShowFlaggedOnlyChange(!showFlaggedOnly)}
-              className={`text-xs px-1.5 py-0.5 rounded transition-colors ${
+              className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-md transition-colors ${
                 showFlaggedOnly
-                  ? "bg-orange-500/20 text-orange-400 border border-orange-500/40"
-                  : "text-slate-500 hover:text-slate-300 border border-slate-700"
+                  ? "bg-orange-500/15 text-orange-300 border border-orange-500/30"
+                  : "text-slate-500 hover:text-slate-300 border border-white/10"
               }`}
             >
-              Flagged ({count})
+              Flagged · {count}
             </button>
           )}
         </div>
 
-        <div className="ml-2 mt-1">
-          <ul>
-            {displayEpisodes.map((episode) => (
-              <li
-                key={episode}
-                className="mt-0.5 font-mono text-sm flex items-center gap-1"
-              >
+        <ul className="mt-2 space-y-px">
+          {displayEpisodes.map((episode) => {
+            const active = episode === episodeId;
+            const itemClass = `group flex items-center justify-between gap-2 px-2 py-1 rounded-md text-xs tabular transition-colors ${
+              active
+                ? "bg-cyan-400/10 text-cyan-300"
+                : "text-slate-300 hover:bg-white/5"
+            }`;
+            return (
+              <li key={episode}>
                 {onEpisodeSelect ? (
-                  <button
-                    onClick={() => onEpisodeSelect(episode)}
-                    className={`underline text-left cursor-pointer ${episode === episodeId ? "-ml-1 font-bold text-orange-400" : ""}`}
-                  >
-                    Episode {episode}
-                  </button>
+                  <div className={itemClass}>
+                    <button
+                      onClick={() => onEpisodeSelect(episode)}
+                      className="flex-1 text-left"
+                    >
+                      Episode {episode}
+                    </button>
+                    <button
+                      onClick={() => toggle(episode)}
+                      className={`text-xs leading-none transition-colors ${
+                        flagged.has(episode)
+                          ? "text-orange-400 hover:text-orange-300"
+                          : "text-slate-600 hover:text-slate-400 opacity-0 group-hover:opacity-100"
+                      }`}
+                      title={flagged.has(episode) ? "Unflag" : "Flag"}
+                    >
+                      ⚑
+                    </button>
+                  </div>
                 ) : (
-                  <Link
-                    href={`./episode_${episode}`}
-                    className={`underline ${episode === episodeId ? "-ml-1 font-bold" : ""}`}
-                  >
-                    Episode {episode}
-                  </Link>
+                  <div className={itemClass}>
+                    <Link
+                      href={`./episode_${episode}`}
+                      className="flex-1 text-left"
+                    >
+                      Episode {episode}
+                    </Link>
+                    <button
+                      onClick={() => toggle(episode)}
+                      className={`text-xs leading-none transition-colors ${
+                        flagged.has(episode)
+                          ? "text-orange-400 hover:text-orange-300"
+                          : "text-slate-600 hover:text-slate-400 opacity-0 group-hover:opacity-100"
+                      }`}
+                      title={flagged.has(episode) ? "Unflag" : "Flag"}
+                    >
+                      ⚑
+                    </button>
+                  </div>
                 )}
-                <button
-                  onClick={() => toggle(episode)}
-                  className={`text-xs leading-none px-0.5 rounded transition-colors ${
-                    flagged.has(episode)
-                      ? "text-orange-400 hover:text-orange-300"
-                      : "text-slate-600 hover:text-slate-400"
-                  }`}
-                  title={flagged.has(episode) ? "Unflag" : "Flag"}
-                >
-                  ⚑
-                </button>
               </li>
-            ))}
-          </ul>
+            );
+          })}
+        </ul>
 
-          {!showFlaggedOnly && totalPages > 1 && (
-            <div className="mt-3 flex items-center text-xs">
-              <button
-                onClick={prevPage}
-                className={`mr-2 rounded bg-slate-800 px-2 py-1 ${
-                  currentPage === 1 ? "cursor-not-allowed opacity-50" : ""
-                }`}
-                disabled={currentPage === 1}
-              >
-                « Prev
-              </button>
-              <span className="mr-2 font-mono">
-                {currentPage} / {totalPages}
-              </span>
-              <button
-                onClick={nextPage}
-                className={`rounded bg-slate-800 px-2 py-1 ${
-                  currentPage === totalPages
-                    ? "cursor-not-allowed opacity-50"
-                    : ""
-                }`}
-                disabled={currentPage === totalPages}
-              >
-                Next »
-              </button>
-            </div>
-          )}
-        </div>
+        {!showFlaggedOnly && totalPages > 1 && (
+          <div className="mt-3 flex items-center gap-2 text-[10px] uppercase tracking-wide text-slate-400">
+            <button
+              onClick={prevPage}
+              className={`px-2 py-1 rounded-md border border-white/10 transition-colors hover:bg-white/5 hover:text-slate-200 ${
+                currentPage === 1 ? "cursor-not-allowed opacity-40" : ""
+              }`}
+              disabled={currentPage === 1}
+            >
+              ‹ Prev
+            </button>
+            <span className="tabular text-slate-500">
+              {currentPage} / {totalPages}
+            </span>
+            <button
+              onClick={nextPage}
+              className={`ml-auto px-2 py-1 rounded-md border border-white/10 transition-colors hover:bg-white/5 hover:text-slate-200 ${
+                currentPage === totalPages
+                  ? "cursor-not-allowed opacity-40"
+                  : ""
+              }`}
+              disabled={currentPage === totalPages}
+            >
+              Next ›
+            </button>
+          </div>
+        )}
       </nav>
 
       <button
@@ -141,7 +174,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         onClick={() => setMobileVisible((prev) => !prev)}
         title="Toggle sidebar"
       >
-        <div className="h-10 w-2 rounded-full bg-slate-500" />
+        <div className="h-10 w-1 rounded-full bg-white/20" />
       </button>
     </div>
   );

@@ -274,7 +274,7 @@ export const VideosPlayer = ({
     <>
       {/* Error message */}
       {videoCodecError && (
-        <div className="font-medium text-orange-700">
+        <div className="font-medium text-amber-400">
           <p>
             Videos could NOT play because{" "}
             <a
@@ -322,7 +322,7 @@ export const VideosPlayer = ({
         <div className="relative">
           <button
             ref={showHiddenBtnRef}
-            className="flex items-center gap-2 rounded bg-slate-800 px-3 py-2 text-sm text-slate-100 hover:bg-slate-700 border border-slate-500"
+            className="flex items-center gap-2 rounded bg-[var(--surface-1)] px-3 py-2 text-sm text-slate-100 hover:bg-white/5 border border-white/10"
             onClick={() => setShowHiddenMenu((prev) => !prev)}
           >
             <FaEye /> Show Hidden Videos ({hiddenVideos.length})
@@ -330,7 +330,7 @@ export const VideosPlayer = ({
           {showHiddenMenu && (
             <div
               ref={hiddenMenuRef}
-              className="absolute left-0 mt-2 w-max rounded border border-slate-500 bg-slate-900 shadow-lg p-2 z-50"
+              className="absolute left-0 mt-2 w-max rounded border border-white/10 bg-[var(--surface-0)] shadow-lg p-2 z-50"
             >
               <div className="mb-2 text-xs text-slate-300">
                 Restore hidden videos:
@@ -338,7 +338,7 @@ export const VideosPlayer = ({
               {hiddenVideos.map((filename) => (
                 <button
                   key={filename}
-                  className="block w-full text-left px-2 py-1 rounded hover:bg-slate-700 text-slate-100"
+                  className="block w-full text-left px-2 py-1 rounded hover:bg-white/5 text-slate-100"
                   onClick={() =>
                     setHiddenVideos((prev: string[]) =>
                       prev.filter((v: string) => v !== filename),
@@ -373,7 +373,7 @@ export const VideosPlayer = ({
                 <span className="flex gap-1">
                   <button
                     title={isEnlarged ? "Minimize" : "Enlarge"}
-                    className="ml-2 p-1 hover:bg-slate-700 rounded focus:outline-none focus:ring-0"
+                    className="ml-2 p-1 hover:bg-white/5 rounded focus:outline-none focus:ring-0"
                     onClick={() =>
                       setEnlargedVideo(isEnlarged ? null : video.filename)
                     }
@@ -382,7 +382,7 @@ export const VideosPlayer = ({
                   </button>
                   <button
                     title="Hide Video"
-                    className="ml-1 p-1 hover:bg-slate-700 rounded focus:outline-none focus:ring-0"
+                    className="ml-1 p-1 hover:bg-white/5 rounded focus:outline-none focus:ring-0"
                     onClick={() =>
                       setHiddenVideos((prev: string[]) => [
                         ...prev,

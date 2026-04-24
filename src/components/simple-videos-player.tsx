@@ -224,20 +224,20 @@ export const SimpleVideosPlayer = ({
       {hiddenVideos.length > 0 && (
         <div className="relative mb-4">
           <button
-            className="flex items-center gap-2 rounded bg-slate-800 px-3 py-2 text-sm text-slate-100 hover:bg-slate-700 border border-slate-500"
+            className="inline-flex items-center gap-2 h-8 rounded-md panel px-3 text-xs text-slate-300 hover:text-slate-100 hover:bg-white/5 transition-colors"
             onClick={() => setShowHiddenMenu(!showHiddenMenu)}
           >
-            <FaEye /> Show Hidden Videos ({hiddenVideos.length})
+            <FaEye size={11} /> Show hidden · {hiddenVideos.length}
           </button>
           {showHiddenMenu && (
-            <div className="absolute left-0 mt-2 w-max rounded border border-slate-500 bg-slate-900 shadow-lg p-2 z-50">
-              <div className="mb-2 text-xs text-slate-300">
-                Restore hidden videos:
+            <div className="absolute left-0 mt-1.5 w-max panel-raised bg-[var(--surface-1)] shadow-xl p-1.5 z-50">
+              <div className="mb-1 px-2 text-[10px] uppercase tracking-wide text-slate-500">
+                Restore hidden videos
               </div>
               {hiddenVideos.map((filename) => (
                 <button
                   key={filename}
-                  className="block w-full text-left px-2 py-1 rounded hover:bg-slate-700 text-slate-100"
+                  className="block w-full text-left px-2 py-1 rounded-md text-xs text-slate-300 hover:text-slate-100 hover:bg-white/5 transition-colors"
                   onClick={() =>
                     setHiddenVideos((prev) =>
                       prev.filter((v) => v !== filename),
@@ -269,21 +269,25 @@ export const SimpleVideosPlayer = ({
                   : "max-w-96"
               }`}
             >
-              <p className="truncate w-full rounded-t-xl bg-gray-800 px-2 text-sm text-gray-300 flex items-center justify-between">
-                <span>{info.filename}</span>
-                <span className="flex gap-1">
+              <p className="truncate w-full rounded-t-md bg-[var(--surface-1)] border border-b-0 border-white/5 px-2.5 py-1 text-[11px] text-slate-400 flex items-center justify-between gap-2">
+                <span className="truncate">{info.filename}</span>
+                <span className="flex gap-0.5 shrink-0">
                   <button
                     title={isEnlarged ? "Minimize" : "Enlarge"}
-                    className="ml-2 p-1 hover:bg-slate-700 rounded"
+                    className="p-1 rounded text-slate-500 hover:text-slate-200 hover:bg-white/5 transition-colors"
                     onClick={() =>
                       setEnlargedVideo(isEnlarged ? null : info.filename)
                     }
                   >
-                    {isEnlarged ? <FaCompress /> : <FaExpand />}
+                    {isEnlarged ? (
+                      <FaCompress size={10} />
+                    ) : (
+                      <FaExpand size={10} />
+                    )}
                   </button>
                   <button
                     title="Hide Video"
-                    className="ml-1 p-1 hover:bg-slate-700 rounded"
+                    className="p-1 rounded text-slate-500 hover:text-slate-200 hover:bg-white/5 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
                     onClick={() =>
                       setHiddenVideos((prev) => [...prev, info.filename])
                     }
@@ -293,7 +297,7 @@ export const SimpleVideosPlayer = ({
                       ).length === 1
                     }
                   >
-                    <FaTimes />
+                    <FaTimes size={10} />
                   </button>
                 </span>
               </p>
