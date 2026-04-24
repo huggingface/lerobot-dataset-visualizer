@@ -33,18 +33,31 @@ const stlGeometryCache = new Map<string, THREE.BufferGeometry>();
 // In-flight promise cache — prevents duplicate simultaneous fetches
 const stlGeometryLoading = new Map<string, Promise<THREE.BufferGeometry>>();
 
+// URDFs + meshes are hosted on the Hub at https://hf.co/lerobot/robot-urdfs.
+// The URDFLoader resolves relative mesh paths against the URDF's own URL, so
+// the upstream directory layout must be preserved there.
+const URDF_BASE_URL =
+  process.env.NEXT_PUBLIC_URDF_BASE_URL ??
+  "https://huggingface.co/lerobot/robot-urdfs/resolve/main";
+
 function getRobotConfig(robotType: string | null) {
   const lower = (robotType ?? "").toLowerCase();
   if (lower.includes("g1") || lower.includes("unitree")) {
-    return { urdfUrl: "/urdf/g1/g1_body29_hand14.urdf", scale: 1 };
+    return { urdfUrl: `${URDF_BASE_URL}/g1/g1_body29_hand14.urdf`, scale: 1 };
   }
   if (lower.includes("openarm")) {
-    return { urdfUrl: "/urdf/openarm/openarm_bimanual.urdf", scale: 3 };
+    return {
+      urdfUrl: `${URDF_BASE_URL}/openarm/openarm_bimanual.urdf`,
+      scale: 3,
+    };
   }
   if (lower.includes("so100") && !lower.includes("so101")) {
-    return { urdfUrl: "/urdf/so101/so100.urdf", scale: 10 };
+    return { urdfUrl: `${URDF_BASE_URL}/so101/so100.urdf`, scale: 10 };
   }
-  return { urdfUrl: "/urdf/so101/so101_new_calib.urdf", scale: 10 };
+  return {
+    urdfUrl: `${URDF_BASE_URL}/so101/so101_new_calib.urdf`,
+    scale: 10,
+  };
 }
 
 // Detect unit: servo ticks (0-4096), degrees (>6.28), or radians
