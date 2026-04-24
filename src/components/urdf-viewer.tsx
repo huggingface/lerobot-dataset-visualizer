@@ -633,6 +633,7 @@ export default function URDFViewer({
   );
   const { urdfUrl, scale } = robotConfig;
   const isG1 = urdfUrl.includes("g1");
+  const isOpenArm = urdfUrl.includes("openarm");
   const repoId = org && dataset ? `${org}/${dataset}` : null;
   const datasetInfoRef = useRef<{
     version: string;
@@ -872,7 +873,9 @@ export default function URDFViewer({
           camera={{
             position: isG1
               ? [1.5, 1.0, 1.5]
-              : [0.3 * scale, 0.25 * scale, 0.3 * scale],
+              : isOpenArm
+                ? [0.95 * scale, 0.8 * scale, 0.95 * scale]
+                : [0.3 * scale, 0.25 * scale, 0.3 * scale],
             fov: 45,
             near: 0.01,
             far: 100,
