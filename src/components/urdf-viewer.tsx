@@ -327,9 +327,9 @@ function RobotScene({
             lower.includes("rubber") ||
             lower.includes("constraint") ||
             lower.includes("support");
-          color = isWhitePart ? "#c0c0c0" : "#2a2a2a";
-          metalness = 0.3;
-          roughness = 0.5;
+          color = isWhitePart ? "#9ca3af" : "#1f2937";
+          metalness = 0.25;
+          roughness = 0.6;
         } else if (url.includes("sts3215")) {
           color = "#1a1a1a";
           metalness = 0.7;
@@ -794,9 +794,9 @@ export default function URDFViewer({
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* 3D Viewport */}
-      <div className="flex-1 min-h-0 bg-slate-950 rounded-lg overflow-hidden border border-slate-700 relative">
+      <div className="flex-1 min-h-0 bg-slate-900 rounded-lg overflow-hidden border border-slate-700 relative">
         {(episodeLoading || urdfLoading) && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/70">
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/70">
             <span className="text-white text-lg animate-pulse">
               {urdfLoading
                 ? "Loading 3D model…"
@@ -813,11 +813,17 @@ export default function URDFViewer({
             near: 0.01,
             far: 100,
           }}
+          gl={{
+            toneMapping: THREE.ACESFilmicToneMapping,
+            toneMappingExposure: 0.9,
+          }}
         >
-          <ambientLight intensity={0.7} />
-          <directionalLight position={[3, 5, 4]} intensity={1.5} />
-          <directionalLight position={[-2, 3, -2]} intensity={0.6} />
-          <hemisphereLight args={["#b1e1ff", "#666666", 0.5]} />
+          {/* Scene background softens the stark contrast against white meshes */}
+          <color attach="background" args={["#1e293b"]} />
+          <ambientLight intensity={0.45} />
+          <directionalLight position={[3, 5, 4]} intensity={1.0} />
+          <directionalLight position={[-2, 3, -2]} intensity={0.35} />
+          <hemisphereLight args={["#b1e1ff", "#475569", 0.35]} />
           <RobotScene
             urdfUrl={urdfUrl}
             jointValues={jointValues}
