@@ -19,7 +19,7 @@ type TimeUpdateSource = "external" | "video";
 
 type TimeContextType = {
   currentTime: number;
-  setCurrentTime: (t: number, source?: TimeUpdateSource) => void;
+  seek: (t: number, source?: TimeUpdateSource) => void;
   // Monotonically increasing counter that bumps on every `external` seek.
   // Sync effects compare the current value against a stored ref to detect
   // user-initiated seeks without relying on heuristics like "did the time
@@ -107,7 +107,7 @@ export const TimeProvider: React.FC<{
     <TimeContext.Provider
       value={{
         currentTime,
-        setCurrentTime: updateTime,
+        seek: updateTime,
         externalSeekVersion,
         subscribe,
         isPlaying,

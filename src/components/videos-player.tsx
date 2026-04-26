@@ -19,7 +19,7 @@ export const VideosPlayer = ({
   videosInfo,
   onVideosReady,
 }: VideoPlayerProps) => {
-  const { currentTime, setCurrentTime, isPlaying, setIsPlaying } = useTime();
+  const { currentTime, seek, isPlaying, setIsPlaying } = useTime();
   const videoRefs = useRef<HTMLVideoElement[]>([]);
   const [hiddenVideos, setHiddenVideos] = useState<string[]>([]);
 
@@ -184,14 +184,14 @@ export const VideosPlayer = ({
           const segmentStart = videoInfo.segmentStart || 0;
           const globalTime = Math.max(0, video.currentTime - segmentStart);
           lastVideoTimeRef.current = globalTime;
-          setCurrentTime(globalTime);
+          seek(globalTime);
         } else {
           lastVideoTimeRef.current = video.currentTime;
-          setCurrentTime(video.currentTime);
+          seek(video.currentTime);
         }
       };
     },
-    [videosInfo, setCurrentTime],
+    [videosInfo, seek],
   );
 
   // Handle video ready and setup segmentation

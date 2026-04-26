@@ -11,8 +11,7 @@ import {
 } from "react-icons/fa";
 
 const PlaybackBar: React.FC = () => {
-  const { duration, isPlaying, setIsPlaying, currentTime, setCurrentTime } =
-    useTime();
+  const { duration, isPlaying, setIsPlaying, currentTime, seek } = useTime();
 
   const sliderActiveRef = React.useRef(false);
   const wasPlayingRef = React.useRef(false);
@@ -29,7 +28,7 @@ const PlaybackBar: React.FC = () => {
     const t = Number(e.target.value);
     setSliderValue(t);
     // Seek videos immediately while dragging (no debounce)
-    setCurrentTime(t);
+    seek(t);
   };
 
   const handleSliderMouseDown = () => {
@@ -41,7 +40,7 @@ const PlaybackBar: React.FC = () => {
   const handleSliderMouseUp = () => {
     sliderActiveRef.current = false;
     // Final seek to exact slider position
-    setCurrentTime(sliderValue);
+    seek(sliderValue);
     if (wasPlayingRef.current) {
       setIsPlaying(true);
     }
@@ -51,7 +50,7 @@ const PlaybackBar: React.FC = () => {
     <div className="sticky bottom-0 mt-auto w-full max-w-4xl mx-auto flex items-center gap-3 panel-raised bg-[var(--surface-0)]/90 backdrop-blur px-3 py-2">
       <button
         title="Jump backward 5 seconds"
-        onClick={() => setCurrentTime(Math.max(0, currentTime - 5))}
+        onClick={() => seek(Math.max(0, currentTime - 5))}
         className="hidden md:flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:text-slate-100 hover:bg-white/5 transition-colors"
       >
         <FaBackward size={14} />
@@ -67,14 +66,14 @@ const PlaybackBar: React.FC = () => {
       </button>
       <button
         title="Jump forward 5 seconds"
-        onClick={() => setCurrentTime(Math.min(duration, currentTime + 5))}
+        onClick={() => seek(Math.min(duration, currentTime + 5))}
         className="hidden md:flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:text-slate-100 hover:bg-white/5 transition-colors"
       >
         <FaForward size={14} />
       </button>
       <button
         title="Rewind from start"
-        onClick={() => setCurrentTime(0)}
+        onClick={() => seek(0)}
         className="hidden md:flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:text-slate-100 hover:bg-white/5 transition-colors"
       >
         <FaUndoAlt size={14} />

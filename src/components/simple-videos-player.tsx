@@ -24,13 +24,8 @@ export const SimpleVideosPlayer = ({
   videosInfo,
   onVideosReady,
 }: VideoPlayerProps) => {
-  const {
-    currentTime,
-    setCurrentTime,
-    externalSeekVersion,
-    isPlaying,
-    setIsPlaying,
-  } = useTime();
+  const { currentTime, seek, externalSeekVersion, isPlaying, setIsPlaying } =
+    useTime();
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const [hiddenVideos, setHiddenVideos] = React.useState<string[]>([]);
   const [enlargedVideo, setEnlargedVideo] = React.useState<string | null>(null);
@@ -101,7 +96,7 @@ export const SimpleVideosPlayer = ({
       });
       // Update the slider as a status report — don't bump externalSeekVersion
       // since we already drove every video to its target.
-      setCurrentTime(0, "video");
+      seek(0, "video");
     };
 
     videoRefs.current.forEach((video, index) => {
@@ -135,7 +130,7 @@ export const SimpleVideosPlayer = ({
           if (info.isSegmented) {
             globalTime = video.currentTime - (info.segmentStart ?? 0);
           }
-          setCurrentTime(globalTime, "video");
+          seek(globalTime, "video");
         }
       };
 
@@ -221,7 +216,7 @@ export const SimpleVideosPlayer = ({
     // firstVisibleIdx intentionally omitted — we read it via ref so hiding
     // the first camera doesn't reset readiness (see the comment near
     // firstVisibleIdxRef above).
-  }, [videosInfo, onVideosReady, setIsPlaying, setCurrentTime]);
+  }, [videosInfo, onVideosReady, setIsPlaying, seek]);
 
   // Handle play/pause — skip hidden videos
   useEffect(() => {
