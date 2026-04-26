@@ -54,6 +54,19 @@ export const SimpleVideosPlayer = ({
     firstVisibleIdxRef.current = firstVisibleIdx;
   }, [firstVisibleIdx]);
 
+  // Mirror onVideosReady into a ref for the same reason. Parents typically
+  // pass an inline arrow (`onVideosReady={() => setVideosReady(true)}`) which
+  // gets a new identity every render. Including it in the videos-ready
+  // effect's deps caused that effect to tear down + setup on every parent
+  // render. The setup branch then ran `queueMicrotask(handleLoadedData)` for
+  // every already-loaded video (true after the first load), seeking each
+  // back to segmentStart — videos got pinned on their first frame and never
+  // advanced.
+  const onVideosReadyRef = useRef(onVideosReady);
+  useEffect(() => {
+    onVideosReadyRef.current = onVideosReady;
+  }, [onVideosReady]);
+
   // Initialize video refs array
   useEffect(() => {
     videoRefs.current = videoRefs.current.slice(0, videosInfo.length);
@@ -69,7 +82,7 @@ export const SimpleVideosPlayer = ({
       if (resolved) return;
       resolved = true;
       setVideosReady(true);
-      onVideosReady?.();
+      onVideosReadyRef.current?.();
       setIsPlaying(true);
     };
 
@@ -216,7 +229,9 @@ export const SimpleVideosPlayer = ({
     // firstVisibleIdx intentionally omitted — we read it via ref so hiding
     // the first camera doesn't reset readiness (see the comment near
     // firstVisibleIdxRef above).
-  }, [videosInfo, onVideosReady, setIsPlaying, seek]);
+    // onVideosReady intentionally omitted — read via onVideosReadyRef so
+    // an inline parent prop doesn't tear this effect down on every render.
+  }, [videosInfo, setIsPlaying, seek]);
 
   // Handle play/pause — skip hidden videos
   useEffect(() => {
