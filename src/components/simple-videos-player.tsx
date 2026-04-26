@@ -85,6 +85,25 @@ export const SimpleVideosPlayer = ({
 
     const timeout = setTimeout(markReady, VIDEO_READY_TIMEOUT_MS);
 
+    // Coordinated loop reset — when the primary video hits its segment end
+    // (or natural end), seek every camera to its own segmentStart in a
+    // single synchronous burst. The previous design seeked the primary,
+    // then bumped externalSeekVersion which scheduled the other seeks via
+    // a React render — leaving an 80ms (throttled) gap where the primary
+    // played fresh frames while the others still showed the segment-end
+    // frame. Now the gap is microseconds.
+    const loopAllVideos = () => {
+      videoRefs.current.forEach((other, otherIdx) => {
+        if (!other) return;
+        const otherInfo = videosInfo[otherIdx];
+        if (!otherInfo) return;
+        other.currentTime = otherInfo.segmentStart || 0;
+      });
+      // Update the slider as a status report — don't bump externalSeekVersion
+      // since we already drove every video to its target.
+      setCurrentTime(0, "video");
+    };
+
     videoRefs.current.forEach((video, index) => {
       if (!video) return;
       const info = videosInfo[index];
@@ -100,9 +119,13 @@ export const SimpleVideosPlayer = ({
             video.currentTime >=
             segmentEnd - THRESHOLDS.VIDEO_SEGMENT_BOUNDARY
           ) {
-            video.currentTime = segmentStart;
+            // Primary drives the coordinated loop. Non-primary cameras
+            // that race ahead just snap to segmentStart and wait — the
+            // primary's next loop will re-align everyone.
             if (index === firstVisibleIdxRef.current) {
-              setCurrentTime(0);
+              loopAllVideos();
+            } else {
+              video.currentTime = segmentStart;
             }
             return;
           }
@@ -141,9 +164,13 @@ export const SimpleVideosPlayer = ({
       const handleEnded = info.isSegmented
         ? null
         : () => {
-            video.currentTime = 0;
+            // Same coordinated loop strategy for non-segmented videos at
+            // their natural end — primary drives, others wait for primary
+            // to align them.
             if (index === firstVisibleIdxRef.current) {
-              setCurrentTime(0);
+              loopAllVideos();
+            } else {
+              video.currentTime = 0;
             }
           };
 
