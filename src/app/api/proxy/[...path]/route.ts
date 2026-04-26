@@ -49,6 +49,21 @@ function upstreamSignal(req: NextRequest): AbortSignal {
   ]);
 }
 
+// Shared by GET and HEAD so they always forward the same set of headers.
+// Previously HEAD only attached Authorization, so a client sending a
+// conditional HEAD (If-None-Match etag check) would always get a fresh
+// 200 instead of a 304 — defeating the cache validation it was asking for.
+function buildUpstreamHeaders(req: NextRequest): Headers {
+  const headers = new Headers();
+  const token = req.cookies.get(COOKIE_NAME)?.value;
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  for (const h of FORWARD_REQUEST_HEADERS) {
+    const v = req.headers.get(h);
+    if (v) headers.set(h, v);
+  }
+  return headers;
+}
+
 // Build the upstream URL and validate it. Returns the URL or null if the
 // request should be rejected.
 //
@@ -92,13 +107,7 @@ export async function GET(
   );
   if (!upstreamUrl) return new Response("Forbidden", { status: 403 });
 
-  const headers = new Headers();
-  const token = req.cookies.get(COOKIE_NAME)?.value;
-  if (token) headers.set("authorization", `Bearer ${token}`);
-  for (const h of FORWARD_REQUEST_HEADERS) {
-    const v = req.headers.get(h);
-    if (v) headers.set(h, v);
-  }
+  const headers = buildUpstreamHeaders(req);
 
   let upstream: Response;
   try {
@@ -148,9 +157,7 @@ export async function HEAD(
   );
   if (!upstreamUrl) return new Response(null, { status: 403 });
 
-  const headers = new Headers();
-  const token = req.cookies.get(COOKIE_NAME)?.value;
-  if (token) headers.set("authorization", `Bearer ${token}`);
+  const headers = buildUpstreamHeaders(req);
 
   let upstream: Response;
   try {
