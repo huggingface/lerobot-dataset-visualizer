@@ -43,7 +43,7 @@ export default function HfAuthButton() {
     <button
       onClick={signIn}
       title="Sign in to access your private datasets"
-      className="rounded-md transition-opacity hover:opacity-90"
+      className="flex items-center gap-2 rounded-md transition-opacity hover:opacity-90"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
@@ -52,6 +52,7 @@ export default function HfAuthButton() {
         height={32}
         className="h-8 w-auto"
       />
+      <span className="text-xs text-slate-300">to access private datasets</span>
     </button>
   );
 }
