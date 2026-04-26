@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useCallback } from "react";
+import React, { useEffect, useRef } from "react";
 import { useTime } from "../context/time-context";
 import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
 import type { VideoInfo } from "@/types";
@@ -86,53 +86,84 @@ export const SimpleVideosPlayer = ({
     const timeout = setTimeout(markReady, VIDEO_READY_TIMEOUT_MS);
 
     videoRefs.current.forEach((video, index) => {
-      if (video) {
-        const info = videosInfo[index];
+      if (!video) return;
+      const info = videosInfo[index];
 
+      // One timeupdate handler per video covers both jobs:
+      // (a) loop-reset on segmented videos at segment-end
+      // (b) reporting the primary video's currentTime back to the context
+      const handleTimeUpdate = () => {
         if (info.isSegmented) {
-          const handleTimeUpdate = () => {
-            const segmentEnd = info.segmentEnd || video.duration;
-            const segmentStart = info.segmentStart || 0;
+          const segmentEnd = info.segmentEnd || video.duration;
+          const segmentStart = info.segmentStart || 0;
+          if (
+            video.currentTime >=
+            segmentEnd - THRESHOLDS.VIDEO_SEGMENT_BOUNDARY
+          ) {
+            video.currentTime = segmentStart;
+            if (index === firstVisibleIdxRef.current) {
+              setCurrentTime(0);
+            }
+            return;
+          }
+        }
+        if (index === firstVisibleIdxRef.current) {
+          let globalTime = video.currentTime;
+          if (info.isSegmented) {
+            globalTime = video.currentTime - (info.segmentStart || 0);
+          }
+          setCurrentTime(globalTime, "video");
+        }
+      };
 
+      // For segmented videos, snap into the segment when play() is called
+      // — covers the case where the user paused outside the segment range.
+      const handlePlay = info.isSegmented
+        ? () => {
+            const segmentStart = info.segmentStart || 0;
+            const segmentEnd = info.segmentEnd || video.duration;
             if (
-              video.currentTime >=
-              segmentEnd - THRESHOLDS.VIDEO_SEGMENT_BOUNDARY
+              video.currentTime < segmentStart ||
+              video.currentTime >= segmentEnd
             ) {
               video.currentTime = segmentStart;
-              if (index === firstVisibleIdxRef.current) {
-                setCurrentTime(0);
-              }
             }
-          };
+          }
+        : null;
 
-          const handleLoadedData = () => {
+      const handleLoadedData = info.isSegmented
+        ? () => {
             video.currentTime = info.segmentStart || 0;
             checkReady();
-          };
+          }
+        : null;
 
-          video.addEventListener("timeupdate", handleTimeUpdate);
-          video.addEventListener("loadeddata", handleLoadedData);
-
-          videoEventCleanup.set(video, () => {
-            video.removeEventListener("timeupdate", handleTimeUpdate);
-            video.removeEventListener("loadeddata", handleLoadedData);
-          });
-        } else {
-          const handleEnded = () => {
+      const handleEnded = info.isSegmented
+        ? null
+        : () => {
             video.currentTime = 0;
             if (index === firstVisibleIdxRef.current) {
               setCurrentTime(0);
             }
           };
 
-          video.addEventListener("ended", handleEnded);
-          video.addEventListener("canplaythrough", checkReady, { once: true });
-
-          videoEventCleanup.set(video, () => {
-            video.removeEventListener("ended", handleEnded);
-          });
-        }
+      video.addEventListener("timeupdate", handleTimeUpdate);
+      if (handlePlay) video.addEventListener("play", handlePlay);
+      if (handleLoadedData)
+        video.addEventListener("loadeddata", handleLoadedData);
+      if (handleEnded) video.addEventListener("ended", handleEnded);
+      if (!info.isSegmented) {
+        video.addEventListener("canplaythrough", checkReady, { once: true });
       }
+
+      videoEventCleanup.set(video, () => {
+        video.removeEventListener("timeupdate", handleTimeUpdate);
+        if (handlePlay) video.removeEventListener("play", handlePlay);
+        if (handleLoadedData)
+          video.removeEventListener("loadeddata", handleLoadedData);
+        if (handleEnded) video.removeEventListener("ended", handleEnded);
+        video.removeEventListener("canplaythrough", checkReady);
+      });
     });
 
     return () => {
@@ -198,43 +229,6 @@ export const SimpleVideosPlayer = ({
     });
   }, [externalSeekVersion, currentTime, videosInfo, videosReady, hiddenSet]);
 
-  // Stable per-index timeupdate handlers avoid findIndex scan on every event.
-  // Tagged "video" so the context doesn't bump externalSeekVersion — the
-  // sync effect treats this as a status report, not a seek command.
-  const makeTimeUpdateHandler = useCallback(
-    (index: number) => {
-      return () => {
-        const video = videoRefs.current[index];
-        const info = videosInfo[index];
-        if (!video || !info) return;
-
-        let globalTime = video.currentTime;
-        if (info.isSegmented) {
-          globalTime = video.currentTime - (info.segmentStart || 0);
-        }
-        setCurrentTime(globalTime, "video");
-      };
-    },
-    [videosInfo, setCurrentTime],
-  );
-
-  // Handle play click for segmented videos
-  const handlePlay = (video: HTMLVideoElement, info: VideoInfo) => {
-    if (info.isSegmented) {
-      const segmentStart = info.segmentStart || 0;
-      const segmentEnd = info.segmentEnd || video.duration;
-
-      if (video.currentTime < segmentStart || video.currentTime >= segmentEnd) {
-        video.currentTime = segmentStart;
-      }
-    }
-    video.play().catch((e: unknown) => {
-      if ((e as Error)?.name !== "AbortError") {
-        console.error("Error playing video", e);
-      }
-    });
-  };
-
   return (
     <>
       {/* Hidden videos menu */}
@@ -275,7 +269,6 @@ export const SimpleVideosPlayer = ({
           if (hiddenVideos.includes(info.filename)) return null;
 
           const isEnlarged = enlargedVideo === info.filename;
-          const isFirstVisible = idx === firstVisibleIdx;
 
           return (
             <div
@@ -328,10 +321,6 @@ export const SimpleVideosPlayer = ({
                 muted
                 preload="auto"
                 crossOrigin="anonymous"
-                onPlay={(e) => handlePlay(e.currentTarget, info)}
-                onTimeUpdate={
-                  isFirstVisible ? makeTimeUpdateHandler(idx) : undefined
-                }
               >
                 <source src={proxyHfUrl(info.url)} type="video/mp4" />
                 Your browser does not support the video tag.
