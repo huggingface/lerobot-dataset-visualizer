@@ -155,7 +155,7 @@ const SingleDataGraph = React.memo(
     setHoveredTime: (t: number | null) => void;
     tall?: boolean;
   }) => {
-    const { currentTime, setCurrentTime } = useTime();
+    const { currentTime, seek } = useTime();
     const flattenRow = useCallback(
       (row: Record<string, number | Record<string, number>>, prefix = "") => {
         const result: Record<string, number> = {};
@@ -246,7 +246,7 @@ const SingleDataGraph = React.memo(
       data: { activePayload?: { payload: { timestamp: number } }[] } | null,
     ) => {
       if (data?.activePayload?.length) {
-        setCurrentTime(data.activePayload[0].payload.timestamp);
+        seek(data.activePayload[0].payload.timestamp);
       }
     };
 
