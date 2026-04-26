@@ -532,7 +532,7 @@ function EpisodeViewerInner({
           title="Dataset quality diagnostics (powered by lerobot-doctor)"
         />
         <div className="ml-auto pr-3">
-          <HfAuthButton />
+          <HfAuthButton variant="tab" />
         </div>
       </div>
 
