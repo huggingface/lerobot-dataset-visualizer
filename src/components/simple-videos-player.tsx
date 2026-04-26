@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useCallback } from "react";
 import { useTime } from "../context/time-context";
 import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
 import type { VideoInfo } from "@/types";
+import { proxyHfUrl } from "@/utils/auth";
 
 const THRESHOLDS = {
   VIDEO_SYNC_TOLERANCE: 0.2,
@@ -316,7 +317,7 @@ export const SimpleVideosPlayer = ({
                   isFirstVisible ? makeTimeUpdateHandler(idx) : undefined
                 }
               >
-                <source src={info.url} type="video/mp4" />
+                <source src={proxyHfUrl(info.url)} type="video/mp4" />
                 Your browser does not support the video tag.
               </video>
             </div>

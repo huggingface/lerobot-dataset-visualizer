@@ -39,6 +39,35 @@ const AuthContext = createContext<AuthContextValue>({
   signOut: () => {},
 });
 
+// Mirror the access token into an HttpOnly cookie so the same-origin
+// /api/proxy route can attach it to <video> requests, which can't carry an
+// Authorization header from JS.
+async function setSessionCookie(accessToken: string): Promise<void> {
+  try {
+    await fetch("/api/auth/session", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  } catch (err) {
+    console.error("Failed to set session cookie", err);
+  }
+}
+
+async function clearSessionCookie(): Promise<void> {
+  try {
+    await fetch("/api/auth/session", { method: "DELETE" });
+  } catch (err) {
+    console.error("Failed to clear session cookie", err);
+  }
+}
+
+function isExpired(result: OAuthResult): boolean {
+  const exp = result.accessTokenExpiresAt;
+  if (!exp) return false;
+  const expDate = exp instanceof Date ? exp : new Date(exp);
+  return expDate.getTime() <= Date.now();
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [oauth, setOauth] = useState<OAuthResult | null>(null);
   const [isAuthAvailable, setIsAuthAvailable] = useState(false);
@@ -52,8 +81,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const stored = window.localStorage.getItem(AUTH_STORAGE_KEY);
     if (stored) {
       try {
-        setOauth(JSON.parse(stored) as OAuthResult);
-        return;
+        const parsed = JSON.parse(stored) as OAuthResult;
+        if (isExpired(parsed)) {
+          window.localStorage.removeItem(AUTH_STORAGE_KEY);
+          clearSessionCookie();
+        } else {
+          setOauth(parsed);
+          setSessionCookie(parsed.accessToken);
+          return;
+        }
       } catch {
         window.localStorage.removeItem(AUTH_STORAGE_KEY);
       }
@@ -64,6 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (result) {
           window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(result));
           setOauth(result);
+          setSessionCookie(result.accessToken);
         }
       })
       .catch((err) => {
@@ -81,6 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(() => {
     window.localStorage.removeItem(AUTH_STORAGE_KEY);
     setOauth(null);
+    clearSessionCookie();
     // Strip ?code=... left in the URL by the OAuth redirect, if any.
     const cleanUrl = window.location.href.replace(/\?.*$/, "");
     if (cleanUrl !== window.location.href) {

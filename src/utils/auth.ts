@@ -23,3 +23,20 @@ export function authHeaders(): Record<string, string> {
 }
 
 export const AUTH_STORAGE_KEY = STORAGE_KEY;
+
+// Native <video> elements can't carry an Authorization header. To play videos
+// from private datasets, we route them through our same-origin /api/proxy
+// endpoint, which reads the access token from an HttpOnly cookie set during
+// sign-in and forwards the request to huggingface.co. Returns the original
+// URL when running server-side or when the user is not signed in.
+export function proxyHfUrl(url: string): string {
+  if (typeof window === "undefined") return url;
+  if (!getAuthToken()) return url;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname !== "huggingface.co") return url;
+    return `/api/proxy${parsed.pathname}${parsed.search}`;
+  } catch {
+    return url;
+  }
+}
