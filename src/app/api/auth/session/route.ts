@@ -21,11 +21,20 @@ export async function POST(req: NextRequest) {
     return new NextResponse("Empty token", { status: 400 });
   }
 
+  // The Space is iframed inside huggingface.co/spaces/<owner>/<name>, so the
+  // top-level site differs from the cookie's site (*.hf.space). SameSite=Lax
+  // would block the cookie on subresource requests like <video> in that
+  // cross-site embedding context, which is exactly when we need it. Use
+  // SameSite=None + Secure + Partitioned (CHIPS) so the cookie rides along
+  // on subresource requests inside the iframe while remaining isolated to
+  // the (top-frame, this-domain) pair.
   const res = new NextResponse(null, { status: 204 });
+  const isProd = process.env.NODE_ENV === "production";
   res.cookies.set(COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
+    partitioned: isProd,
     path: "/",
     maxAge: COOKIE_MAX_AGE_SECONDS,
   });
@@ -33,7 +42,19 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE() {
+  // To clear a Partitioned cookie, the clearing Set-Cookie must include the
+  // Partitioned attribute too — otherwise it lands in a different cookie
+  // jar than the one we're trying to clear. Mirror the same attributes used
+  // when setting it, with maxAge=0 so it expires immediately.
   const res = new NextResponse(null, { status: 204 });
-  res.cookies.delete(COOKIE_NAME);
+  const isProd = process.env.NODE_ENV === "production";
+  res.cookies.set(COOKIE_NAME, "", {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
+    partitioned: isProd,
+    path: "/",
+    maxAge: 0,
+  });
   return res;
 }
