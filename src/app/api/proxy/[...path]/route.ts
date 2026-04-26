@@ -35,21 +35,48 @@ const FORWARD_RESPONSE_HEADERS = [
   "cache-control",
 ];
 
+// Build the upstream URL and validate it. Returns the URL or null if the
+// request should be rejected.
+//
+// Two attack surfaces this guards against:
+// 1. Path traversal — `subPath = "datasets/../api/tokens"` passes a naive
+//    startsWith("datasets/") check, but URL normalization resolves it to
+//    huggingface.co/api/tokens. We re-check the prefix on the *normalized*
+//    pathname after construction, so traversal is caught.
+// 2. Origin escape — exotic URL syntax could cause new URL() to land on a
+//    different host. We assert origin === HF_HOST.
+function resolveUpstreamUrl(
+  subPath: string,
+  searchParams: URLSearchParams,
+): URL | null {
+  let upstreamUrl: URL;
+  try {
+    upstreamUrl = new URL(`${HF_HOST}/${subPath}`);
+  } catch {
+    return null;
+  }
+
+  if (upstreamUrl.origin !== HF_HOST) return null;
+
+  const normalized = upstreamUrl.pathname.replace(/^\/+/, "");
+  if (!ALLOWED_PREFIXES.some((p) => normalized.startsWith(p))) return null;
+
+  for (const [k, v] of searchParams) {
+    upstreamUrl.searchParams.set(k, v);
+  }
+  return upstreamUrl;
+}
+
 export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await ctx.params;
-  const subPath = path.join("/");
-
-  if (!ALLOWED_PREFIXES.some((p) => subPath.startsWith(p))) {
-    return new Response("Forbidden", { status: 403 });
-  }
-
-  const upstreamUrl = new URL(`${HF_HOST}/${subPath}`);
-  for (const [k, v] of req.nextUrl.searchParams) {
-    upstreamUrl.searchParams.set(k, v);
-  }
+  const upstreamUrl = resolveUpstreamUrl(
+    path.join("/"),
+    req.nextUrl.searchParams,
+  );
+  if (!upstreamUrl) return new Response("Forbidden", { status: 403 });
 
   const headers = new Headers();
   const token = req.cookies.get(COOKIE_NAME)?.value;
@@ -84,16 +111,11 @@ export async function HEAD(
   ctx: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await ctx.params;
-  const subPath = path.join("/");
-
-  if (!ALLOWED_PREFIXES.some((p) => subPath.startsWith(p))) {
-    return new Response(null, { status: 403 });
-  }
-
-  const upstreamUrl = new URL(`${HF_HOST}/${subPath}`);
-  for (const [k, v] of req.nextUrl.searchParams) {
-    upstreamUrl.searchParams.set(k, v);
-  }
+  const upstreamUrl = resolveUpstreamUrl(
+    path.join("/"),
+    req.nextUrl.searchParams,
+  );
+  if (!upstreamUrl) return new Response(null, { status: 403 });
 
   const headers = new Headers();
   const token = req.cookies.get(COOKIE_NAME)?.value;
