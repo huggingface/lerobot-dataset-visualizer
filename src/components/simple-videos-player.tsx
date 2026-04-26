@@ -149,11 +149,25 @@ export const SimpleVideosPlayer = ({
 
       video.addEventListener("timeupdate", handleTimeUpdate);
       if (handlePlay) video.addEventListener("play", handlePlay);
-      if (handleLoadedData)
-        video.addEventListener("loadeddata", handleLoadedData);
       if (handleEnded) video.addEventListener("ended", handleEnded);
-      if (!info.isSegmented) {
-        video.addEventListener("canplaythrough", checkReady, { once: true });
+
+      // Already-loaded videos (cached or fast network) will never re-fire
+      // canplaythrough / loadeddata after we attach the listener — so check
+      // readyState synchronously and mark ready in a microtask. Without this,
+      // checkReady wouldn't be called and only the 10s fallback timeout would
+      // eventually unfreeze the UI.
+      if (info.isSegmented && handleLoadedData) {
+        if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+          queueMicrotask(handleLoadedData);
+        } else {
+          video.addEventListener("loadeddata", handleLoadedData);
+        }
+      } else if (!info.isSegmented) {
+        if (video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) {
+          queueMicrotask(checkReady);
+        } else {
+          video.addEventListener("canplaythrough", checkReady, { once: true });
+        }
       }
 
       videoEventCleanup.set(video, () => {
