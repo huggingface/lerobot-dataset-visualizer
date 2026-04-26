@@ -6,7 +6,18 @@ import { useAuth } from "@/context/auth-context";
 const SIGNIN_BADGE_URL =
   "https://huggingface.co/datasets/huggingface/badges/resolve/main/sign-in-with-huggingface-sm-dark.svg";
 
-export default function HfAuthButton() {
+// `badge` — the official HF brand badge. Use as a strong invitation when the
+//           auth path is itself the page's headline action.
+// `ghost`  — a quiet inline cyan link, sized to the surrounding body copy.
+//           Use when auth is a secondary affordance next to a primary CTA
+//           (e.g. the home page's search bar).
+type Variant = "badge" | "ghost";
+
+interface HfAuthButtonProps {
+  variant?: Variant;
+}
+
+export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
   const { oauth, isAuthAvailable, signIn, signOut } = useAuth();
 
   if (!isAuthAvailable) return null;
@@ -36,6 +47,22 @@ export default function HfAuthButton() {
           Sign out
         </button>
       </div>
+    );
+  }
+
+  if (variant === "ghost") {
+    return (
+      <button
+        onClick={signIn}
+        title="Sign in to access your private datasets"
+        className="cursor-pointer inline-flex items-center gap-1.5 text-[11px] tracking-wide text-cyan-300/80 hover:text-cyan-200 transition-colors"
+      >
+        <span aria-hidden>🤗</span>
+        <span>Sign in for private datasets</span>
+        <span aria-hidden className="opacity-60">
+          →
+        </span>
+      </button>
     );
   }
 

@@ -284,7 +284,7 @@ function HomeInner() {
         </form>
 
         <div className="mt-3">
-          <HfAuthButton />
+          <HfAuthButton variant="ghost" />
         </div>
 
         {/* Example Datasets */}
