@@ -16,6 +16,18 @@ const SIGNIN_BADGE_URL =
 //           of the same register.
 type Variant = "badge" | "ghost" | "tab";
 
+// Slot height per variant. Matches the variant's rendered button so the
+// pre-config placeholder (when isAuthAvailable hasn't resolved yet) and the
+// signed-in/signed-out states all occupy exactly the same vertical space —
+// no layout shift on auth state changes. `tab` is taller because it lives
+// in the episode tab bar and needs to align with the `text-xs px-5 py-3`
+// tab buttons (~40px implicit height).
+const SLOT_HEIGHT: Record<Variant, string> = {
+  badge: "h-6",
+  ghost: "h-6",
+  tab: "h-10",
+};
+
 interface HfAuthButtonProps {
   variant?: Variant;
 }
@@ -26,11 +38,11 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
   // Stable slot — auth state resolves async on mount (config fetch, then
   // localStorage rehydrate), so the rendered control changes from
   // null → signed-out → signed-in. Reserve the height so the surrounding
-  // layout doesn't reflow each time. h-6 matches the badge image's
-  // intrinsic height and is also tall enough to contain the ghost/tab/pill
-  // variants without clipping.
+  // layout doesn't reflow each time.
   if (!isAuthAvailable) {
-    return <span aria-hidden className="inline-block h-6" />;
+    return (
+      <span aria-hidden className={`inline-block ${SLOT_HEIGHT[variant]}`} />
+    );
   }
 
   if (oauth) {
@@ -61,7 +73,7 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
       <button
         onClick={signIn}
         title="Sign in to access your private datasets"
-        className="cursor-pointer inline-flex items-center h-6 gap-1.5 px-3 text-[11px] font-medium tracking-wide uppercase text-slate-400 hover:text-cyan-300 transition-colors rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
+        className="cursor-pointer inline-flex items-center h-10 gap-1.5 px-5 text-[11px] font-medium tracking-wide uppercase text-slate-400 hover:text-cyan-300 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
       >
         <span aria-hidden>🤗</span>
         <span>Sign in</span>
