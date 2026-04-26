@@ -7,9 +7,24 @@ import React, {
   useEffect,
 } from "react";
 
+// `external` (default) — user-initiated seek (slider drag, chart click,
+//                        loop boundary reset). Bumps `externalSeekVersion`
+//                        so sync effects know to drive every video to the
+//                        new position.
+// `video`              — the primary video reporting its own currentTime
+//                        via timeupdate. Does NOT bump the version; the
+//                        sync effect should treat the change as a status
+//                        report, not a command.
+type TimeUpdateSource = "external" | "video";
+
 type TimeContextType = {
   currentTime: number;
-  setCurrentTime: (t: number) => void;
+  setCurrentTime: (t: number, source?: TimeUpdateSource) => void;
+  // Monotonically increasing counter that bumps on every `external` seek.
+  // Sync effects compare the current value against a stored ref to detect
+  // user-initiated seeks without relying on heuristics like "did the time
+  // jump by more than 0.3s".
+  externalSeekVersion: number;
   subscribe: (cb: (t: number) => void) => () => void;
   isPlaying: boolean;
   setIsPlaying: React.Dispatch<React.SetStateAction<boolean>>;
@@ -34,6 +49,7 @@ export const TimeProvider: React.FC<{
   const [currentTime, setCurrentTimeState] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(initialDuration);
+  const [externalSeekVersion, setExternalSeekVersion] = useState(0);
   const listeners = useRef<Set<(t: number) => void>>(new Set());
 
   // Keep the authoritative time in a ref so subscribers and sync effects
@@ -42,24 +58,31 @@ export const TimeProvider: React.FC<{
   const rafId = useRef<number | null>(null);
   const lastRenderTime = useRef(0);
 
-  const updateTime = useCallback((t: number) => {
-    timeRef.current = t;
-    listeners.current.forEach((fn) => fn(t));
+  const updateTime = useCallback(
+    (t: number, source: TimeUpdateSource = "external") => {
+      timeRef.current = t;
+      listeners.current.forEach((fn) => fn(t));
 
-    // Throttle React state updates — during playback, timeupdate fires ~4×/sec
-    // per video. Coalescing into rAF + a minimum interval avoids cascading
-    // re-renders across PlaybackBar, charts, etc.
-    if (rafId.current === null) {
-      rafId.current = requestAnimationFrame(() => {
-        rafId.current = null;
-        const now = performance.now();
-        if (now - lastRenderTime.current >= TIME_RENDER_THROTTLE_MS) {
-          lastRenderTime.current = now;
-          setCurrentTimeState(timeRef.current);
-        }
-      });
-    }
-  }, []);
+      if (source === "external") {
+        setExternalSeekVersion((v) => v + 1);
+      }
+
+      // Throttle React state updates — during playback, timeupdate fires ~4×/sec
+      // per video. Coalescing into rAF + a minimum interval avoids cascading
+      // re-renders across PlaybackBar, charts, etc.
+      if (rafId.current === null) {
+        rafId.current = requestAnimationFrame(() => {
+          rafId.current = null;
+          const now = performance.now();
+          if (now - lastRenderTime.current >= TIME_RENDER_THROTTLE_MS) {
+            lastRenderTime.current = now;
+            setCurrentTimeState(timeRef.current);
+          }
+        });
+      }
+    },
+    [],
+  );
 
   // Flush any pending rAF on unmount
   useEffect(() => {
@@ -85,6 +108,7 @@ export const TimeProvider: React.FC<{
       value={{
         currentTime,
         setCurrentTime: updateTime,
+        externalSeekVersion,
         subscribe,
         isPlaying,
         setIsPlaying,
