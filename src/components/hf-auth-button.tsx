@@ -30,7 +30,7 @@ export default function HfAuthButton() {
         <span className="tabular max-w-[8rem] truncate">{name}</span>
         <button
           onClick={signOut}
-          className="rounded px-1 text-[9px] uppercase tracking-wide text-slate-400 hover:text-slate-100 hover:bg-white/5 transition-colors"
+          className="cursor-pointer rounded px-1 text-[9px] uppercase tracking-wide text-slate-400 hover:text-slate-100 hover:bg-white/5 transition-colors"
           title="Sign out of Hugging Face"
         >
           Sign out
@@ -43,7 +43,7 @@ export default function HfAuthButton() {
     <button
       onClick={signIn}
       title="Sign in to access your private datasets"
-      className="inline-flex items-center gap-1.5 rounded-md transition-opacity hover:opacity-90"
+      className="cursor-pointer inline-flex items-center gap-1.5 rounded-md transition-opacity hover:opacity-90"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
