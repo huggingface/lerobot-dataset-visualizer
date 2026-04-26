@@ -24,7 +24,13 @@ export const SimpleVideosPlayer = ({
   videosInfo,
   onVideosReady,
 }: VideoPlayerProps) => {
-  const { currentTime, setCurrentTime, isPlaying, setIsPlaying } = useTime();
+  const {
+    currentTime,
+    setCurrentTime,
+    externalSeekVersion,
+    isPlaying,
+    setIsPlaying,
+  } = useTime();
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const [hiddenVideos, setHiddenVideos] = React.useState<string[]>([]);
   const [enlargedVideo, setEnlargedVideo] = React.useState<string | null>(null);
@@ -37,9 +43,10 @@ export const SimpleVideosPlayer = ({
     (video) => !hiddenSet.has(video.filename),
   );
 
-  // Tracks the last time value set by the primary video's onTimeUpdate.
-  // If currentTime differs from this, an external source (slider/chart click) changed it.
-  const lastVideoTimeRef = useRef(0);
+  // Last externalSeekVersion we observed in the sync effect. When the
+  // context's version moves past this, an external seek happened and we
+  // need to drive every video to the new position.
+  const lastSeekVersionRef = useRef(externalSeekVersion);
 
   // Mirror firstVisibleIdx into a ref so the videos-ready effect doesn't have
   // to depend on it. If it did, hiding the first camera would tear the whole
@@ -162,19 +169,19 @@ export const SimpleVideosPlayer = ({
     });
   }, [isPlaying, videosReady, hiddenSet, videosInfo]);
 
-  // Sync all video times when currentTime changes.
-  // For the primary video, only seek when the change came from an external source
-  // (slider drag, chart click, etc.) — detected by comparing against lastVideoTimeRef.
+  // Drive every video to currentTime on external seeks (slider drag, chart
+  // click, loop reset). The version-based check replaces a 0.3s heuristic
+  // that misfired when a network stall produced a >0.3s timeupdate jump
+  // and incorrectly classified it as a user seek — causing every camera to
+  // re-seek, which itself stalled them in a feedback spiral.
   useEffect(() => {
     if (!videosReady) return;
-
-    const isExternalSeek =
-      Math.abs(currentTime - lastVideoTimeRef.current) > 0.3;
+    if (externalSeekVersion === lastSeekVersionRef.current) return;
+    lastSeekVersionRef.current = externalSeekVersion;
 
     videoRefs.current.forEach((video, index) => {
       if (!video) return;
       if (hiddenSet.has(videosInfo[index].filename)) return;
-      if (index === firstVisibleIdx && !isExternalSeek) return;
 
       const info = videosInfo[index];
       let targetTime = currentTime;
@@ -189,9 +196,11 @@ export const SimpleVideosPlayer = ({
         video.currentTime = targetTime;
       }
     });
-  }, [currentTime, videosInfo, videosReady, hiddenSet, firstVisibleIdx]);
+  }, [externalSeekVersion, currentTime, videosInfo, videosReady, hiddenSet]);
 
-  // Stable per-index timeupdate handlers avoid findIndex scan on every event
+  // Stable per-index timeupdate handlers avoid findIndex scan on every event.
+  // Tagged "video" so the context doesn't bump externalSeekVersion — the
+  // sync effect treats this as a status report, not a seek command.
   const makeTimeUpdateHandler = useCallback(
     (index: number) => {
       return () => {
@@ -203,8 +212,7 @@ export const SimpleVideosPlayer = ({
         if (info.isSegmented) {
           globalTime = video.currentTime - (info.segmentStart || 0);
         }
-        lastVideoTimeRef.current = globalTime;
-        setCurrentTime(globalTime);
+        setCurrentTime(globalTime, "video");
       };
     },
     [videosInfo, setCurrentTime],
