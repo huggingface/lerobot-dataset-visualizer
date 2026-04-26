@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/auth-context";
 
 const SIGNIN_BADGE_URL =
-  "https://huggingface.co/datasets/huggingface/badges/resolve/main/sign-in-with-huggingface-sm-dark.svg";
+  "https://huggingface.co/datasets/huggingface/badges/resolve/main/sign-in-with-huggingface-md-dark.svg";
 
 // `badge` — the official HF brand badge. Use as a strong invitation when the
 //           auth path is itself the page's headline action.
@@ -23,8 +23,8 @@ type Variant = "badge" | "ghost" | "tab";
 // in the episode tab bar and needs to align with the `text-xs px-5 py-3`
 // tab buttons (~40px implicit height).
 const SLOT_HEIGHT: Record<Variant, string> = {
-  badge: "h-6",
-  ghost: "h-6",
+  badge: "h-8",
+  ghost: "h-7",
   tab: "h-10",
 };
 
@@ -49,7 +49,14 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
     const name =
       oauth.userInfo?.preferred_username ?? oauth.userInfo?.name ?? "signed in";
     const avatar = oauth.userInfo?.picture;
-    return <SignedInMenu name={name} avatar={avatar} onSignOut={signOut} />;
+    return (
+      <SignedInMenu
+        name={name}
+        avatar={avatar}
+        onSignOut={signOut}
+        variant={variant}
+      />
+    );
   }
 
   if (variant === "ghost") {
@@ -57,7 +64,7 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
       <button
         onClick={signIn}
         title="Sign in to access your private datasets"
-        className="cursor-pointer inline-flex items-center h-6 gap-1.5 text-[11px] tracking-wide text-cyan-300/80 hover:text-cyan-200 transition-colors rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
+        className="cursor-pointer inline-flex items-center h-7 gap-1.5 text-sm tracking-wide text-cyan-300/85 hover:text-cyan-200 transition-colors rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
       >
         <span aria-hidden>🤗</span>
         <span>Sign in for private datasets</span>
@@ -86,14 +93,14 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
       onClick={signIn}
       title="Sign in with Hugging Face to access your private datasets"
       aria-label="Sign in with Hugging Face to access your private datasets"
-      className="cursor-pointer inline-flex items-center h-6 rounded-md transition-all duration-150 hover:opacity-90 motion-safe:hover:-translate-y-px focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
+      className="cursor-pointer inline-flex items-center h-8 rounded-md transition-all duration-150 hover:opacity-90 motion-safe:hover:-translate-y-px focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={SIGNIN_BADGE_URL}
         alt="Sign in with Hugging Face"
-        height={24}
-        className="h-6 w-auto"
+        height={32}
+        className="h-8 w-auto"
       />
     </button>
   );
@@ -103,10 +110,12 @@ function SignedInMenu({
   name,
   avatar,
   onSignOut,
+  variant,
 }: {
   name: string;
   avatar?: string;
   onSignOut: () => void;
+  variant: Variant;
 }) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -138,7 +147,7 @@ function SignedInMenu({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="cursor-pointer inline-flex items-center h-6 gap-1.5 panel-raised bg-[var(--surface-0)]/85 backdrop-blur px-1.5 text-[11px] text-slate-300 hover:bg-white/[0.04] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
+        className={`cursor-pointer inline-flex items-center ${SLOT_HEIGHT[variant]} gap-2 panel-raised bg-[var(--surface-0)]/85 backdrop-blur px-2 text-xs text-slate-300 hover:bg-white/[0.04] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60`}
         title={`Signed in as ${name}`}
       >
         {avatar && (
@@ -146,16 +155,16 @@ function SignedInMenu({
           <img
             src={avatar}
             alt=""
-            width={20}
-            height={20}
+            width={22}
+            height={22}
             className="rounded-full ring-1 ring-white/10"
           />
         )}
-        <span className="tabular max-w-[8rem] truncate">{name}</span>
+        <span className="tabular max-w-[10rem] truncate">{name}</span>
         <svg
           aria-hidden
-          width="8"
-          height="8"
+          width="9"
+          height="9"
           viewBox="0 0 8 8"
           className={`text-slate-500 transition-transform ${open ? "rotate-180" : ""}`}
         >
@@ -166,7 +175,7 @@ function SignedInMenu({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full mt-1.5 min-w-[10rem] panel-raised bg-[var(--surface-1)]/98 backdrop-blur shadow-xl p-1 z-50 text-[11px] animate-menu-pop"
+          className="absolute right-0 top-full mt-1.5 min-w-[10rem] panel-raised bg-[var(--surface-1)]/98 backdrop-blur shadow-xl p-1 z-50 text-xs animate-menu-pop"
         >
           <button
             role="menuitem"
