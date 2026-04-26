@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
+import { authHeaders } from "@/utils/auth";
 
 export default function Home() {
   return (
@@ -87,7 +88,7 @@ function HomeInner() {
       try {
         const res = await fetch(
           `https://huggingface.co/api/quicksearch?q=${encodeURIComponent(query)}&type=dataset`,
-          { cache: "no-store" },
+          { cache: "no-store", headers: authHeaders() },
         );
         const data = await res.json();
         const ids: string[] = (
