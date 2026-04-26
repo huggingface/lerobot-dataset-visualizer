@@ -339,9 +339,16 @@ export const SimpleVideosPlayer = ({
                   <button
                     title="Hide Video"
                     className="p-1 rounded text-slate-500 hover:text-slate-200 hover:bg-white/5 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
-                    onClick={() =>
-                      setHiddenVideos((prev) => [...prev, info.filename])
-                    }
+                    onClick={() => {
+                      setHiddenVideos((prev) => [...prev, info.filename]);
+                      // If the user hid the camera that was enlarged, clear
+                      // the enlarged state too — otherwise it stays pointed
+                      // at the now-hidden filename and pops back to fullscreen
+                      // the moment the user un-hides it.
+                      if (enlargedVideo === info.filename) {
+                        setEnlargedVideo(null);
+                      }
+                    }}
                     disabled={
                       videosInfo.filter(
                         (v) => !hiddenVideos.includes(v.filename),
