@@ -14,19 +14,17 @@ import {
 } from "@huggingface/hub";
 import { AUTH_STORAGE_KEY } from "@/utils/auth";
 
-interface HfSpaceVariables {
-  OAUTH_CLIENT_ID?: string;
-  OAUTH_SCOPES?: string;
-}
-
-interface HfWindow extends Window {
-  huggingface?: { variables?: HfSpaceVariables };
+interface OAuthAppConfig {
+  clientId: string;
+  scopes: string;
 }
 
 interface AuthContextValue {
   oauth: OAuthResult | null;
-  // Whether OAuth is configured for this deployment (i.e. running on an HF
-  // Space with hf_oauth enabled). When false, the button hides itself.
+  // Whether OAuth is configured for this deployment. Determined by hitting
+  // /api/auth/config — the server reads OAUTH_CLIENT_ID from its env, which
+  // HF Spaces injects when `hf_oauth: true` is set in the README. When
+  // unconfigured, the button hides itself.
   isAuthAvailable: boolean;
   signIn: () => Promise<void>;
   signOut: () => void;
@@ -68,52 +66,73 @@ function isExpired(result: OAuthResult): boolean {
   return expDate.getTime() <= Date.now();
 }
 
+async function fetchOAuthConfig(): Promise<OAuthAppConfig | null> {
+  try {
+    const res = await fetch("/api/auth/config");
+    if (!res.ok) return null;
+    const data = (await res.json()) as
+      | { enabled: false }
+      | { enabled: true; clientId: string; scopes: string };
+    if (!data.enabled) return null;
+    return { clientId: data.clientId, scopes: data.scopes };
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [oauth, setOauth] = useState<OAuthResult | null>(null);
-  const [isAuthAvailable, setIsAuthAvailable] = useState(false);
+  const [config, setConfig] = useState<OAuthAppConfig | null>(null);
 
   useEffect(() => {
-    const w = window as HfWindow;
-    const available = !!w.huggingface?.variables?.OAUTH_CLIENT_ID;
-    setIsAuthAvailable(available);
-    if (!available) return;
+    let cancelled = false;
 
-    const stored = window.localStorage.getItem(AUTH_STORAGE_KEY);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as OAuthResult;
-        if (isExpired(parsed)) {
+    fetchOAuthConfig().then((cfg) => {
+      if (cancelled || !cfg) return;
+      setConfig(cfg);
+
+      const stored = window.localStorage.getItem(AUTH_STORAGE_KEY);
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as OAuthResult;
+          if (isExpired(parsed)) {
+            window.localStorage.removeItem(AUTH_STORAGE_KEY);
+            clearSessionCookie();
+          } else {
+            setOauth(parsed);
+            setSessionCookie(parsed.accessToken);
+            return;
+          }
+        } catch {
           window.localStorage.removeItem(AUTH_STORAGE_KEY);
-          clearSessionCookie();
-        } else {
-          setOauth(parsed);
-          setSessionCookie(parsed.accessToken);
-          return;
         }
-      } catch {
-        window.localStorage.removeItem(AUTH_STORAGE_KEY);
       }
-    }
 
-    oauthHandleRedirectIfPresent()
-      .then((result) => {
-        if (result) {
+      oauthHandleRedirectIfPresent()
+        .then((result) => {
+          if (cancelled || !result) return;
           window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(result));
           setOauth(result);
           setSessionCookie(result.accessToken);
-        }
-      })
-      .catch((err) => {
-        console.error("OAuth redirect handling failed", err);
-      });
+        })
+        .catch((err) => {
+          console.error("OAuth redirect handling failed", err);
+        });
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const signIn = useCallback(async () => {
-    const w = window as HfWindow;
-    const scopes = w.huggingface?.variables?.OAUTH_SCOPES;
-    const url = await oauthLoginUrl(scopes ? { scopes } : {});
+    if (!config) return;
+    const url = await oauthLoginUrl({
+      clientId: config.clientId,
+      scopes: config.scopes,
+    });
     window.location.href = url + "&prompt=consent";
-  }, []);
+  }, [config]);
 
   const signOut = useCallback(() => {
     window.localStorage.removeItem(AUTH_STORAGE_KEY);
@@ -127,7 +146,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ oauth, isAuthAvailable, signIn, signOut }}>
+    <AuthContext.Provider
+      value={{
+        oauth,
+        isAuthAvailable: !!config,
+        signIn,
+        signOut,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
