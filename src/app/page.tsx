@@ -283,7 +283,7 @@ function HomeInner() {
           </button>
         </form>
 
-        <div className="mt-3">
+        <div className="mt-3 animate-fade-in-late">
           <HfAuthButton variant="ghost" />
         </div>
 

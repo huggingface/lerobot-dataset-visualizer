@@ -74,7 +74,7 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
       onClick={signIn}
       title="Sign in with Hugging Face to access your private datasets"
       aria-label="Sign in with Hugging Face to access your private datasets"
-      className="cursor-pointer inline-flex items-center h-6 rounded-md transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
+      className="cursor-pointer inline-flex items-center h-6 rounded-md transition-all duration-150 hover:opacity-90 motion-safe:hover:-translate-y-px focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
@@ -154,7 +154,7 @@ function SignedInMenu({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full mt-1.5 min-w-[10rem] panel-raised bg-[var(--surface-1)]/98 backdrop-blur shadow-xl p-1 z-50 text-[11px]"
+          className="absolute right-0 top-full mt-1.5 min-w-[10rem] panel-raised bg-[var(--surface-1)]/98 backdrop-blur shadow-xl p-1 z-50 text-[11px] animate-menu-pop"
         >
           <button
             role="menuitem"

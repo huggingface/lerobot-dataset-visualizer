@@ -111,3 +111,40 @@ body {
 .animate-fade-in-up {
   animation: fadeInUp 0.55s ease-out forwards;
 }
+
+/* Late entry — used for elements that should arrive after the hero stack
+   has settled, so they read as a quiet afterthought rather than another
+   simultaneous CTA. `both` fill mode keeps the element invisible during
+   the delay so it doesn't briefly flash with the parent's animation. */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-late {
+  animation: fadeIn 0.45s ease-out 0.55s both;
+}
+
+/* Pop animation for dropdowns — anchors at top-right and scales up
+   slightly while fading in. Short enough (140ms) to feel snappy. */
+@keyframes menuPop {
+  from {
+    opacity: 0;
+    transform: translateY(-2px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-menu-pop {
+  animation: menuPop 0.14s ease-out forwards;
+  transform-origin: top right;
+}
