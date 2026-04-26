@@ -97,7 +97,7 @@ export const SimpleVideosPlayer = ({
         if (!other) return;
         const otherInfo = videosInfo[otherIdx];
         if (!otherInfo) return;
-        other.currentTime = otherInfo.segmentStart || 0;
+        other.currentTime = otherInfo.segmentStart ?? 0;
       });
       // Update the slider as a status report — don't bump externalSeekVersion
       // since we already drove every video to its target.
@@ -113,8 +113,8 @@ export const SimpleVideosPlayer = ({
       // (b) reporting the primary video's currentTime back to the context
       const handleTimeUpdate = () => {
         if (info.isSegmented) {
-          const segmentEnd = info.segmentEnd || video.duration;
-          const segmentStart = info.segmentStart || 0;
+          const segmentEnd = info.segmentEnd ?? video.duration;
+          const segmentStart = info.segmentStart ?? 0;
           if (
             video.currentTime >=
             segmentEnd - THRESHOLDS.VIDEO_SEGMENT_BOUNDARY
@@ -133,7 +133,7 @@ export const SimpleVideosPlayer = ({
         if (index === firstVisibleIdxRef.current) {
           let globalTime = video.currentTime;
           if (info.isSegmented) {
-            globalTime = video.currentTime - (info.segmentStart || 0);
+            globalTime = video.currentTime - (info.segmentStart ?? 0);
           }
           setCurrentTime(globalTime, "video");
         }
@@ -143,8 +143,8 @@ export const SimpleVideosPlayer = ({
       // — covers the case where the user paused outside the segment range.
       const handlePlay = info.isSegmented
         ? () => {
-            const segmentStart = info.segmentStart || 0;
-            const segmentEnd = info.segmentEnd || video.duration;
+            const segmentStart = info.segmentStart ?? 0;
+            const segmentEnd = info.segmentEnd ?? video.duration;
             if (
               video.currentTime < segmentStart ||
               video.currentTime >= segmentEnd
@@ -156,7 +156,7 @@ export const SimpleVideosPlayer = ({
 
       const handleLoadedData = info.isSegmented
         ? () => {
-            video.currentTime = info.segmentStart || 0;
+            video.currentTime = info.segmentStart ?? 0;
             checkReady();
           }
         : null;
@@ -258,7 +258,7 @@ export const SimpleVideosPlayer = ({
       const info = videosInfo[index];
       let targetTime = currentTime;
       if (info.isSegmented) {
-        targetTime = (info.segmentStart || 0) + currentTime;
+        targetTime = (info.segmentStart ?? 0) + currentTime;
       }
 
       if (
