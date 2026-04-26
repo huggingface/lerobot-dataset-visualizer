@@ -41,6 +41,17 @@ export const SimpleVideosPlayer = ({
   // If currentTime differs from this, an external source (slider/chart click) changed it.
   const lastVideoTimeRef = useRef(0);
 
+  // Mirror firstVisibleIdx into a ref so the videos-ready effect doesn't have
+  // to depend on it. If it did, hiding the first camera would tear the whole
+  // effect down and back up, re-attaching `canplaythrough` listeners that
+  // never re-fire (the videos are already loaded), leaving readyCount stuck
+  // at 0 until the 10s timeout — at which point markReady forces play even
+  // if the user paused.
+  const firstVisibleIdxRef = useRef(firstVisibleIdx);
+  useEffect(() => {
+    firstVisibleIdxRef.current = firstVisibleIdx;
+  }, [firstVisibleIdx]);
+
   // Initialize video refs array
   useEffect(() => {
     videoRefs.current = videoRefs.current.slice(0, videosInfo.length);
@@ -81,7 +92,7 @@ export const SimpleVideosPlayer = ({
               segmentEnd - THRESHOLDS.VIDEO_SEGMENT_BOUNDARY
             ) {
               video.currentTime = segmentStart;
-              if (index === firstVisibleIdx) {
+              if (index === firstVisibleIdxRef.current) {
                 setCurrentTime(0);
               }
             }
@@ -102,7 +113,7 @@ export const SimpleVideosPlayer = ({
         } else {
           const handleEnded = () => {
             video.currentTime = 0;
-            if (index === firstVisibleIdx) {
+            if (index === firstVisibleIdxRef.current) {
               setCurrentTime(0);
             }
           };
@@ -128,13 +139,10 @@ export const SimpleVideosPlayer = ({
         }
       });
     };
-  }, [
-    videosInfo,
-    onVideosReady,
-    setIsPlaying,
-    firstVisibleIdx,
-    setCurrentTime,
-  ]);
+    // firstVisibleIdx intentionally omitted — we read it via ref so hiding
+    // the first camera doesn't reset readiness (see the comment near
+    // firstVisibleIdxRef above).
+  }, [videosInfo, onVideosReady, setIsPlaying, setCurrentTime]);
 
   // Handle play/pause — skip hidden videos
   useEffect(() => {
