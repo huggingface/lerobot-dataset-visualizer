@@ -11,7 +11,10 @@ const SIGNIN_BADGE_URL =
 // `ghost`  — a quiet inline cyan link, sized to the surrounding body copy.
 //           Use when auth is a secondary affordance next to a primary CTA
 //           (e.g. the home page's search bar).
-type Variant = "badge" | "ghost";
+// `tab`    — uppercase tracked text styled to match a tab strip; pairs with
+//           the episode viewer's tab bar so the auth control reads as part
+//           of the same register.
+type Variant = "badge" | "ghost" | "tab";
 
 interface HfAuthButtonProps {
   variant?: Variant;
@@ -62,6 +65,19 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
         <span aria-hidden className="opacity-60">
           →
         </span>
+      </button>
+    );
+  }
+
+  if (variant === "tab") {
+    return (
+      <button
+        onClick={signIn}
+        title="Sign in to access your private datasets"
+        className="cursor-pointer inline-flex items-center gap-1.5 px-3 text-[11px] font-medium tracking-wide uppercase text-slate-400 hover:text-cyan-300 transition-colors"
+      >
+        <span aria-hidden>🤗</span>
+        <span>Sign in</span>
       </button>
     );
   }
