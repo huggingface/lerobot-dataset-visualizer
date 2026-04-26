@@ -2,6 +2,8 @@
  * Utility functions for checking dataset version compatibility
  */
 
+import { authHeaders } from "./auth";
+
 const DATASET_URL =
   process.env.DATASET_URL || "https://huggingface.co/datasets";
 
@@ -82,6 +84,7 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
       method: "GET",
       cache: "no-store",
       signal: controller.signal,
+      headers: authHeaders(),
     });
 
     clearTimeout(timeoutId);

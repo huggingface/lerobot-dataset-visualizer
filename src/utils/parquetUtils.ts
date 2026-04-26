@@ -5,6 +5,7 @@ import {
   parquetReadObjects,
   type AsyncBuffer,
 } from "hyparquet";
+import { authHeaders } from "./auth";
 
 export interface DatasetMetadata {
   codebase_version: string;
@@ -31,7 +32,10 @@ export interface DatasetMetadata {
 }
 
 export async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
   if (!res.ok) {
     throw new Error(
       `Failed to fetch JSON ${url}: ${res.status} ${res.statusText}`,
@@ -58,7 +62,7 @@ export async function fetchParquetFile(url: string): Promise<ParquetFile> {
 
   const file = await asyncBufferFromUrl({
     url,
-    requestInit: { cache: "no-store" },
+    requestInit: { cache: "no-store", headers: authHeaders() },
   });
   const wrapped = cachedAsyncBuffer(file);
   parquetFileCache.set(url, wrapped);
