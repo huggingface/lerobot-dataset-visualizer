@@ -35,6 +35,20 @@ const FORWARD_RESPONSE_HEADERS = [
   "cache-control",
 ];
 
+// Generous enough for first-byte on a multi-GB video over a slow network,
+// strict enough that hung connections don't pile up server-side.
+const UPSTREAM_TIMEOUT_MS = 30_000;
+
+// Cancel the upstream when either (a) the client disconnects, so we stop
+// pulling bytes nobody is reading, or (b) the timeout fires, so a hung HF
+// connection eventually surrenders its socket.
+function upstreamSignal(req: NextRequest): AbortSignal {
+  return AbortSignal.any([
+    req.signal,
+    AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+  ]);
+}
+
 // Build the upstream URL and validate it. Returns the URL or null if the
 // request should be rejected.
 //
@@ -93,13 +107,21 @@ export async function GET(
       headers,
       redirect: "follow",
       cache: "no-store",
+      signal: upstreamSignal(req),
     });
   } catch (err) {
-    // Network error reaching huggingface.co (DNS, reset, etc.). The native
-    // <video> turns this into a generic load error with no details, so log
-    // server-side and return a useful 502 the client can surface in devtools.
+    // Network error reaching huggingface.co, or the upstream timed out, or
+    // the client went away. The native <video> turns this into a generic
+    // load error with no details, so log server-side and return a useful
+    // status the client can surface in devtools.
+    const isTimeout = err instanceof Error && err.name === "TimeoutError";
     console.error("[proxy] upstream fetch failed", err);
-    return new Response("Bad gateway: upstream fetch failed", { status: 502 });
+    return new Response(
+      isTimeout
+        ? "Gateway timeout: upstream took too long"
+        : "Bad gateway: upstream fetch failed",
+      { status: isTimeout ? 504 : 502 },
+    );
   }
 
   const respHeaders = new Headers();
@@ -137,10 +159,12 @@ export async function HEAD(
       headers,
       redirect: "follow",
       cache: "no-store",
+      signal: upstreamSignal(req),
     });
   } catch (err) {
+    const isTimeout = err instanceof Error && err.name === "TimeoutError";
     console.error("[proxy] upstream HEAD failed", err);
-    return new Response(null, { status: 502 });
+    return new Response(null, { status: isTimeout ? 504 : 502 });
   }
 
   const respHeaders = new Headers();
