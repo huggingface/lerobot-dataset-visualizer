@@ -45,7 +45,7 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
       <button
         onClick={signIn}
         title="Sign in to access your private datasets"
-        className="cursor-pointer inline-flex items-center h-6 gap-1.5 text-[11px] tracking-wide text-cyan-300/80 hover:text-cyan-200 transition-colors"
+        className="cursor-pointer inline-flex items-center h-6 gap-1.5 text-[11px] tracking-wide text-cyan-300/80 hover:text-cyan-200 transition-colors rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
       >
         <span aria-hidden>🤗</span>
         <span>Sign in for private datasets</span>
@@ -61,7 +61,7 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
       <button
         onClick={signIn}
         title="Sign in to access your private datasets"
-        className="cursor-pointer inline-flex items-center h-6 gap-1.5 px-3 text-[11px] font-medium tracking-wide uppercase text-slate-400 hover:text-cyan-300 transition-colors"
+        className="cursor-pointer inline-flex items-center h-6 gap-1.5 px-3 text-[11px] font-medium tracking-wide uppercase text-slate-400 hover:text-cyan-300 transition-colors rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
       >
         <span aria-hidden>🤗</span>
         <span>Sign in</span>
@@ -74,7 +74,7 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
       onClick={signIn}
       title="Sign in with Hugging Face to access your private datasets"
       aria-label="Sign in with Hugging Face to access your private datasets"
-      className="cursor-pointer inline-flex items-center h-6 rounded-md transition-opacity hover:opacity-90"
+      className="cursor-pointer inline-flex items-center h-6 rounded-md transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
@@ -126,7 +126,7 @@ function SignedInMenu({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="cursor-pointer inline-flex items-center h-6 gap-1.5 panel-raised bg-[var(--surface-0)]/85 backdrop-blur px-1.5 text-[11px] text-slate-300 hover:bg-white/[0.04] transition-colors"
+        className="cursor-pointer inline-flex items-center h-6 gap-1.5 panel-raised bg-[var(--surface-0)]/85 backdrop-blur px-1.5 text-[11px] text-slate-300 hover:bg-white/[0.04] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
         title={`Signed in as ${name}`}
       >
         {avatar && (
@@ -162,7 +162,7 @@ function SignedInMenu({
               setOpen(false);
               onSignOut();
             }}
-            className="cursor-pointer w-full text-left px-2 py-1.5 rounded text-slate-300 hover:bg-white/5 hover:text-slate-100 transition-colors"
+            className="cursor-pointer w-full text-left px-2 py-1.5 rounded text-slate-300 hover:bg-white/5 hover:text-slate-100 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
           >
             Sign out
           </button>
