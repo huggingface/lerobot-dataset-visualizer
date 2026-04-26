@@ -19,6 +19,7 @@ import Sidebar from "@/components/side-nav";
 import StatsPanel from "@/components/stats-panel";
 import OverviewPanel from "@/components/overview-panel";
 import Loading from "@/components/loading-component";
+import HfAuthButton from "@/components/hf-auth-button";
 import { hasURDFSupport } from "@/lib/so101-robot";
 import {
   getAdjacentEpisodesVideoInfo,
@@ -530,6 +531,9 @@ function EpisodeViewerInner({
           label="Doctor"
           title="Dataset quality diagnostics (powered by lerobot-doctor)"
         />
+        <div className="ml-auto pr-3">
+          <HfAuthButton />
+        </div>
       </div>
 
       {/* Body: sidebar + content */}

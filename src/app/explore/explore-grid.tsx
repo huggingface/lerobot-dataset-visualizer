@@ -3,6 +3,7 @@
 import React, { useEffect, useRef } from "react";
 import Link from "next/link";
 import { postParentMessageWithParams } from "@/utils/postParentMessage";
+import HfAuthButton from "@/components/hf-auth-button";
 
 type ExploreGridProps = {
   datasets: Array<{ id: string; videoUrl: string | null }>;
@@ -27,9 +28,12 @@ export default function ExploreGrid({
 
   return (
     <main className="px-8 py-10 max-w-7xl mx-auto">
-      <h1 className="text-xl font-medium tracking-tight mb-6 text-slate-100">
-        Explore LeRobot datasets
-      </h1>
+      <div className="flex items-center justify-between mb-6 gap-4">
+        <h1 className="text-xl font-medium tracking-tight text-slate-100">
+          Explore LeRobot datasets
+        </h1>
+        <HfAuthButton />
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {datasets.map((ds, idx) => (
           <Link

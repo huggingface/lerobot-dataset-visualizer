@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { authHeaders } from "@/utils/auth";
+import HfAuthButton from "@/components/hf-auth-button";
 
 export default function Home() {
   return (
@@ -281,6 +282,10 @@ function HomeInner() {
             </kbd>
           </button>
         </form>
+
+        <div className="mt-3">
+          <HfAuthButton />
+        </div>
 
         {/* Example Datasets */}
         <div className="mt-8">
