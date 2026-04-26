@@ -69,8 +69,9 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
   return (
     <button
       onClick={signIn}
-      title="Sign in to access your private datasets"
-      className="cursor-pointer inline-flex items-center gap-1.5 rounded-md transition-opacity hover:opacity-90"
+      title="Sign in with Hugging Face to access your private datasets"
+      aria-label="Sign in with Hugging Face to access your private datasets"
+      className="cursor-pointer inline-flex items-center rounded-md transition-opacity hover:opacity-90"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
@@ -79,9 +80,6 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
         height={24}
         className="h-6 w-auto"
       />
-      <span className="text-[11px] text-slate-300/80">
-        to access private datasets
-      </span>
     </button>
   );
 }
