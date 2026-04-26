@@ -86,12 +86,21 @@ export async function GET(
     if (v) headers.set(h, v);
   }
 
-  const upstream = await fetch(upstreamUrl, {
-    method: "GET",
-    headers,
-    redirect: "follow",
-    cache: "no-store",
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(upstreamUrl, {
+      method: "GET",
+      headers,
+      redirect: "follow",
+      cache: "no-store",
+    });
+  } catch (err) {
+    // Network error reaching huggingface.co (DNS, reset, etc.). The native
+    // <video> turns this into a generic load error with no details, so log
+    // server-side and return a useful 502 the client can surface in devtools.
+    console.error("[proxy] upstream fetch failed", err);
+    return new Response("Bad gateway: upstream fetch failed", { status: 502 });
+  }
 
   const respHeaders = new Headers();
   for (const h of FORWARD_RESPONSE_HEADERS) {
@@ -121,12 +130,18 @@ export async function HEAD(
   const token = req.cookies.get(COOKIE_NAME)?.value;
   if (token) headers.set("authorization", `Bearer ${token}`);
 
-  const upstream = await fetch(upstreamUrl, {
-    method: "HEAD",
-    headers,
-    redirect: "follow",
-    cache: "no-store",
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(upstreamUrl, {
+      method: "HEAD",
+      headers,
+      redirect: "follow",
+      cache: "no-store",
+    });
+  } catch (err) {
+    console.error("[proxy] upstream HEAD failed", err);
+    return new Response(null, { status: 502 });
+  }
 
   const respHeaders = new Headers();
   for (const h of FORWARD_RESPONSE_HEADERS) {
