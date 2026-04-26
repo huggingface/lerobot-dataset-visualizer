@@ -23,14 +23,22 @@ interface HfAuthButtonProps {
 export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
   const { oauth, isAuthAvailable, signIn, signOut } = useAuth();
 
-  if (!isAuthAvailable) return null;
+  // Stable slot — auth state resolves async on mount (config fetch, then
+  // localStorage rehydrate), so the rendered control changes from
+  // null → signed-out → signed-in. Reserve the height so the surrounding
+  // layout doesn't reflow each time. h-6 matches the badge image's
+  // intrinsic height and is also tall enough to contain the ghost/tab/pill
+  // variants without clipping.
+  if (!isAuthAvailable) {
+    return <span aria-hidden className="inline-block h-6" />;
+  }
 
   if (oauth) {
     const name =
       oauth.userInfo?.preferred_username ?? oauth.userInfo?.name ?? "signed in";
     const avatar = oauth.userInfo?.picture;
     return (
-      <div className="inline-flex items-center gap-1.5 panel-raised bg-[var(--surface-0)]/85 backdrop-blur px-1.5 py-0.5 text-[11px] text-slate-300">
+      <div className="inline-flex items-center h-6 gap-1.5 panel-raised bg-[var(--surface-0)]/85 backdrop-blur px-1.5 text-[11px] text-slate-300">
         {avatar && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -58,7 +66,7 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
       <button
         onClick={signIn}
         title="Sign in to access your private datasets"
-        className="cursor-pointer inline-flex items-center gap-1.5 text-[11px] tracking-wide text-cyan-300/80 hover:text-cyan-200 transition-colors"
+        className="cursor-pointer inline-flex items-center h-6 gap-1.5 text-[11px] tracking-wide text-cyan-300/80 hover:text-cyan-200 transition-colors"
       >
         <span aria-hidden>🤗</span>
         <span>Sign in for private datasets</span>
@@ -74,7 +82,7 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
       <button
         onClick={signIn}
         title="Sign in to access your private datasets"
-        className="cursor-pointer inline-flex items-center gap-1.5 px-3 text-[11px] font-medium tracking-wide uppercase text-slate-400 hover:text-cyan-300 transition-colors"
+        className="cursor-pointer inline-flex items-center h-6 gap-1.5 px-3 text-[11px] font-medium tracking-wide uppercase text-slate-400 hover:text-cyan-300 transition-colors"
       >
         <span aria-hidden>🤗</span>
         <span>Sign in</span>
@@ -87,7 +95,7 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
       onClick={signIn}
       title="Sign in with Hugging Face to access your private datasets"
       aria-label="Sign in with Hugging Face to access your private datasets"
-      className="cursor-pointer inline-flex items-center rounded-md transition-opacity hover:opacity-90"
+      className="cursor-pointer inline-flex items-center h-6 rounded-md transition-opacity hover:opacity-90"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
