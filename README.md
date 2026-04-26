@@ -7,6 +7,10 @@ sdk: docker
 app_port: 7860
 pinned: false
 license: apache-2.0
+hf_oauth: true
+hf_oauth_scopes:
+  - read-repos
+hf_oauth_expiration_minutes: 480
 ---
 
 # LeRobot Dataset Visualizer

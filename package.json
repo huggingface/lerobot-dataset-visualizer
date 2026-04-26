@@ -15,6 +15,7 @@
     "validate": "bun run type-check && bun run lint && bun run format:check && bun test"
   },
   "dependencies": {
+    "@huggingface/hub": "^2.11.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "hyparquet": "^1.12.1",
