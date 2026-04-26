@@ -44,9 +44,9 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
           <img
             src={avatar}
             alt=""
-            width={14}
-            height={14}
-            className="rounded-full"
+            width={20}
+            height={20}
+            className="rounded-full ring-1 ring-white/10"
           />
         )}
         <span className="tabular max-w-[8rem] truncate">{name}</span>
