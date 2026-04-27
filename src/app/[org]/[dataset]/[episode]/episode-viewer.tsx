@@ -52,6 +52,41 @@ type ActiveTab =
   | "doctor"
   | "urdf";
 
+// Hoisted to module scope. Defining inside EpisodeViewerInner created a new
+// component type on every parent render — and the parent re-renders ~12.5×/s
+// during playback because it consumes `currentTime` from useTime. React
+// would unmount and remount every tab on every tick.
+function TabButton({
+  active,
+  onClick,
+  label,
+  title,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  title?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`relative px-5 py-3 text-xs font-medium tracking-wide uppercase transition-colors ${
+        active ? "text-cyan-300" : "text-slate-400 hover:text-slate-100"
+      }`}
+    >
+      {label}
+      <span
+        className={`pointer-events-none absolute bottom-0 left-3 right-3 h-px transition-all ${
+          active
+            ? "bg-cyan-400 shadow-[0_0_8px_rgba(56,189,248,0.55)]"
+            : "bg-transparent"
+        }`}
+      />
+    </button>
+  );
+}
+
 export default function EpisodeViewer({
   org,
   dataset,
@@ -483,54 +518,32 @@ function EpisodeViewerInner({
     }
   };
 
-  const TabButton = ({
-    tab,
-    label,
-    title,
-  }: {
-    tab: ActiveTab;
-    label: string;
-    title?: string;
-  }) => {
-    const active = activeTab === tab;
-    return (
-      <button
-        onClick={() => handleTabChange(tab)}
-        title={title}
-        className={`relative px-5 py-3 text-xs font-medium tracking-wide uppercase transition-colors ${
-          active ? "text-cyan-300" : "text-slate-400 hover:text-slate-100"
-        }`}
-      >
-        {label}
-        <span
-          className={`pointer-events-none absolute bottom-0 left-3 right-3 h-px transition-all ${
-            active
-              ? "bg-cyan-400 shadow-[0_0_8px_rgba(56,189,248,0.55)]"
-              : "bg-transparent"
-          }`}
-        />
-      </button>
-    );
-  };
+  const renderTab = (tab: ActiveTab, label: string, title?: string) => (
+    <TabButton
+      active={activeTab === tab}
+      onClick={() => handleTabChange(tab)}
+      label={label}
+      title={title}
+    />
+  );
 
   return (
     <div className="flex flex-col h-screen max-h-screen bg-[var(--bg)] text-[var(--text-primary)]">
       {/* Top tab bar */}
       <div className="flex items-center border-b border-white/5 bg-[var(--surface-0)] shrink-0">
-        <TabButton tab="episodes" label="Episodes" />
+        {renderTab("episodes", "Episodes")}
         {hasURDFSupport(datasetInfo.robot_type) &&
-          datasetInfo.codebase_version >= "v3.0" && (
-            <TabButton tab="urdf" label="3D Replay" />
-          )}
-        <TabButton tab="statistics" label="Statistics" />
-        <TabButton tab="filtering" label="Filtering" />
-        <TabButton tab="frames" label="Frames" />
-        <TabButton tab="insights" label="Action Insights" />
-        <TabButton
-          tab="doctor"
-          label="Doctor"
-          title="Dataset quality diagnostics (powered by lerobot-doctor)"
-        />
+          datasetInfo.codebase_version >= "v3.0" &&
+          renderTab("urdf", "3D Replay")}
+        {renderTab("statistics", "Statistics")}
+        {renderTab("filtering", "Filtering")}
+        {renderTab("frames", "Frames")}
+        {renderTab("insights", "Action Insights")}
+        {renderTab(
+          "doctor",
+          "Doctor",
+          "Dataset quality diagnostics (powered by lerobot-doctor)",
+        )}
         <div className="ml-auto">
           <HfAuthButton variant="tab" />
         </div>
