@@ -52,6 +52,39 @@ type ActiveTab =
   | "doctor"
   | "urdf";
 
+// Subscribes to `currentTime` so its parent doesn't have to. Keeping this
+// in a leaf component means the throttled time ticks (~12.5/s during
+// playback) only re-render this no-op sub-tree, not the entire 700-line
+// EpisodeViewerInner. Vercel rule: rerender-defer-reads.
+function UrlTimeSync() {
+  const { currentTime, isPlaying } = useTime();
+  const searchParams = useSearchParams();
+  const lastUrlSecondRef = useRef<number>(-1);
+
+  // Only update the URL ?t= param when the integer second changes, and
+  // only while paused — replacing state every frame during playback would
+  // spam the browser's history.
+  useEffect(() => {
+    if (isPlaying) return;
+    const currentSec = Math.floor(currentTime);
+    if (currentTime > 0 && lastUrlSecondRef.current !== currentSec) {
+      lastUrlSecondRef.current = currentSec;
+      const newParams = new URLSearchParams(searchParams.toString());
+      newParams.set("t", currentSec.toString());
+      window.history.replaceState(
+        {},
+        "",
+        `${window.location.pathname}?${newParams.toString()}`,
+      );
+      postParentMessageWithParams((params: URLSearchParams) => {
+        params.set("path", window.location.pathname + window.location.search);
+      });
+    }
+  }, [isPlaying, currentTime, searchParams]);
+
+  return null;
+}
+
 // Hoisted to module scope. Defining inside EpisodeViewerInner created a new
 // component type on every parent render — and the parent re-renders ~12.5×/s
 // during playback because it consumes `currentTime` from useTime. React
@@ -369,8 +402,12 @@ function EpisodeViewerInner({
     }
   };
 
-  // Use context for time sync
-  const { currentTime, seek, setIsPlaying, isPlaying } = useTime();
+  // `currentTime` is intentionally NOT read here. Subscribing to it would
+  // re-render this 700-line component every ~80ms during playback. The
+  // <UrlTimeSync /> child handles its only consumer (the ?t= URL writer).
+  // `seek` and `setIsPlaying` are stable references from useCallback /
+  // useState — they don't drive renders.
+  const { seek, setIsPlaying } = useTime();
 
   // URDFViewer episode changer and play toggle — populated by URDFViewer on mount
   const urdfChangerRef = useRef<((ep: number) => void) | undefined>(undefined);
@@ -484,27 +521,6 @@ function EpisodeViewerInner({
     };
   }, [episodes, episodeId, pageSize, handleKeyDown]);
 
-  // Only update URL ?t= param when the integer second changes
-  const lastUrlSecondRef = useRef<number>(-1);
-  useEffect(() => {
-    if (isPlaying) return;
-    const currentSec = Math.floor(currentTime);
-    if (currentTime > 0 && lastUrlSecondRef.current !== currentSec) {
-      lastUrlSecondRef.current = currentSec;
-      const newParams = new URLSearchParams(searchParams.toString());
-      newParams.set("t", currentSec.toString());
-      // Replace state instead of pushing to avoid navigation stack bloat
-      window.history.replaceState(
-        {},
-        "",
-        `${window.location.pathname}?${newParams.toString()}`,
-      );
-      postParentMessageWithParams((params: URLSearchParams) => {
-        params.set("path", window.location.pathname + window.location.search);
-      });
-    }
-  }, [isPlaying, currentTime, searchParams]);
-
   // Pagination functions
   const nextPage = () => {
     if (currentPage < totalPages) {
@@ -529,6 +545,7 @@ function EpisodeViewerInner({
 
   return (
     <div className="flex flex-col h-screen max-h-screen bg-[var(--bg)] text-[var(--text-primary)]">
+      <UrlTimeSync />
       {/* Top tab bar */}
       <div className="flex items-center border-b border-white/5 bg-[var(--surface-0)] shrink-0">
         {renderTab("episodes", "Episodes")}
