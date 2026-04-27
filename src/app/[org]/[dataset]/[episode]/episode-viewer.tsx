@@ -289,16 +289,14 @@ function EpisodeViewerInner({
       setSidebarFlaggedOnly(true);
   }, []);
 
-  // Persist UI state across episode navigations
+  // Persist UI state across episode navigations. One effect instead of
+  // three near-identical writes — fewer commit hooks per render and the
+  // intent (mirror three primitives to sessionStorage) reads as one unit.
   useEffect(() => {
     sessionStorage.setItem("activeTab", activeTab);
-  }, [activeTab]);
-  useEffect(() => {
     sessionStorage.setItem("sidebarFlaggedOnly", String(sidebarFlaggedOnly));
-  }, [sidebarFlaggedOnly]);
-  useEffect(() => {
     sessionStorage.setItem("framesFlaggedOnly", String(framesFlaggedOnly));
-  }, [framesFlaggedOnly]);
+  }, [activeTab, sidebarFlaggedOnly, framesFlaggedOnly]);
 
   const loadStats = () => {
     if (statsLoadedRef.current) return;
