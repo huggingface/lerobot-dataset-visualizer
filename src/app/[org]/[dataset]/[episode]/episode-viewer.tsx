@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  useState,
-  useEffect,
-  useRef,
-  lazy,
-  Suspense,
-  useCallback,
-} from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { postParentMessageWithParams } from "@/utils/postParentMessage";
 import { SimpleVideosPlayer } from "@/components/simple-videos-player";
@@ -470,33 +463,52 @@ function EpisodeViewerInner({
     });
   }, []);
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
+  // Initialize page based on the current episode. Splitting this out from
+  // the keyboard listener effect lets the listener attach exactly once.
+  useEffect(() => {
+    const episodeIndex = episodes.indexOf(episodeId);
+    if (episodeIndex !== -1) {
+      setCurrentPage(Math.floor(episodeIndex / pageSize) + 1);
+    }
+  }, [episodes, episodeId, pageSize]);
+
+  // Mirror the values the keydown handler needs into a ref. Without this,
+  // `useCallback` would produce a new handler whenever `activeTab` /
+  // `episodeId` / `urdfEpisode` changed, and the keydown effect would
+  // detach + reattach the listener each time. Now the listener attaches
+  // once and reads the latest state via the ref.
+  // Vercel rule: advanced-event-handler-refs.
+  const keyStateRef = useRef({ activeTab, episodeId, episodes, urdfEpisode });
+  keyStateRef.current = { activeTab, episodeId, episodes, urdfEpisode };
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
       const { key } = e;
+      const s = keyStateRef.current;
 
       if (key === " ") {
         e.preventDefault();
-        if (activeTab === "urdf") {
+        if (s.activeTab === "urdf") {
           urdfPlayToggleRef.current?.();
         } else {
           setIsPlaying((prev: boolean) => !prev);
         }
       } else if (key === "ArrowDown" || key === "ArrowUp") {
         e.preventDefault();
-        if (activeTab === "urdf") {
+        if (s.activeTab === "urdf") {
           const nextEp =
-            key === "ArrowDown" ? urdfEpisode + 1 : urdfEpisode - 1;
-          const lowest = episodes[0];
-          const highest = episodes[episodes.length - 1];
+            key === "ArrowDown" ? s.urdfEpisode + 1 : s.urdfEpisode - 1;
+          const lowest = s.episodes[0];
+          const highest = s.episodes[s.episodes.length - 1];
           if (nextEp >= lowest && nextEp <= highest) {
             setUrdfEpisode(nextEp);
             urdfChangerRef.current?.(nextEp);
           }
         } else {
           const nextEpisodeId =
-            key === "ArrowDown" ? episodeId + 1 : episodeId - 1;
-          const lowestEpisodeId = episodes[0];
-          const highestEpisodeId = episodes[episodes.length - 1];
+            key === "ArrowDown" ? s.episodeId + 1 : s.episodeId - 1;
+          const lowestEpisodeId = s.episodes[0];
+          const highestEpisodeId = s.episodes[s.episodes.length - 1];
           if (
             nextEpisodeId >= lowestEpisodeId &&
             nextEpisodeId <= highestEpisodeId
@@ -505,24 +517,12 @@ function EpisodeViewerInner({
           }
         }
       }
-    },
-    [activeTab, episodeId, episodes, router, setIsPlaying, urdfEpisode],
-  );
-
-  // Initialize based on URL time parameter
-  useEffect(() => {
-    // Initialize page based on current episode
-    const episodeIndex = episodes.indexOf(episodeId);
-    if (episodeIndex !== -1) {
-      setCurrentPage(Math.floor(episodeIndex / pageSize) + 1);
-    }
-
-    // Add keyboard event listener
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [episodes, episodeId, pageSize, handleKeyDown]);
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // router / setIsPlaying are stable; the rest is read via keyStateRef.
+  }, [router, setIsPlaying]);
 
   // Pagination functions
   const nextPage = () => {
