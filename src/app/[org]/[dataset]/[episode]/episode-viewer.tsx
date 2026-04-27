@@ -11,7 +11,6 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { postParentMessageWithParams } from "@/utils/postParentMessage";
 import { SimpleVideosPlayer } from "@/components/simple-videos-player";
-import DataRecharts from "@/components/data-recharts";
 import PlaybackBar from "@/components/playback-bar";
 import { TimeProvider, useTime } from "@/context/time-context";
 import { FlaggedEpisodesProvider } from "@/context/flagged-episodes-context";
@@ -42,6 +41,10 @@ const ActionInsightsPanel = lazy(
   () => import("@/components/action-insights-panel"),
 );
 const FilteringPanel = lazy(() => import("@/components/filtering-panel"));
+// Recharts is ~150KB gz and not above-the-fold (videos render first on the
+// Episodes tab). Lazy-load it so the initial chunk can ship faster and
+// videos start downloading in parallel with the chart bundle.
+const DataRecharts = lazy(() => import("@/components/data-recharts"));
 
 type ActiveTab =
   | "episodes"
@@ -655,10 +658,12 @@ function EpisodeViewerInner({
 
               {/* Graph */}
               <div className="mb-4">
-                <DataRecharts
-                  data={chartDataGroups}
-                  onChartsReady={() => setChartsReady(true)}
-                />
+                <Suspense fallback={null}>
+                  <DataRecharts
+                    data={chartDataGroups}
+                    onChartsReady={() => setChartsReady(true)}
+                  />
+                </Suspense>
               </div>
 
               <PlaybackBar />
