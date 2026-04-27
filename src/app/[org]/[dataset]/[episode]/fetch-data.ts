@@ -221,12 +221,15 @@ function pickProgressColumn(rows: Record<string, unknown>[]): string | null {
   return null;
 }
 
+// Returns a builder that, given the episode's final duration, produces the
+// scaled progress chart group. Splitting "fetch the parquet" from "scale by
+// duration" lets the caller kick off the fetch in parallel with the main
+// episode-data fetch instead of waiting on a sequential await.
 async function loadEpisodeProgressGroup(
   repoId: string,
   version: string,
   episodeId: number,
-  episodeDuration: number,
-): Promise<ChartRow[] | null> {
+): Promise<((episodeDuration: number) => ChartRow[]) | null> {
   for (const progressPath of PROGRESS_PARQUET_CANDIDATES) {
     const progressUrl = buildVersionedUrl(repoId, version, progressPath);
     try {
@@ -269,13 +272,15 @@ async function loadEpisodeProgressGroup(
       );
       const progressKey = buildProgressSeriesKey(progressColumn);
       const denominator = Math.max(sampledPoints.length - 1, 1);
-      const duration = Math.max(episodeDuration, 0);
 
-      return sampledPoints.map((point, idx) => ({
-        timestamp:
-          sampledPoints.length === 1 ? 0 : (idx / denominator) * duration,
-        [progressKey]: point.progress,
-      }));
+      return (episodeDuration: number) => {
+        const duration = Math.max(episodeDuration, 0);
+        return sampledPoints.map((point, idx) => ({
+          timestamp:
+            sampledPoints.length === 1 ? 0 : (idx / denominator) * duration,
+          [progressKey]: point.progress,
+        }));
+      };
     } catch {
       // Optional file: ignore and try next candidate.
     }
@@ -310,11 +315,19 @@ export async function getEpisodeData(
       );
     }
 
+    // Run the main episode-data fetch and the optional progress parquet
+    // in parallel. Previously they ran serially: the progress fetch was
+    // gated on result.duration even though it only used duration to scale
+    // timestamps at the end. Now loadEpisodeProgressGroup returns a
+    // builder we apply once both promises settle.
+    // Vercel rule: async-parallel.
     console.time(`[perf] getEpisodeData (${version})`);
-    const result =
+    const [result, progressBuilder] = await Promise.all([
       version === "v3.0"
-        ? await getEpisodeDataV3(repoId, version, info, episodeId)
-        : await getEpisodeDataV2(repoId, version, info, episodeId);
+        ? getEpisodeDataV3(repoId, version, info, episodeId)
+        : getEpisodeDataV2(repoId, version, info, episodeId),
+      loadEpisodeProgressGroup(repoId, version, episodeId),
+    ]);
     console.timeEnd(`[perf] getEpisodeData (${version})`);
 
     // Extract camera resolutions from features
@@ -336,14 +349,11 @@ export async function getEpisodeData(
       cameras,
     };
 
-    const progressGroup = await loadEpisodeProgressGroup(
-      repoId,
-      version,
-      episodeId,
-      result.duration,
-    );
-    if (progressGroup && progressGroup.length > 0) {
-      result.chartDataGroups = [...result.chartDataGroups, progressGroup];
+    if (progressBuilder) {
+      const progressGroup = progressBuilder(result.duration);
+      if (progressGroup.length > 0) {
+        result.chartDataGroups = [...result.chartDataGroups, progressGroup];
+      }
     }
 
     return result;
