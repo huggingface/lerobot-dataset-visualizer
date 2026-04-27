@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTime } from "../context/time-context";
 import {
   LineChart,
@@ -191,20 +197,31 @@ const SingleDataGraph = React.memo(
     );
 
     // Flatten all rows for recharts
-    const chartData = useMemo(
-      () => data.map((row) => flattenRow(row)),
-      [data, flattenRow],
-    );
-    const [dataKeys, setDataKeys] = useState<string[]>([]);
-    const [visibleKeys, setVisibleKeys] = useState<string[]>([]);
+    const chartData = useMemo(() => data.map((row) => flattenRow(row)), [data]);
 
-    useEffect(() => {
-      if (!chartData || chartData.length === 0) return;
-      // Get all keys except timestamp from the first row
-      const keys = Object.keys(chartData[0]).filter((k) => k !== "timestamp");
-      setDataKeys(keys);
-      setVisibleKeys(keys);
+    // dataKeys is purely derived from chartData — compute it during render,
+    // not via a useState + useEffect that would force an extra render and
+    // briefly leak the previous chart's keys after `data` changes.
+    // Vercel rule: rerender-derived-state-no-effect.
+    const dataKeys = useMemo(() => {
+      const first = chartData[0];
+      if (!first) return [];
+      return Object.keys(first).filter((k) => k !== "timestamp");
     }, [chartData]);
+
+    // visibleKeys IS user-facing state (column toggles). Reset it whenever
+    // the underlying schema changes — keying off the joined dataKeys string
+    // catches both episode navigations and combine/split toggles.
+    const dataKeysSig = dataKeys.join("|");
+    const [visibleKeys, setVisibleKeys] = useState<string[]>(dataKeys);
+    const lastSigRef = useRef(dataKeysSig);
+    if (lastSigRef.current !== dataKeysSig) {
+      lastSigRef.current = dataKeysSig;
+      // Setting state during render is fine here — React schedules a
+      // re-render and discards the in-progress one. This pattern is
+      // documented as "Storing information from previous renders".
+      setVisibleKeys(dataKeys);
+    }
 
     const { groups, singles, groupColorMap } = useMemo(() => {
       const grouped: Record<string, string[]> = {};
