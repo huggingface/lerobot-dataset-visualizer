@@ -42,6 +42,11 @@ interface RenderedRect {
   top: number;
   width: number;
   height: number;
+  // Source image dimensions in pixels — needed so we can also map
+  // pixel-space VQA answers (the annotation pipeline emits bboxes in
+  // ``[x_min, y_min, x_max, y_max]`` source pixels per Module 3's prompt).
+  sourceWidth: number;
+  sourceHeight: number;
 }
 
 function computeRenderedRect(
@@ -59,7 +64,14 @@ function computeRenderedRect(
     // Metadata not yet loaded — fall back to the full canvas. The
     // `loadedmetadata` listener forces a redraw the moment vw/vh are known
     // so this fallback is short-lived.
-    return { left: 0, top: 0, width: cssW, height: cssH };
+    return {
+      left: 0,
+      top: 0,
+      width: cssW,
+      height: cssH,
+      sourceWidth: 0,
+      sourceHeight: 0,
+    };
   }
   const videoAspect = vw / vh;
   const containerAspect = cssW / cssH;
@@ -71,6 +83,8 @@ function computeRenderedRect(
       top: 0,
       width: renderedW,
       height: cssH,
+      sourceWidth: vw,
+      sourceHeight: vh,
     };
   } else {
     const renderedH = cssW / videoAspect;
@@ -79,6 +93,8 @@ function computeRenderedRect(
       top: (cssH - renderedH) / 2,
       width: cssW,
       height: renderedH,
+      sourceWidth: vw,
+      sourceHeight: vh,
     };
   }
 }
@@ -101,19 +117,24 @@ function drawBbox(
     y2 = y1 + by2;
   }
   // If any coord > 1.5 we treat them as pixel coords in the source image
-  // resolution; otherwise as 0..1 image-relative.
+  // resolution; otherwise as 0..1 image-relative. The annotation pipeline
+  // (Module 3) emits pixel coords by default per the prompt template, so
+  // most real-world atoms will hit the pixel branch.
   const isPixelSpace =
     Math.max(Math.abs(x1), Math.abs(x2)) > 1.5 ||
     Math.max(Math.abs(y1), Math.abs(y2)) > 1.5;
   let px1: number, py1: number, px2: number, py2: number;
   if (isPixelSpace) {
-    // Approximate by mapping pixel coords through canvas/video dims.
-    // The caller has access to videoWidth/videoHeight via rect already
-    // since the rendered rect was derived from those.
-    px1 = rect.left + (x1 / Math.max(1, x2 + 1)) * rect.width; // fallback path
-    py1 = rect.top + (y1 / Math.max(1, y2 + 1)) * rect.height;
-    px2 = rect.left + (x2 / Math.max(1, x2 + 1)) * rect.width;
-    py2 = rect.top + (y2 / Math.max(1, y2 + 1)) * rect.height;
+    // Map source-pixel coords → canvas-px by dividing by the source image
+    // dimensions and scaling onto the rendered (letterbox-adjusted) rect.
+    // ``rect.sourceWidth/sourceHeight`` are populated from
+    // ``videoEl.videoWidth/videoHeight`` in ``computeRenderedRect``.
+    const sw = rect.sourceWidth || rect.width;
+    const sh = rect.sourceHeight || rect.height;
+    px1 = rect.left + (x1 / sw) * rect.width;
+    py1 = rect.top + (y1 / sh) * rect.height;
+    px2 = rect.left + (x2 / sw) * rect.width;
+    py2 = rect.top + (y2 / sh) * rect.height;
   } else {
     px1 = rect.left + x1 * rect.width;
     py1 = rect.top + y1 * rect.height;
@@ -146,8 +167,11 @@ function drawPoint(
   const isPixelSpace = Math.abs(x) > 1.5 || Math.abs(y) > 1.5;
   let px: number, py: number;
   if (isPixelSpace) {
-    px = rect.left + (x / Math.max(1, x + 1)) * rect.width;
-    py = rect.top + (y / Math.max(1, y + 1)) * rect.height;
+    // Same source-pixel → canvas-px mapping as drawBbox above.
+    const sw = rect.sourceWidth || rect.width;
+    const sh = rect.sourceHeight || rect.height;
+    px = rect.left + (x / sw) * rect.width;
+    py = rect.top + (y / sh) * rect.height;
   } else {
     px = rect.left + x * rect.width;
     py = rect.top + y * rect.height;
