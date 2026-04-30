@@ -54,6 +54,7 @@ function isActiveAt(ts: number, currentTime: number, fps = 30): boolean {
 }
 
 type QuickAddKind =
+  | "task_aug"
   | "subtask"
   | "plan"
   | "memory"
@@ -64,6 +65,7 @@ type QuickAddKind =
   | "spatial";
 
 const QUICK_ADD_KINDS: { value: QuickAddKind; label: string }[] = [
+  { value: "task_aug", label: "task augmentation" },
   { value: "subtask", label: "subtask" },
   { value: "plan", label: "plan" },
   { value: "memory", label: "memory" },
@@ -131,6 +133,7 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
   // ============ Atom grouping for the rail ============
   const groups = useMemo(() => {
     type Entry = { atom: LanguageAtom; idx: number; label: string };
+    const taskAug: Entry[] = [];
     const subtask: Entry[] = [];
     const plan: Entry[] = [];
     const memory: Entry[] = [];
@@ -139,7 +142,9 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
     const vqa: Entry[] = [];
 
     atoms.forEach((a, idx) => {
-      if (a.style === "subtask") {
+      if (a.style === "task_aug") {
+        taskAug.push({ atom: a, idx, label: a.content || "(empty)" });
+      } else if (a.style === "subtask") {
         subtask.push({ atom: a, idx, label: a.content || "(empty)" });
       } else if (a.style === "plan") {
         plan.push({
@@ -186,6 +191,7 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
     const sortByTs = <T extends { atom: LanguageAtom }>(arr: T[]) =>
       arr.sort((x, y) => x.atom.timestamp - y.atom.timestamp);
     return {
+      taskAug: sortByTs(taskAug),
       subtask: sortByTs(subtask),
       plan: sortByTs(plan),
       memory: sortByTs(memory),
@@ -206,7 +212,21 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
     // camera-agnostic.
     const vqaCamera = activeCamera ?? cameraKeys[0] ?? null;
 
-    if (qaKind === "subtask" || qaKind === "plan" || qaKind === "memory") {
+    if (qaKind === "task_aug") {
+      if (!text) return;
+      newAtoms.push({
+        role: "user",
+        content: text,
+        style: "task_aug",
+        timestamp: 0,
+        camera: null,
+        tool_calls: null,
+      });
+    } else if (
+      qaKind === "subtask" ||
+      qaKind === "plan" ||
+      qaKind === "memory"
+    ) {
       if (!text) return;
       newAtoms.push({
         role: "assistant",
@@ -386,12 +406,14 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
         <div className="composer-copy">
           <span className="section-kicker">Add text annotation</span>
           <p>
-            Adds a subtask, plan, memory, speech, or non-spatial VQA atom at the
-            current frame.
+            Adds task phrasing, subtask, plan, memory, speech, or non-spatial
+            VQA atoms. Task phrasings are saved at episode start.
           </p>
         </div>
         <div className="quick-add">
-          <span className="ts-pill">t = {fmtTime(currentTime)}</span>
+          <span className="ts-pill">
+            t = {qaKind === "task_aug" ? fmtTime(0) : fmtTime(currentTime)}
+          </span>
           <select
             value={qaKind}
             onChange={(e) => setQaKind(e.target.value as QuickAddKind)}
@@ -402,6 +424,16 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
               </option>
             ))}
           </select>
+          {qaKind === "task_aug" && (
+            <input
+              type="text"
+              placeholder="pick up the blue cube and place it in the green box"
+              className="grow"
+              value={qaLabel}
+              onChange={(e) => setQaLabel(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
+            />
+          )}
           {qaKind === "subtask" && (
             <input
               type="text"
@@ -568,6 +600,12 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
               Add text above or draw on the active video.
             </div>
           )}
+          <RailGroup
+            title="task aug"
+            dotClass="dot-task-aug"
+            entries={groups.taskAug}
+            currentTime={currentTime}
+          />
           <RailGroup
             title="subtask"
             dotClass="dot-subtask"
@@ -779,7 +817,8 @@ const AtomEditor: React.FC<{
       </div>
 
       {/* Content / role-specific fields */}
-      {(atom.style === "subtask" ||
+      {(atom.style === "task_aug" ||
+        atom.style === "subtask" ||
         atom.style === "plan" ||
         atom.style === "memory" ||
         atom.style === "interjection") && (
@@ -787,13 +826,17 @@ const AtomEditor: React.FC<{
           <label className="field-label">
             {atom.style === "subtask"
               ? "Subtask"
-              : atom.style === "plan"
-                ? "Plan"
-                : atom.style === "memory"
-                  ? "Memory"
-                  : "Interjection"}
+              : atom.style === "task_aug"
+                ? "Task augmentation"
+                : atom.style === "plan"
+                  ? "Plan"
+                  : atom.style === "memory"
+                    ? "Memory"
+                    : "Interjection"}
           </label>
-          {atom.style === "subtask" || atom.style === "interjection" ? (
+          {atom.style === "task_aug" ||
+          atom.style === "subtask" ||
+          atom.style === "interjection" ? (
             <textarea
               rows={3}
               value={atom.content || ""}

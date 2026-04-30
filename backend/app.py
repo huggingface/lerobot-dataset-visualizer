@@ -56,7 +56,7 @@ EXPORT_ROOT = Path(os.environ.get("LEROBOT_ANNOTATE_EXPORT", "/tmp/lerobot_visua
 
 # --- Schema mirrors src/lerobot/datasets/language.py --------------------------
 
-PERSISTENT_STYLES = {"subtask", "plan", "memory"}
+PERSISTENT_STYLES = {"task_aug", "subtask", "plan", "memory"}
 EVENT_ONLY_STYLES = {"interjection", "vqa"}
 KNOWN_STYLES = PERSISTENT_STYLES | EVENT_ONLY_STYLES
 LANGUAGE_PERSISTENT = "language_persistent"
@@ -467,7 +467,7 @@ def _validate_atom(atom: dict[str, Any]) -> None:
     # visualizer accepts in-progress edits where the user hasn't picked a
     # camera yet — the writer (or the next save round-trip) will surface
     # the missing tag. We DO reject camera-on-non-view-dependent so the
-    # field can't drift onto subtask/plan/memory rows.
+    # field can't drift onto task_aug/subtask/plan/memory rows.
     if (
         camera is not None
         and style is not None

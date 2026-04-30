@@ -5,8 +5,8 @@
  *
  *     { role, content, style, timestamp, tool_calls }
  *
- * Persistent styles (subtask / plan / memory) live in `language_persistent` and
- * are broadcast across every frame in the episode. Event styles
+ * Persistent styles (task_aug / subtask / plan / memory) live in
+ * `language_persistent` and are broadcast across every frame in the episode. Event styles
  * (interjection / vqa) plus speech tool-call atoms (style=null) live in
  * `language_events` and only appear on the exact frames where they were
  * emitted.
@@ -19,6 +19,7 @@
 export type Role = "user" | "assistant" | "system" | "tool";
 
 export type LanguageStyle =
+  | "task_aug"
   | "subtask"
   | "plan"
   | "memory"
@@ -43,7 +44,7 @@ export interface LanguageAtom {
   /**
    * `observation.images.*` feature key when this atom is grounded against a
    * specific camera view (`vqa`, `trace`). `null` for camera-agnostic atoms
-   * (`subtask`, `plan`, `memory`, `motion`, `interjection`, speech).
+   * (`task_aug`, `subtask`, `plan`, `memory`, `motion`, `interjection`, speech).
    * Mirrors lerobot's row-level `camera` field (PR 3467).
    */
   camera: string | null;
@@ -51,6 +52,7 @@ export interface LanguageAtom {
 }
 
 export const PERSISTENT_STYLES: ReadonlySet<LanguageStyle> = new Set([
+  "task_aug",
   "subtask",
   "plan",
   "memory",

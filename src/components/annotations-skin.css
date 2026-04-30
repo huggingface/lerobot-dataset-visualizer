@@ -12,6 +12,7 @@
   --hf-yellow: #ffd21e;
   --hf-orange: #ff9d00;
   --hf-blue: #5b8cff;
+  --hf-cyan: #38bdf8;
   --hf-red: #ef5350;
   --hf-green: #34d399;
   --hf-purple: #b78bff;
@@ -87,6 +88,10 @@
   color: var(--hf-yellow);
   background: rgba(255, 210, 30, 0.12);
 }
+.annotations-skin .style-pill.task_aug {
+  color: var(--hf-cyan);
+  background: rgba(56, 189, 248, 0.12);
+}
 .annotations-skin .style-pill.plan {
   color: var(--hf-blue);
   background: rgba(91, 140, 255, 0.12);
@@ -116,6 +121,9 @@
 }
 .annotations-skin .dot-subtask {
   background: var(--hf-yellow);
+}
+.annotations-skin .dot-task-aug {
+  background: var(--hf-cyan);
 }
 .annotations-skin .dot-plan {
   background: var(--hf-blue);
@@ -441,6 +449,9 @@
 }
 .annotations-skin .tl-tick.plan {
   background: var(--hf-blue);
+}
+.annotations-skin .tl-tick.task_aug {
+  background: var(--hf-cyan);
 }
 .annotations-skin .tl-tick.memory {
   background: var(--hf-purple);

@@ -4,6 +4,7 @@
  * Multi-track timeline for v3.1 language atoms — like a video-editing
  * scrubber, but stacked vertically by style:
  *
+ *   - task_aug: persistent task phrasings shown as point-in-time ticks at episode start.
  *   - subtask: persistent atoms shown as filled spans from each emit time
  *     until the next subtask emit (or episode end). Numbered. Resizable
  *     edges; the empty subtask track also accepts drag-to-create.
@@ -40,6 +41,7 @@ const LABEL_WIDTH = 84;
 const DRAG_THRESHOLD_PX = 4;
 
 const TRACKS = [
+  { key: "task_aug", label: "task aug", color: "#38bdf8" },
   { key: "subtask", label: "subtask", color: "#ffd21e" },
   { key: "plan", label: "plan", color: "#5b8cff" },
   { key: "memory", label: "memory", color: "#b78bff" },
@@ -122,6 +124,7 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
     };
 
     const subtask: SpanMarker[] = [];
+    const task_aug: TickMarker[] = [];
     const plan: TickMarker[] = [];
     const memory: TickMarker[] = [];
     const interjection: TickMarker[] = [];
@@ -148,7 +151,15 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
     });
 
     atoms.forEach((a, i) => {
-      if (a.style === "plan") {
+      if (a.style === "task_aug") {
+        task_aug.push({
+          kind: "tick",
+          t: a.timestamp,
+          label: a.content || "task augmentation",
+          atom: a,
+          atomIdx: i,
+        });
+      } else if (a.style === "plan") {
         plan.push({
           kind: "tick",
           t: a.timestamp,
@@ -187,7 +198,7 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
       }
     });
 
-    return { subtask, plan, memory, interjection, vqa, subWithIdx };
+    return { task_aug, subtask, plan, memory, interjection, vqa, subWithIdx };
   }, [atoms, duration]);
 
   // ============ Pixel <-> time mapping ============
@@ -496,7 +507,12 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
               lanes[tk.key as keyof typeof lanes] !== lanes.subWithIdx &&
               (
                 lanes[
-                  tk.key as "plan" | "memory" | "interjection" | "vqa"
+                  tk.key as
+                    | "task_aug"
+                    | "plan"
+                    | "memory"
+                    | "interjection"
+                    | "vqa"
                 ] as Array<{
                   kind: "tick";
                   t: number;
