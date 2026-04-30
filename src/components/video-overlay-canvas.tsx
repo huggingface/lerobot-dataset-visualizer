@@ -99,6 +99,44 @@ function computeRenderedRect(
   }
 }
 
+const GROUNDING_COORDINATE_SCALE = 1000;
+
+function isUnitCoord(x: number, y: number): boolean {
+  return Math.max(Math.abs(x), Math.abs(y)) <= 1.5;
+}
+
+function isGroundingCoord(x: number, y: number): boolean {
+  return (
+    Math.max(Math.abs(x), Math.abs(y)) <= GROUNDING_COORDINATE_SCALE &&
+    Math.max(Math.abs(x), Math.abs(y)) > 1.5
+  );
+}
+
+function mapPointToCanvas(
+  rect: RenderedRect,
+  x: number,
+  y: number,
+): [number, number] {
+  if (isUnitCoord(x, y)) {
+    return [rect.left + x * rect.width, rect.top + y * rect.height];
+  }
+
+  // Model-generated grounding annotations commonly use a 0..1000 image grid.
+  // The videos are often lower resolution, so treating those values as source
+  // pixels makes boxes/points too large after rendering.
+  const scaleX = isGroundingCoord(x, y)
+    ? GROUNDING_COORDINATE_SCALE
+    : rect.sourceWidth || rect.width;
+  const scaleY = isGroundingCoord(x, y)
+    ? GROUNDING_COORDINATE_SCALE
+    : rect.sourceHeight || rect.height;
+
+  return [
+    rect.left + (x / scaleX) * rect.width,
+    rect.top + (y / scaleY) * rect.height,
+  ];
+}
+
 function drawBbox(
   ctx: CanvasRenderingContext2D,
   rect: RenderedRect,
@@ -116,31 +154,8 @@ function drawBbox(
     x2 = x1 + bx2;
     y2 = y1 + by2;
   }
-  // If any coord > 1.5 we treat them as pixel coords in the source image
-  // resolution; otherwise as 0..1 image-relative. The annotation pipeline
-  // (Module 3) emits pixel coords by default per the prompt template, so
-  // most real-world atoms will hit the pixel branch.
-  const isPixelSpace =
-    Math.max(Math.abs(x1), Math.abs(x2)) > 1.5 ||
-    Math.max(Math.abs(y1), Math.abs(y2)) > 1.5;
-  let px1: number, py1: number, px2: number, py2: number;
-  if (isPixelSpace) {
-    // Map source-pixel coords → canvas-px by dividing by the source image
-    // dimensions and scaling onto the rendered (letterbox-adjusted) rect.
-    // ``rect.sourceWidth/sourceHeight`` are populated from
-    // ``videoEl.videoWidth/videoHeight`` in ``computeRenderedRect``.
-    const sw = rect.sourceWidth || rect.width;
-    const sh = rect.sourceHeight || rect.height;
-    px1 = rect.left + (x1 / sw) * rect.width;
-    py1 = rect.top + (y1 / sh) * rect.height;
-    px2 = rect.left + (x2 / sw) * rect.width;
-    py2 = rect.top + (y2 / sh) * rect.height;
-  } else {
-    px1 = rect.left + x1 * rect.width;
-    py1 = rect.top + y1 * rect.height;
-    px2 = rect.left + x2 * rect.width;
-    py2 = rect.top + y2 * rect.height;
-  }
+  const [px1, py1] = mapPointToCanvas(rect, x1, y1);
+  const [px2, py2] = mapPointToCanvas(rect, x2, y2);
   ctx.lineWidth = 2;
   ctx.strokeStyle = color;
   ctx.fillStyle = color + "26"; // ~15% alpha
@@ -164,18 +179,7 @@ function drawPoint(
   color: string,
 ) {
   const [x, y] = point;
-  const isPixelSpace = Math.abs(x) > 1.5 || Math.abs(y) > 1.5;
-  let px: number, py: number;
-  if (isPixelSpace) {
-    // Same source-pixel → canvas-px mapping as drawBbox above.
-    const sw = rect.sourceWidth || rect.width;
-    const sh = rect.sourceHeight || rect.height;
-    px = rect.left + (x / sw) * rect.width;
-    py = rect.top + (y / sh) * rect.height;
-  } else {
-    px = rect.left + x * rect.width;
-    py = rect.top + y * rect.height;
-  }
+  const [px, py] = mapPointToCanvas(rect, x, y);
   ctx.lineWidth = 2;
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
@@ -241,6 +245,7 @@ export const VideoOverlayCanvas: React.FC<Props> = ({ videoEl, cameraKey }) => {
     snap,
     addAtoms,
     clearPendingDraw,
+    selectedIdx,
   } = useAnnotations();
   // Register this camera's <video> as the "active" one so the panel can read
   // its authoritative `currentTime` instead of the throttled context value
@@ -257,7 +262,7 @@ export const VideoOverlayCanvas: React.FC<Props> = ({ videoEl, cameraKey }) => {
     (activeCamera === null || activeCamera === cameraKey)
       ? ctxDrawMode
       : "off";
-  const { currentTime } = useTime();
+  const { currentTime, isPlaying } = useTime();
   // Pointer-down origin in canvas pixels and 0..1 image-relative coords.
   const dragOriginRef = useRef<{
     px: [number, number];
@@ -325,10 +330,20 @@ export const VideoOverlayCanvas: React.FC<Props> = ({ videoEl, cameraKey }) => {
     // the episode-local `currentTime` from useTime(), not the <video>'s
     // `currentTime`, because the latter is in *global* video-file time for
     // segmented (concatenated) videos.
-    const matches: LanguageAtom[] = atoms.filter((a) => {
+    const selectedAtom =
+      selectedIdx != null && selectedIdx >= 0 && selectedIdx < atoms.length
+        ? atoms[selectedIdx]
+        : null;
+    const matches: LanguageAtom[] = atoms.filter((a, idx) => {
       if (a.style !== "vqa" || a.role !== "assistant") return false;
-      const dt = Math.abs(a.timestamp - (currentTime || 0));
-      if (dt >= 0.05) return false; // ~30fps tolerance, writer enforces exact
+      const isSelectedAnswer =
+        idx === selectedIdx ||
+        (selectedAtom?.style === "vqa" &&
+          selectedAtom.role === "user" &&
+          selectedAtom.timestamp === a.timestamp &&
+          selectedAtom.camera === a.camera);
+      const isCurrentFrame = Math.abs(a.timestamp - (currentTime || 0)) < 0.05;
+      if (!isCurrentFrame && !(isSelectedAnswer && !isPlaying)) return false;
       // Row-level camera is authoritative (lerobot PR 3467). Camera-agnostic
       // atoms (a.camera == null) draw on every camera.
       return a.camera == null || a.camera === cameraKey;
@@ -391,7 +406,15 @@ export const VideoOverlayCanvas: React.FC<Props> = ({ videoEl, cameraKey }) => {
         );
       }
     }
-  }, [atoms, pendingDraw, cameraKey, videoEl]);
+  }, [
+    atoms,
+    pendingDraw,
+    cameraKey,
+    videoEl,
+    currentTime,
+    selectedIdx,
+    isPlaying,
+  ]);
 
   // Redraw on time tick / atoms / pendingDraw / videoEl changes.
   useEffect(() => {
