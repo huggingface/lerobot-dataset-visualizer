@@ -607,6 +607,16 @@
 .annotations-skin .editor .field {
   margin-bottom: 10px;
 }
+.annotations-skin .editor .field > input,
+.annotations-skin .editor .field > select,
+.annotations-skin .editor .field > textarea {
+  width: 100%;
+}
+.annotations-skin .editor .field > textarea {
+  min-height: 74px;
+  resize: vertical;
+  line-height: 1.45;
+}
 .annotations-skin .editor .ts-row {
   display: flex;
   align-items: center;
@@ -619,9 +629,15 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
   padding: 3px 8px;
+  border: 0;
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--fg-3);
+  cursor: pointer;
+}
+.annotations-skin .editor .ts-row .frame-pill:hover {
+  color: var(--fg-1);
+  background: var(--surface-1);
 }
 
 /* ----- Timeline drag handles + tooltip + draggable playhead ----- */

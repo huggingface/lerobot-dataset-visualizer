@@ -30,7 +30,6 @@ import {
 } from "../types/language.types";
 import {
   exportDataset as apiExport,
-  pushToHub as apiPush,
   isAnnotateBackendEnabled,
 } from "../utils/annotationsClient";
 
@@ -319,22 +318,22 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
     setExportStatus(r.ok ? "Saved." : `Save failed: ${r.error || "unknown"}`);
   };
 
-  const handleExport = async () => {
+  const handleSaveDataset = async () => {
     if (!isAnnotateBackendEnabled()) {
       setExportStatus(
         "Backend not configured. Set NEXT_PUBLIC_ANNOTATE_BACKEND_URL and run backend/app.py.",
       );
       return;
     }
-    setExportStatus("Exporting…");
+    setExportStatus("Saving dataset…");
     try {
       const r = await apiExport(ident);
       setExportStatus(
-        `Exported to ${r.output_dir} (persistent: ${r.persistent_rows}, events: ${r.event_rows}).`,
+        `Saved dataset to ${r.output_dir} (persistent: ${r.persistent_rows}, events: ${r.event_rows}).`,
       );
     } catch (e) {
       setExportStatus(
-        `Export failed: ${e instanceof Error ? e.message : String(e)}`,
+        `Save dataset failed: ${e instanceof Error ? e.message : String(e)}`,
       );
     }
   };
@@ -370,10 +369,10 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
           </button>
           <button
             disabled={!backendEnabled}
-            onClick={handleExport}
+            onClick={handleSaveDataset}
             className="text-xs h-7 px-3 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-40"
           >
-            Export parquet
+            Save dataset
           </button>
         </div>
       </div>
@@ -628,8 +627,6 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
           )}
         </div>
       </div>
-
-      {backendEnabled && <PushToHubBlock ident={ident} />}
     </div>
   );
 };
@@ -690,7 +687,35 @@ const AtomEditor: React.FC<{
   onJump: () => void;
 }> = ({ atom, cameraKeys, onChange, onDelete }) => {
   const jump = useJump();
+  const { snap } = useAnnotations();
   const isSpeech = isSpeechAtom(atom);
+  const [timestampDraft, setTimestampDraft] = useState(() =>
+    String(atom.timestamp),
+  );
+
+  React.useEffect(() => {
+    setTimestampDraft(String(atom.timestamp));
+  }, [atom.timestamp]);
+
+  const commitTimestamp = React.useCallback(
+    (raw = timestampDraft) => {
+      const next = Number(raw);
+      if (!Number.isFinite(next) || next < 0) {
+        setTimestampDraft(String(atom.timestamp));
+        return;
+      }
+      onChange({ timestamp: next });
+      setTimestampDraft(String(next));
+    },
+    [atom.timestamp, onChange, timestampDraft],
+  );
+
+  const commitSnappedTimestamp = () => {
+    const parsed = Number(timestampDraft);
+    const next = snap(Number.isFinite(parsed) ? parsed : atom.timestamp);
+    onChange({ timestamp: next });
+    setTimestampDraft(String(next));
+  };
 
   return (
     <div>
@@ -718,12 +743,32 @@ const AtomEditor: React.FC<{
         <label className="field-label">Timestamp (s)</label>
         <div className="ts-row">
           <input
-            type="number"
-            step={0.001}
-            value={atom.timestamp}
-            onChange={(e) => onChange({ timestamp: Number(e.target.value) })}
+            type="text"
+            inputMode="decimal"
+            value={timestampDraft}
+            onChange={(e) => setTimestampDraft(e.target.value)}
+            onBlur={() => commitTimestamp()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitTimestamp();
+              if (e.key === "Escape") setTimestampDraft(String(atom.timestamp));
+            }}
           />
-          <span className="frame-pill">snap to frame</span>
+          <button
+            type="button"
+            className="frame-pill"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              commitSnappedTimestamp();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                commitSnappedTimestamp();
+              }
+            }}
+          >
+            snap to frame
+          </button>
         </div>
       </div>
 
@@ -743,8 +788,8 @@ const AtomEditor: React.FC<{
                   : "Interjection"}
           </label>
           {atom.style === "subtask" || atom.style === "interjection" ? (
-            <input
-              type="text"
+            <textarea
+              rows={3}
               value={atom.content || ""}
               onChange={(e) => onChange({ content: e.target.value })}
             />
@@ -875,138 +920,5 @@ const VqaEditorFields: React.FC<{
         </p>
       )}
     </div>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Push to Hub block (kept from the previous implementation, restyled).
-// ---------------------------------------------------------------------------
-
-const PushToHubBlock: React.FC<{
-  ident: { repoId?: string | null; localPath?: string | null };
-}> = ({ ident }) => {
-  const [token, setToken] = useState("");
-  const [pushInPlace, setPushInPlace] = useState(true);
-  const [newRepoId, setNewRepoId] = useState("");
-  const [privateRepo, setPrivateRepo] = useState(false);
-  const [commit, setCommit] = useState("Add language annotations");
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<{
-    kind: "ok" | "err";
-    text: string;
-    url?: string;
-  } | null>(null);
-
-  const onPush = async () => {
-    if (!token) {
-      setStatus({ kind: "err", text: "HF token is required" });
-      return;
-    }
-    if (!pushInPlace && !newRepoId) {
-      setStatus({
-        kind: "err",
-        text: "Provide a target repo or enable push-in-place",
-      });
-      return;
-    }
-    setBusy(true);
-    setStatus(null);
-    try {
-      const r = await apiPush(
-        ident,
-        token,
-        pushInPlace,
-        pushInPlace ? null : newRepoId,
-        privateRepo,
-        commit,
-      );
-      setStatus({ kind: "ok", text: r.message, url: r.url });
-    } catch (e) {
-      setStatus({
-        kind: "err",
-        text: e instanceof Error ? e.message : String(e),
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <section
-      className="panel p-3 flex flex-col gap-2"
-      style={{ marginTop: 12 }}
-    >
-      <header>
-        <h4 className="text-xs uppercase tracking-wide text-slate-400">
-          Push to Hub
-        </h4>
-        <p className="text-[11px] text-slate-500">
-          Exports parquet shards with the new language columns and pushes via
-          the FastAPI backend.
-        </p>
-      </header>
-      <div className="flex flex-wrap gap-2 items-center text-xs text-slate-300">
-        <input
-          type="password"
-          placeholder="hf_xxx token"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          className="flex-1 min-w-[200px]"
-        />
-        <label className="flex items-center gap-1.5">
-          <input
-            type="checkbox"
-            checked={pushInPlace}
-            onChange={(e) => setPushInPlace(e.target.checked)}
-          />
-          push in place
-        </label>
-        {!pushInPlace && (
-          <>
-            <input
-              type="text"
-              placeholder="org/new-dataset"
-              value={newRepoId}
-              onChange={(e) => setNewRepoId(e.target.value)}
-              className="flex-1 min-w-[200px]"
-            />
-            <label className="flex items-center gap-1.5">
-              <input
-                type="checkbox"
-                checked={privateRepo}
-                onChange={(e) => setPrivateRepo(e.target.checked)}
-              />
-              private
-            </label>
-          </>
-        )}
-        <input
-          type="text"
-          placeholder="commit message"
-          value={commit}
-          onChange={(e) => setCommit(e.target.value)}
-          className="flex-1 min-w-[200px]"
-        />
-        <button
-          onClick={onPush}
-          disabled={busy}
-          className="text-xs h-7 px-3 rounded border border-purple-500/40 bg-purple-500/10 text-purple-200 hover:bg-purple-500/20 disabled:opacity-40"
-        >
-          {busy ? "Pushing…" : "Push to Hub"}
-        </button>
-      </div>
-      {status && (
-        <div
-          className={`text-xs ${status.kind === "ok" ? "text-emerald-300" : "text-red-300"}`}
-        >
-          {status.text}
-          {status.url && (
-            <a href={status.url} target="_blank" className="ml-2 underline">
-              open ↗
-            </a>
-          )}
-        </div>
-      )}
-    </section>
   );
 };
