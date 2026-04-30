@@ -1,0 +1,13 @@
+# Build output
+.next/
+out/
+node_modules/
+
+# Backend (Python)
+backend/.venv/
+backend/__pycache__/
+backend/**/*.pyc
+
+# Lockfiles
+bun.lock
+package-lock.json

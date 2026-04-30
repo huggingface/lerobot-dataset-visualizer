@@ -84,6 +84,20 @@ export type EpisodeData = {
   ignoredColumns: string[];
   duration: number;
   task?: string;
+  /**
+   * v3.1 language atoms read from `language_persistent` and `language_events`
+   * (lerobot#3467). Empty when the dataset hasn't been annotated yet.
+   * The annotations panel uses this to seed its editor state when no
+   * annotation backend is running.
+   */
+  languageAtoms?: import("@/types/language.types").LanguageAtom[];
+  /**
+   * Sorted source-frame timestamps from the data parquet, in seconds. Used by
+   * the annotations editor to snap atom timestamps to exact frame times —
+   * avoiding sub-frame drift from a throttled `currentTime` and keeping
+   * events compatible with the writer in lerobot#3471.
+   */
+  frameTimestamps?: number[];
 };
 
 type EpisodeMetadataV3 = {
@@ -708,8 +722,14 @@ async function getEpisodeDataV3(
   );
 
   // Load episode data for charts
-  const { chartDataGroups, flatChartData, ignoredColumns, task } =
-    await loadEpisodeDataV3(repoId, version, info, episodeMetadata);
+  const {
+    chartDataGroups,
+    flatChartData,
+    ignoredColumns,
+    task,
+    languageAtoms,
+    frameTimestamps,
+  } = await loadEpisodeDataV3(repoId, version, info, episodeMetadata);
 
   const duration = episodeMetadata.length
     ? episodeMetadata.length / info.fps
@@ -725,6 +745,8 @@ async function getEpisodeDataV3(
     ignoredColumns,
     duration,
     task,
+    languageAtoms,
+    frameTimestamps,
   };
 }
 
@@ -739,6 +761,8 @@ async function loadEpisodeDataV3(
   flatChartData: Record<string, number>[];
   ignoredColumns: string[];
   task?: string;
+  languageAtoms?: import("@/types/language.types").LanguageAtom[];
+  frameTimestamps?: number[];
 }> {
   // Build data file path using chunk and file indices
   const dataChunkIndex = bigIntToNumber(episodeMetadata.data_chunk_index, 0);
@@ -756,6 +780,10 @@ async function loadEpisodeDataV3(
         "language_instruction",
         "language_instruction_2",
         "language_instruction_3",
+        // v3.1 language schema (lerobot#3467) — list<struct{...}> columns
+        // that the annotations panel renders / edits.
+        "language_persistent",
+        "language_events",
         ...Object.entries(info.features)
           .filter(([, feature]) => {
             const dtype = feature.dtype.toLowerCase();
@@ -815,6 +843,20 @@ async function loadEpisodeDataV3(
       episodeRows = await readParquetAsObjects(parquetFile, v3DataColumns);
     }
 
+    // Extract frame timestamps from the *full* (non-sampled) row set so the
+    // annotations editor can snap to the exact frame the user is on.
+    const frameTimestamps = episodeRows
+      .map((r) => {
+        const t = r.timestamp;
+        return typeof t === "number"
+          ? t
+          : typeof t === "bigint"
+            ? Number(t)
+            : Number.NaN;
+      })
+      .filter((t) => Number.isFinite(t))
+      .sort((a, b) => a - b);
+
     const episodeData = evenlySampleArray(episodeRows, MAX_EPISODE_POINTS);
 
     if (episodeData.length === 0) {
@@ -823,6 +865,8 @@ async function loadEpisodeDataV3(
         flatChartData: [],
         ignoredColumns: [],
         task: undefined,
+        languageAtoms: extractLanguageAtoms(episodeRows),
+        frameTimestamps,
       };
     }
 
@@ -905,7 +949,14 @@ async function loadEpisodeDataV3(
       }
     }
 
-    return { chartDataGroups, flatChartData, ignoredColumns, task };
+    return {
+      chartDataGroups,
+      flatChartData,
+      ignoredColumns,
+      task,
+      languageAtoms: extractLanguageAtoms(episodeRows),
+      frameTimestamps,
+    };
   } catch {
     return {
       chartDataGroups: [],
@@ -914,6 +965,96 @@ async function loadEpisodeDataV3(
       task: undefined,
     };
   }
+}
+
+/**
+ * Extract `LanguageAtom`s from a list of v3.1 parquet rows.
+ *
+ * Each row may carry two arrays:
+ *   - `language_persistent`: broadcast — same content on every row in the
+ *     episode. We sample row 0 (skipping nulls/empties).
+ *   - `language_events`: per-row, mostly empty. We collect every event whose
+ *     row's `timestamp` falls within the episode.
+ *
+ * Hyparquet decodes `list<struct<...>>` to `Array<Record<string, unknown>>`.
+ * We coerce loosely-typed values to the canonical `LanguageAtom` shape and
+ * drop rows that don't validate.
+ */
+function extractLanguageAtoms(
+  episodeRows: Record<string, unknown>[],
+): import("@/types/language.types").LanguageAtom[] {
+  if (!episodeRows.length) return [];
+  type LanguageAtom = import("@/types/language.types").LanguageAtom;
+  const atoms: LanguageAtom[] = [];
+  const seenPersistent: Set<string> = new Set(); // dedupe broadcast copies
+
+  const coerce = (raw: unknown, fallbackTs?: number): LanguageAtom | null => {
+    if (!raw || typeof raw !== "object") return null;
+    const r = raw as Record<string, unknown>;
+    const role =
+      typeof r.role === "string" ? (r.role as LanguageAtom["role"]) : null;
+    if (!role) return null;
+    const style =
+      typeof r.style === "string"
+        ? (r.style as LanguageAtom["style"])
+        : r.style === null
+          ? null
+          : null;
+    const content =
+      typeof r.content === "string"
+        ? r.content
+        : r.content === null || r.content === undefined
+          ? null
+          : null;
+    const timestamp =
+      typeof r.timestamp === "number"
+        ? r.timestamp
+        : typeof r.timestamp === "bigint"
+          ? Number(r.timestamp)
+          : (fallbackTs ?? 0);
+    const tool_calls = Array.isArray(r.tool_calls)
+      ? (r.tool_calls as LanguageAtom["tool_calls"])
+      : null;
+    const camera =
+      typeof r.camera === "string" && r.camera.length > 0 ? r.camera : null;
+    return { role, content, style, timestamp, camera, tool_calls };
+  };
+
+  // Persistent slice: read once from the first row that has a non-empty list.
+  for (const row of episodeRows) {
+    const list = row["language_persistent"];
+    if (Array.isArray(list) && list.length > 0) {
+      for (const raw of list) {
+        const atom = coerce(raw);
+        if (!atom) continue;
+        const key = `${atom.style}|${atom.role}|${atom.timestamp}|${atom.camera ?? ""}|${atom.content}`;
+        if (seenPersistent.has(key)) continue;
+        seenPersistent.add(key);
+        atoms.push(atom);
+      }
+      break;
+    }
+  }
+
+  // Event slice: every non-empty per-row list contributes its rows. Each
+  // event's timestamp should already match its frame timestamp; we use the
+  // row timestamp as a fallback if it's missing.
+  for (const row of episodeRows) {
+    const list = row["language_events"];
+    if (!Array.isArray(list) || list.length === 0) continue;
+    const rowTs =
+      typeof row.timestamp === "number"
+        ? row.timestamp
+        : typeof row.timestamp === "bigint"
+          ? Number(row.timestamp)
+          : 0;
+    for (const raw of list) {
+      const atom = coerce(raw, rowTs);
+      if (atom) atoms.push(atom);
+    }
+  }
+
+  return atoms;
 }
 
 // Process episode data for charts (v3.0 compatible)
