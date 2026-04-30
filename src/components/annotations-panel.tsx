@@ -345,18 +345,21 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
 
   // ============ Render ============
   return (
-    <div className="flex flex-col gap-3">
-      {/* Top toolbar — save + export */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-200">
-          Language annotations
-          {dirty && (
-            <span className="ml-2 text-xs text-orange-400">(unsaved)</span>
-          )}
-        </h3>
-        <div className="flex gap-2 items-center">
+    <div className="annotation-workbench">
+      <div className="annotation-actionbar">
+        <div>
+          <h3>
+            Language annotations
+            {dirty && <span className="dirty-pill">unsaved</span>}
+          </h3>
+          <p>
+            Select an atom from the timeline or list, then edit it in the
+            inspector.
+          </p>
+        </div>
+        <div className="actionbar-actions">
           {!backendEnabled && (
-            <span className="text-[11px] text-slate-500">
+            <span className="backend-offline">
               backend offline — edits saved to sessionStorage only
             </span>
           )}
@@ -377,194 +380,192 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
         </div>
       </div>
 
-      {exportStatus && (
-        <div className="text-xs text-slate-400">{exportStatus}</div>
-      )}
+      {exportStatus && <div className="save-status">{exportStatus}</div>}
 
-      {/* Camera selector */}
-      {cameraKeys.length > 1 && (
-        <div className="text-xs text-slate-400 flex items-center gap-2">
-          Active camera for drawing:
+      <section className="annotation-composer">
+        <div className="composer-copy">
+          <span className="section-kicker">Add text annotation</span>
+          <p>
+            Adds a subtask, plan, memory, speech, or non-spatial VQA atom at the
+            current frame.
+          </p>
+        </div>
+        <div className="quick-add">
+          <span className="ts-pill">t = {fmtTime(currentTime)}</span>
           <select
-            value={activeCamera || cameraKeys[0]}
-            onChange={(e) => setActiveCamera(e.target.value)}
+            value={qaKind}
+            onChange={(e) => setQaKind(e.target.value as QuickAddKind)}
           >
-            {cameraKeys.map((k) => (
-              <option key={k} value={k}>
-                {k}
+            {QUICK_ADD_KINDS.map((k) => (
+              <option key={k.value} value={k.value}>
+                {k.label}
               </option>
             ))}
           </select>
+          {qaKind === "subtask" && (
+            <input
+              type="text"
+              placeholder="grasp the handle of the sponge"
+              className="grow"
+              value={qaLabel}
+              onChange={(e) => setQaLabel(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
+            />
+          )}
+          {qaKind === "plan" && (
+            <input
+              type="text"
+              placeholder="1. grab sponge / 2. wipe / 3. tidy"
+              className="grow"
+              value={qaLabel}
+              onChange={(e) => setQaLabel(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
+            />
+          )}
+          {qaKind === "memory" && (
+            <input
+              type="text"
+              placeholder="sponge picked up; counter still dirty"
+              className="grow"
+              value={qaLabel}
+              onChange={(e) => setQaLabel(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
+            />
+          )}
+          {qaKind === "interjection" && (
+            <input
+              type="text"
+              placeholder="user: actually skip the wipe…"
+              className="grow"
+              value={qaLabel}
+              onChange={(e) => setQaLabel(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
+            />
+          )}
+          {qaKind === "speech" && (
+            <input
+              type="text"
+              placeholder="robot say: Got it, skipping the wipe."
+              className="grow"
+              value={qaLabel}
+              onChange={(e) => setQaLabel(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
+            />
+          )}
+          {qaKind === "count" && (
+            <>
+              <input
+                type="text"
+                placeholder="object label (e.g. cup)"
+                className="grow"
+                value={qaLabel}
+                onChange={(e) => setQaLabel(e.target.value)}
+              />
+              <input
+                type="number"
+                placeholder="count"
+                style={{ width: 80 }}
+                value={qaCount}
+                onChange={(e) =>
+                  setQaCount(
+                    e.target.value === "" ? "" : Number(e.target.value),
+                  )
+                }
+                onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
+              />
+            </>
+          )}
+          {qaKind === "attribute" && (
+            <>
+              <input
+                type="text"
+                placeholder="label"
+                style={{ width: 120 }}
+                value={qaLabel}
+                onChange={(e) => setQaLabel(e.target.value)}
+              />
+              <input
+                type="text"
+                placeholder="attribute (color)"
+                style={{ width: 120 }}
+                value={qaAttr}
+                onChange={(e) => setQaAttr(e.target.value)}
+              />
+              <input
+                type="text"
+                placeholder="value (red)"
+                className="grow"
+                value={qaAttrVal}
+                onChange={(e) => setQaAttrVal(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
+              />
+            </>
+          )}
+          {qaKind === "spatial" && (
+            <>
+              <input
+                type="text"
+                placeholder="subject"
+                style={{ width: 100 }}
+                value={qaSubject}
+                onChange={(e) => setQaSubject(e.target.value)}
+              />
+              <input
+                type="text"
+                placeholder="relation (right_of)"
+                style={{ width: 130 }}
+                value={qaRel}
+                onChange={(e) => setQaRel(e.target.value)}
+              />
+              <input
+                type="text"
+                placeholder="object"
+                className="grow"
+                value={qaObject}
+                onChange={(e) => setQaObject(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
+              />
+            </>
+          )}
+          <button className="add-btn" onClick={handleQuickAdd}>
+            + Add at frame
+          </button>
         </div>
-      )}
+      </section>
 
-      {/* ============ Inline quick-add ============ */}
-      <div className="quick-add">
-        <span className="ts-pill">t = {fmtTime(currentTime)}</span>
-        <select
-          value={qaKind}
-          onChange={(e) => setQaKind(e.target.value as QuickAddKind)}
-        >
-          {QUICK_ADD_KINDS.map((k) => (
-            <option key={k.value} value={k.value}>
-              {k.label}
-            </option>
-          ))}
-        </select>
-        {/* Label / content input — adapts placeholder per kind */}
-        {qaKind === "subtask" && (
-          <input
-            type="text"
-            placeholder="grasp the handle of the sponge"
-            className="grow"
-            value={qaLabel}
-            onChange={(e) => setQaLabel(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
-          />
-        )}
-        {qaKind === "plan" && (
-          <input
-            type="text"
-            placeholder="1. grab sponge / 2. wipe / 3. tidy"
-            className="grow"
-            value={qaLabel}
-            onChange={(e) => setQaLabel(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
-          />
-        )}
-        {qaKind === "memory" && (
-          <input
-            type="text"
-            placeholder="sponge picked up; counter still dirty"
-            className="grow"
-            value={qaLabel}
-            onChange={(e) => setQaLabel(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
-          />
-        )}
-        {qaKind === "interjection" && (
-          <input
-            type="text"
-            placeholder="user: actually skip the wipe…"
-            className="grow"
-            value={qaLabel}
-            onChange={(e) => setQaLabel(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
-          />
-        )}
-        {qaKind === "speech" && (
-          <input
-            type="text"
-            placeholder="robot say: Got it, skipping the wipe."
-            className="grow"
-            value={qaLabel}
-            onChange={(e) => setQaLabel(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
-          />
-        )}
-        {qaKind === "count" && (
-          <>
-            <input
-              type="text"
-              placeholder="object label (e.g. cup)"
-              className="grow"
-              value={qaLabel}
-              onChange={(e) => setQaLabel(e.target.value)}
-            />
-            <input
-              type="number"
-              placeholder="count"
-              style={{ width: 80 }}
-              value={qaCount}
-              onChange={(e) =>
-                setQaCount(e.target.value === "" ? "" : Number(e.target.value))
-              }
-              onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
-            />
-          </>
-        )}
-        {qaKind === "attribute" && (
-          <>
-            <input
-              type="text"
-              placeholder="label"
-              style={{ width: 120 }}
-              value={qaLabel}
-              onChange={(e) => setQaLabel(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="attribute (color)"
-              style={{ width: 120 }}
-              value={qaAttr}
-              onChange={(e) => setQaAttr(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="value (red)"
-              className="grow"
-              value={qaAttrVal}
-              onChange={(e) => setQaAttrVal(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
-            />
-          </>
-        )}
-        {qaKind === "spatial" && (
-          <>
-            <input
-              type="text"
-              placeholder="subject"
-              style={{ width: 100 }}
-              value={qaSubject}
-              onChange={(e) => setQaSubject(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="relation (right_of)"
-              style={{ width: 130 }}
-              value={qaRel}
-              onChange={(e) => setQaRel(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="object"
-              className="grow"
-              value={qaObject}
-              onChange={(e) => setQaObject(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleQuickAdd()}
-            />
-          </>
-        )}
-        <button className="add-btn" onClick={handleQuickAdd}>
-          + Add at frame
-        </button>
+      <div className="grounding-panel">
+        <div>
+          <span className="section-kicker">Grounded VQA</span>
+          <p>
+            Draw directly on the active video to create visual questions. Drag
+            for a bounding box, click for a point. The camera is detected from
+            the video you draw on.
+          </p>
+        </div>
       </div>
 
-      {/* The timeline lives just above the workspace; it's rendered by
-          AnnotationsTimeline in episode-viewer.tsx, immediately above this
-          component. */}
-
-      {/* VQA hint banner */}
       <div className="hint-banner">
         <span>
-          ▸ <span className="style-pill vqa">vqa</span> <strong>Drag</strong> on
-          the active camera to draw a bounding box (auto-templated as{" "}
-          <code>&quot;Where is the &lt;label&gt;?&quot;</code>).{" "}
-          <strong>Click</strong> to drop a keypoint (
-          <code>&quot;Point to the &lt;label&gt;.&quot;</code>). Press{" "}
-          <kbd>↵</kbd> to confirm or <kbd>Esc</kbd> to cancel.
+          Drag on any video to add a bbox question. Click any video to add a
+          keypoint question. Confirm the popup with <kbd>↵</kbd>, or cancel with{" "}
+          <kbd>Esc</kbd>.
         </span>
       </div>
 
-      {/* ============ 2-column workspace ============ */}
-      <div className="workspace">
-        {/* Left rail */}
-        <div className="rail">
+      <div className="workspace inspector-workspace">
+        <div className="rail annotation-list">
+          <div className="list-head">
+            <div>
+              <span className="section-kicker">Annotations</span>
+              <p>{atoms.length} atoms in this episode</p>
+            </div>
+            <span className="ts-pill">{fmtTime(currentTime)}</span>
+          </div>
           {atoms.length === 0 && (
             <div className="rail-empty">
               No annotations yet.
               <br />
-              Use the quick-add bar above or drag on the video to start.
+              Add text above or draw on the active video.
             </div>
           )}
           <RailGroup
@@ -605,24 +606,21 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
           />
         </div>
 
-        {/* Right editor pane */}
-        <div className="editor">
+        <div className="editor inspector">
           {selectedAtom == null ? (
             <div className="editor-empty">
-              Select an annotation from the rail or click a marker on the
-              timeline to edit it here.
+              <span className="section-kicker">Inspector</span>
+              <p>
+                Select an annotation from the list or timeline, or draw a new
+                bbox/keypoint on the video.
+              </p>
             </div>
           ) : (
             <AtomEditor
               atom={selectedAtom}
-              index={selectedIdx as number}
               cameraKeys={cameraKeys}
               onChange={(updates) => updateAtom(selectedIdx as number, updates)}
               onDelete={() => deleteAtom(selectedAtom)}
-              onJump={() => {
-                /* selection already implies the row was clicked, but expose
-                   an explicit jump via the editor head too */
-              }}
             />
           )}
         </div>
@@ -680,15 +678,15 @@ const RailGroup: React.FC<{
 
 const AtomEditor: React.FC<{
   atom: LanguageAtom;
-  index: number;
   cameraKeys: string[];
   onChange: (updates: Partial<LanguageAtom>) => void;
   onDelete: () => void;
-  onJump: () => void;
 }> = ({ atom, cameraKeys, onChange, onDelete }) => {
   const jump = useJump();
   const { snap } = useAnnotations();
   const isSpeech = isSpeechAtom(atom);
+  const cameraLabel = atom.camera ?? "all cameras";
+  const roleLabel = isSpeech ? "speech" : atom.role;
   const [timestampDraft, setTimestampDraft] = useState(() =>
     String(atom.timestamp),
   );
@@ -718,9 +716,17 @@ const AtomEditor: React.FC<{
   };
 
   return (
-    <div>
-      <div className="editor-head">
-        <StylePill style={atom.style} />
+    <div className="inspector-body">
+      <div className="editor-head inspector-head">
+        <div className="inspector-title">
+          <StylePill style={atom.style} />
+          <div>
+            <strong>{fmtTime(atom.timestamp)}</strong>
+            <span>
+              {roleLabel} · {cameraLabel}
+            </span>
+          </div>
+        </div>
         <div className="right">
           <button
             className="icon-btn"

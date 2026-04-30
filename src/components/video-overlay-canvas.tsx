@@ -241,6 +241,7 @@ export const VideoOverlayCanvas: React.FC<Props> = ({ videoEl, cameraKey }) => {
     drawMode: ctxDrawMode,
     drawLabel,
     activeCamera,
+    setActiveCamera,
     setActiveVideoEl,
     snap,
     addAtoms,
@@ -256,12 +257,7 @@ export const VideoOverlayCanvas: React.FC<Props> = ({ videoEl, cameraKey }) => {
       return () => setActiveVideoEl(null);
     }
   }, [activeCamera, cameraKey, videoEl, setActiveVideoEl]);
-  // Drawing only enabled on the active camera. Other cameras stay in display mode.
-  const drawMode =
-    ctxDrawMode !== "off" &&
-    (activeCamera === null || activeCamera === cameraKey)
-      ? ctxDrawMode
-      : "off";
+  const drawMode = ctxDrawMode;
   const { currentTime, isPlaying } = useTime();
   // Pointer-down origin in canvas pixels and 0..1 image-relative coords.
   const dragOriginRef = useRef<{
@@ -442,6 +438,8 @@ export const VideoOverlayCanvas: React.FC<Props> = ({ videoEl, cameraKey }) => {
     if (!canvas || !videoEl) return;
     if (finalizing) return; // wait for the user to confirm/cancel current draw
     e.preventDefault();
+    setActiveCamera(cameraKey);
+    setActiveVideoEl(videoEl);
     canvas.setPointerCapture(e.pointerId);
     const rect = computeRenderedRect(canvas, videoEl);
     const cr = canvas.getBoundingClientRect();
