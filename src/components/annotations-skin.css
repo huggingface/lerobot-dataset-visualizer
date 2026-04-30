@@ -1,0 +1,942 @@
+/* ==========================================================================
+   Annotations tab — dark-mode skin scoped under .annotations-skin.
+   Borrows the *functional* patterns from the Claude Design handoff
+   (per-style pill colors, row layout, timeline shapes) but recolored to
+   match the visualizer's existing dark theme. The complaint we're fixing
+   here is contrast — earlier inputs were near-black on near-black; these
+   are still dark but legible.
+   ========================================================================== */
+
+.annotations-skin {
+  /* Brand accents (kept bright; visible on dark) */
+  --hf-yellow: #ffd21e;
+  --hf-orange: #ff9d00;
+  --hf-blue: #5b8cff;
+  --hf-cyan: #38bdf8;
+  --hf-red: #ef5350;
+  --hf-green: #34d399;
+  --hf-purple: #b78bff;
+
+  /* Dark surface scale */
+  --surface-0: rgba(255, 255, 255, 0.02);
+  --surface-1: rgba(255, 255, 255, 0.06);
+  --surface-2: rgba(255, 255, 255, 0.1);
+  --border-1: rgba(255, 255, 255, 0.12);
+  --border-2: rgba(255, 255, 255, 0.2);
+  --fg-1: #f1f5f9;
+  --fg-2: #cbd5e1;
+  --fg-3: #94a3b8;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+/* All form controls in the annotations area: brighter than the rest of the
+   visualizer so users can see what they're typing. */
+.annotations-skin input[type="text"],
+.annotations-skin input[type="number"],
+.annotations-skin input[type="password"],
+.annotations-skin input[type="search"],
+.annotations-skin textarea,
+.annotations-skin select {
+  background: var(--surface-1) !important;
+  color: var(--fg-1) !important;
+  border: 1px solid var(--border-1) !important;
+  border-radius: var(--radius-sm) !important;
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 9px;
+}
+.annotations-skin input::placeholder,
+.annotations-skin textarea::placeholder {
+  color: var(--fg-3);
+}
+.annotations-skin input:focus,
+.annotations-skin textarea:focus,
+.annotations-skin select:focus {
+  outline: 2px solid var(--hf-blue) !important;
+  outline-offset: -1px;
+  border-color: var(--hf-blue) !important;
+}
+
+.annotations-skin kbd {
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-xs);
+  padding: 1px 5px;
+  font-size: 10.5px;
+  color: var(--fg-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ----- Style pills (per atom style) — bright on dark ----- */
+.annotations-skin .style-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.annotations-skin .style-pill.subtask {
+  color: var(--hf-yellow);
+  background: rgba(255, 210, 30, 0.12);
+}
+.annotations-skin .style-pill.task_aug {
+  color: var(--hf-cyan);
+  background: rgba(56, 189, 248, 0.12);
+}
+.annotations-skin .style-pill.plan {
+  color: var(--hf-blue);
+  background: rgba(91, 140, 255, 0.12);
+}
+.annotations-skin .style-pill.memory {
+  color: var(--hf-purple);
+  background: rgba(183, 139, 255, 0.12);
+}
+.annotations-skin .style-pill.interjection {
+  color: var(--hf-red);
+  background: rgba(239, 83, 80, 0.12);
+}
+.annotations-skin .style-pill.vqa {
+  color: var(--hf-green);
+  background: rgba(52, 211, 153, 0.12);
+}
+.annotations-skin .style-pill.speech {
+  color: var(--hf-orange);
+  background: rgba(255, 157, 0, 0.12);
+}
+
+.annotations-skin .style-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  display: inline-block;
+}
+.annotations-skin .dot-subtask {
+  background: var(--hf-yellow);
+}
+.annotations-skin .dot-task-aug {
+  background: var(--hf-cyan);
+}
+.annotations-skin .dot-plan {
+  background: var(--hf-blue);
+}
+.annotations-skin .dot-memory {
+  background: var(--hf-purple);
+}
+.annotations-skin .dot-interjection {
+  background: var(--hf-red);
+}
+.annotations-skin .dot-vqa {
+  background: var(--hf-green);
+}
+.annotations-skin .dot-speech {
+  background: var(--hf-orange);
+}
+
+/* ----- Annotation rows ----- */
+.annotations-skin .row-anno {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  align-items: center;
+  position: relative;
+  transition: background 80ms ease;
+}
+.annotations-skin .row-anno:hover {
+  background: var(--surface-1);
+}
+.annotations-skin .row-anno.active {
+  background: rgba(91, 140, 255, 0.12);
+  outline: 1px solid rgba(91, 140, 255, 0.4);
+}
+.annotations-skin .row-anno.active.subtask {
+  background: rgba(255, 210, 30, 0.1);
+  outline-color: rgba(255, 210, 30, 0.4);
+}
+.annotations-skin .row-anno.active.vqa {
+  background: rgba(52, 211, 153, 0.1);
+  outline-color: rgba(52, 211, 153, 0.4);
+}
+.annotations-skin .row-anno.active.interjection {
+  background: rgba(239, 83, 80, 0.1);
+  outline-color: rgba(239, 83, 80, 0.4);
+}
+.annotations-skin .row-anno .ts {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10.5px;
+  color: var(--fg-3);
+  width: 56px;
+  flex: none;
+  text-align: right;
+  white-space: nowrap;
+}
+.annotations-skin .row-anno .delete {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-1);
+  background: var(--surface-1);
+  color: var(--fg-3);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  flex: none;
+}
+.annotations-skin .row-anno .delete:hover {
+  color: var(--hf-red);
+  border-color: var(--hf-red);
+}
+.annotations-skin .jump {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-1);
+  background: var(--surface-1);
+  color: var(--hf-blue);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  flex: none;
+}
+.annotations-skin .jump:hover {
+  background: var(--hf-blue);
+  color: #0b0e14;
+  border-color: var(--hf-blue);
+}
+
+/* ----- Section heads ----- */
+.annotations-skin .section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.annotations-skin .section-head .label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-1);
+}
+.annotations-skin .section-head .hint {
+  font-size: 11.5px;
+  color: var(--fg-3);
+}
+
+/* ----- Hint banner ----- */
+.annotations-skin .hint-banner {
+  background: rgba(255, 210, 30, 0.08);
+  border: 1px solid rgba(255, 210, 30, 0.3);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #fde68a;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* ----- Field labels ----- */
+.annotations-skin .field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.annotations-skin .annotation-workbench {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.annotations-skin .annotation-actionbar,
+.annotations-skin .annotation-composer,
+.annotations-skin .grounding-panel {
+  background: var(--surface-0);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-lg);
+}
+.annotations-skin .annotation-actionbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+}
+.annotations-skin .annotation-actionbar h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--fg-1);
+}
+.annotations-skin .annotation-actionbar p,
+.annotations-skin .annotation-composer p,
+.annotations-skin .grounding-panel p,
+.annotations-skin .list-head p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--fg-3);
+}
+.annotations-skin .actionbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.annotations-skin .dirty-pill {
+  border: 1px solid rgba(251, 146, 60, 0.35);
+  border-radius: 999px;
+  background: rgba(251, 146, 60, 0.12);
+  color: #fdba74;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  text-transform: uppercase;
+}
+.annotations-skin .backend-offline,
+.annotations-skin .save-status {
+  font-size: 11px;
+  color: var(--fg-3);
+}
+.annotations-skin .section-kicker {
+  display: inline-flex;
+  color: var(--fg-2);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.annotations-skin .annotation-composer {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) 1fr;
+  gap: 12px;
+  padding: 12px;
+  align-items: center;
+}
+.annotations-skin .grounding-panel {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 12px;
+}
+.annotations-skin .camera-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* ----- Timeline ----- */
+.annotations-skin .tl {
+  background: var(--surface-0);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-lg);
+  padding: 10px 12px;
+}
+.annotations-skin .tl-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--fg-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+.annotations-skin .tl-head .ts-display {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: var(--fg-1);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.annotations-skin .tl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 24px;
+  margin-bottom: 4px;
+}
+.annotations-skin .tl-row .label {
+  width: 84px;
+  flex: none;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-2);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.annotations-skin .tl-row .track {
+  position: relative;
+  flex: 1;
+  height: 20px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-1);
+  border-radius: 3px;
+}
+.annotations-skin .tl-seg {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  border-radius: 2px;
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 6px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  user-select: none;
+  font-weight: 500;
+}
+.annotations-skin .tl-seg.subtask {
+  background: rgba(255, 210, 30, 0.25);
+  border: 1px solid var(--hf-yellow);
+  color: var(--hf-yellow);
+}
+.annotations-skin .tl-seg.plan {
+  background: rgba(91, 140, 255, 0.25);
+  border: 1px solid var(--hf-blue);
+  color: #c7d6ff;
+}
+.annotations-skin .tl-seg.memory {
+  background: rgba(183, 139, 255, 0.25);
+  border: 1px solid var(--hf-purple);
+  color: #e3d4ff;
+}
+.annotations-skin .tl-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 2px;
+  cursor: pointer;
+  transform: translateX(-2px);
+}
+.annotations-skin .tl-tick.plan {
+  background: var(--hf-blue);
+}
+.annotations-skin .tl-tick.task_aug {
+  background: var(--hf-cyan);
+}
+.annotations-skin .tl-tick.memory {
+  background: var(--hf-purple);
+}
+.annotations-skin .tl-tick.interjection {
+  background: var(--hf-red);
+}
+.annotations-skin .tl-tick.speech {
+  background: var(--hf-orange);
+}
+.annotations-skin .tl-tick.vqa {
+  background: var(--hf-green);
+}
+.annotations-skin .tl-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2px solid var(--hf-yellow);
+  pointer-events: none;
+  z-index: 5;
+  box-shadow: 0 0 8px rgba(255, 210, 30, 0.6);
+}
+.annotations-skin .tl-playhead::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: -6px;
+  width: 10px;
+  height: 10px;
+  background: var(--hf-yellow);
+  transform: rotate(45deg);
+}
+.annotations-skin .tl-ruler {
+  position: relative;
+  height: 16px;
+  margin-left: 94px;
+  border-bottom: 1px solid var(--border-1);
+  margin-bottom: 6px;
+}
+.annotations-skin .tl-ruler .tick-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--border-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  color: var(--fg-3);
+  padding-left: 3px;
+}
+
+/* ----- Quick label popup over the video ----- */
+.annotations-skin .quick-popup {
+  position: absolute;
+  z-index: 30;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 8px;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: auto;
+  backdrop-filter: blur(6px);
+}
+.annotations-skin .quick-popup-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+}
+.annotations-skin .quick-popup-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* ----- Inline quick-add bar (above the timeline) ----- */
+.annotations-skin .quick-add {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+.annotations-skin .annotation-composer .quick-add {
+  justify-content: flex-end;
+}
+.annotations-skin .ts-pill {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--fg-2);
+  white-space: nowrap;
+}
+.annotations-skin .quick-add .ts-pill {
+  flex: none;
+}
+.annotations-skin .hint-banner {
+  background: rgba(52, 211, 153, 0.08);
+  border-color: rgba(52, 211, 153, 0.28);
+  color: #a7f3d0;
+}
+
+/* ----- Workspace: annotation list + inspector ----- */
+.annotations-skin .workspace.inspector-workspace {
+  grid-template-columns: minmax(300px, 34%) minmax(0, 1fr);
+  gap: 12px;
+}
+.annotations-skin .rail.annotation-list {
+  padding: 0;
+  max-height: min(60vh, 560px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.annotations-skin .list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border-1);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: rgba(15, 23, 42, 0.96);
+  backdrop-filter: blur(6px);
+}
+.annotations-skin .rail.annotation-list .rail-group {
+  margin: 8px;
+}
+.annotations-skin .rail.annotation-list .rail-row {
+  align-items: flex-start;
+  padding: 7px 8px;
+}
+.annotations-skin .rail.annotation-list .rail-row .body {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.3;
+}
+.annotations-skin .rail.annotation-list .rail-row.selected {
+  background: rgba(91, 140, 255, 0.2);
+  box-shadow: inset 3px 0 0 var(--hf-blue);
+}
+.annotations-skin .rail.annotation-list .rail-row.active-now:not(.selected) {
+  border-color: rgba(255, 210, 30, 0.45);
+  outline: none;
+}
+.annotations-skin .inspector {
+  position: sticky;
+  top: 8px;
+}
+.annotations-skin .inspector .editor-empty {
+  min-height: 220px;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+}
+.annotations-skin .inspector .editor-empty p {
+  margin: 0;
+  max-width: 360px;
+}
+.annotations-skin .inspector-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.annotations-skin .inspector-head {
+  align-items: flex-start;
+}
+.annotations-skin .inspector-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.annotations-skin .inspector-title strong {
+  display: block;
+  color: var(--fg-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.annotations-skin .inspector-title span:not(.style-pill) {
+  display: block;
+  color: var(--fg-3);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+@media (max-width: 900px) {
+  .annotations-skin .annotation-actionbar,
+  .annotations-skin .grounding-panel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .annotations-skin .annotation-composer,
+  .annotations-skin .workspace.inspector-workspace {
+    grid-template-columns: 1fr;
+  }
+  .annotations-skin .annotation-composer .quick-add {
+    justify-content: flex-start;
+  }
+  .annotations-skin .inspector {
+    position: static;
+  }
+}
+
+/* Legacy quick-add styles kept for popup/control compatibility. */
+.annotations-skin .quick-add {
+  border-radius: var(--radius-md);
+}
+.annotations-skin .quick-add.legacy {
+  padding: 8px 10px;
+  background: var(--surface-0);
+  border: 1px solid var(--border-1);
+}
+.annotations-skin .quick-add .ts-pill {
+  flex: none;
+}
+.annotations-skin .quick-add .grow {
+  flex: 1;
+  min-width: 200px;
+}
+.annotations-skin .quick-add .add-btn {
+  background: var(--hf-blue);
+  color: #0b0e14;
+  border: 1px solid var(--hf-blue);
+  border-radius: var(--radius-sm);
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.annotations-skin .quick-add .add-btn:hover {
+  filter: brightness(1.1);
+}
+.annotations-skin .quick-add .add-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ----- Workspace: 2-column rail + editor ----- */
+.annotations-skin .workspace {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .annotations-skin .workspace {
+    grid-template-columns: 1fr;
+  }
+}
+.annotations-skin .rail {
+  background: var(--surface-0);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.annotations-skin .rail-empty {
+  padding: 24px 8px;
+  font-size: 12px;
+  color: var(--fg-3);
+  text-align: center;
+}
+.annotations-skin .rail-group {
+  margin-bottom: 6px;
+}
+.annotations-skin .rail-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-3);
+}
+.annotations-skin .rail-group-head .count {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+}
+.annotations-skin .rail-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--fg-1);
+  border: 1px solid transparent;
+}
+.annotations-skin .rail-row:hover {
+  background: var(--surface-1);
+}
+.annotations-skin .rail-row.selected {
+  background: rgba(91, 140, 255, 0.16);
+  border-color: var(--hf-blue);
+}
+.annotations-skin .rail-row .ts {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10.5px;
+  color: var(--fg-3);
+  width: 56px;
+  flex: none;
+  text-align: right;
+}
+.annotations-skin .rail-row .body {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.annotations-skin .rail-row.active-now {
+  outline: 2px solid var(--hf-yellow);
+  outline-offset: -1px;
+}
+
+/* ----- Editor pane (right side of workspace) ----- */
+.annotations-skin .editor {
+  background: var(--surface-0);
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+.annotations-skin .editor-empty {
+  padding: 40px 16px;
+  font-size: 13px;
+  color: var(--fg-3);
+  text-align: center;
+}
+.annotations-skin .editor-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-1);
+}
+.annotations-skin .editor-head .right {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+.annotations-skin .editor-head .icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-1);
+  background: var(--surface-1);
+  color: var(--fg-2);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+.annotations-skin .editor-head .icon-btn:hover {
+  color: var(--fg-1);
+  border-color: var(--border-2);
+}
+.annotations-skin .editor-head .icon-btn.danger:hover {
+  color: var(--hf-red);
+  border-color: var(--hf-red);
+}
+.annotations-skin .editor .field {
+  margin-bottom: 10px;
+}
+.annotations-skin .editor .field > input,
+.annotations-skin .editor .field > select,
+.annotations-skin .editor .field > textarea {
+  width: 100%;
+}
+.annotations-skin .editor .field > textarea {
+  min-height: 74px;
+  resize: vertical;
+  line-height: 1.45;
+}
+.annotations-skin .editor .ts-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.annotations-skin .editor .ts-row input {
+  width: 100px;
+}
+.annotations-skin .editor .ts-row .frame-pill {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--fg-3);
+  cursor: pointer;
+}
+.annotations-skin .editor .ts-row .frame-pill:hover {
+  color: var(--fg-1);
+  background: var(--surface-1);
+}
+
+/* ----- Timeline drag handles + tooltip + draggable playhead ----- */
+.annotations-skin .tl-seg .resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 2;
+}
+.annotations-skin .tl-seg .resize.l {
+  left: 0;
+}
+.annotations-skin .tl-seg .resize.r {
+  right: 0;
+}
+.annotations-skin .tl-seg .resize:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.annotations-skin .tl-seg.dragging {
+  opacity: 0.85;
+  outline: 2px solid var(--hf-yellow);
+  outline-offset: -1px;
+}
+.annotations-skin .tl-row .track.creating {
+  outline: 1px dashed var(--hf-blue);
+}
+.annotations-skin .tl-create-preview {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  background: rgba(255, 210, 30, 0.3);
+  border: 1px dashed var(--hf-yellow);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 4;
+}
+.annotations-skin .tl-playhead-handle {
+  position: absolute;
+  top: -6px;
+  width: 14px;
+  height: 14px;
+  background: var(--hf-yellow);
+  border: 2px solid #0b0e14;
+  border-radius: 999px;
+  transform: translate(-7px, 0);
+  cursor: ew-resize;
+  pointer-events: auto;
+  z-index: 6;
+}
+.annotations-skin .tl-tooltip {
+  position: fixed;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.96);
+  color: var(--fg-1);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 12px;
+  max-width: 320px;
+  pointer-events: none;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(6px);
+  line-height: 1.35;
+}
+.annotations-skin .tl-tooltip .meta {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  color: var(--fg-3);
+  margin-bottom: 2px;
+}

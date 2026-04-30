@@ -37,6 +37,7 @@ This tool is designed to help robotics researchers and practitioners quickly ins
 - **Action Insights Panel:** Data-driven analysis tools to guide training configuration — includes autocorrelation, state-action alignment, speed distribution, and cross-episode variance heatmap.
 - **Filtering Panel:** Identify and flag problematic episodes (low movement, jerky motion, outlier length) for removal. Exports flagged episode IDs as a ready-to-run LeRobot CLI command.
 - **3D URDF Viewer:** Visualize robot joint poses frame-by-frame in an interactive 3D scene, with end-effector trail rendering. Supports SO-100, SO-101, and OpenArm bimanual robots.
+- **Annotations Panel:** Hand-edit the v3.1 language schema (`language_persistent` + `language_events`) — subtask, plan, memory, interjection + paired speech, and VQA atoms with bounding-box / keypoint / count / attribute / spatial answers. VQA bboxes and keypoints render as overlays on the video player; drag or click on a camera to draw new ones. Backed by an optional FastAPI service (in `backend/`) for parquet rewrites and HF Hub push.
 - **Efficient Data Loading:** Uses parquet and JSON loading for large dataset support, with pagination, chunking, and lazy-loaded panels for fast initial load.
 - **Responsive UI:** Built with React, Next.js, and Tailwind CSS for a fast, modern user experience.
 
@@ -100,6 +101,43 @@ bun run format
 ### Environment Variables
 
 - `DATASET_URL`: (optional) Base URL for dataset hosting (defaults to HuggingFace Datasets).
+- `NEXT_PUBLIC_ANNOTATE_BACKEND_URL`: (optional) URL of the FastAPI annotation
+  backend (`backend/app.py`). When set, the Annotations tab can save edits and
+  rewrite parquet shards / push to the Hub. When unset the tab is read/edit
+  only with sessionStorage persistence.
+
+## Annotations backend (optional)
+
+The Annotations tab edits LeRobot v3.1 language atoms — `language_persistent`
+(broadcast subtask/plan/memory) and `language_events` (per-frame
+interjection / vqa / speech) — and renders existing bbox/keypoint atoms over
+the video player. Edits live in `sessionStorage` by default; to write the
+new columns into `data/chunk-*/file-*.parquet` (matching the writer in
+[lerobot#3471](https://github.com/huggingface/lerobot/pull/3471)) and push the
+result to the Hub, run the bundled FastAPI service:
+
+```bash
+# 1. install + start the backend (port 7861 by default)
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app:app --port 7861 --reload
+
+# 2. start the visualizer with the backend URL configured
+cd ..
+NEXT_PUBLIC_ANNOTATE_BACKEND_URL=http://127.0.0.1:7861 bun run dev
+```
+
+The backend exposes:
+
+- `POST /api/dataset/load` — load a dataset by `repo_id` or `local_path`
+- `GET  /api/episodes/{ep}/atoms` — list atoms for an episode
+- `POST /api/episodes/{ep}/atoms` — replace atoms (event timestamps are
+  snapped to exact source-frame timestamps before persisting)
+- `GET  /api/episodes/{ep}/frame_timestamps` — used client-side for snapping
+- `POST /api/export` — rewrite parquet with the new language columns plus
+  the dataset-level `tools` column (drops legacy `subtask_index`)
+- `POST /api/push_to_hub` — export and push to a target repo
 
 ## Docker Deployment
 

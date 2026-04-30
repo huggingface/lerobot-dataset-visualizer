@@ -15,17 +15,20 @@ const PlaybackBar: React.FC = () => {
 
   const sliderActiveRef = React.useRef(false);
   const wasPlayingRef = React.useRef(false);
+  const sliderValueRef = React.useRef(currentTime);
   const [sliderValue, setSliderValue] = React.useState(currentTime);
 
   // Only update sliderValue from context if not dragging
   React.useEffect(() => {
     if (!sliderActiveRef.current) {
+      sliderValueRef.current = currentTime;
       setSliderValue(currentTime);
     }
   }, [currentTime]);
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const t = Number(e.target.value);
+    sliderValueRef.current = t;
     setSliderValue(t);
     // Seek videos immediately while dragging (no debounce)
     seek(t);
@@ -40,7 +43,7 @@ const PlaybackBar: React.FC = () => {
   const handleSliderMouseUp = () => {
     sliderActiveRef.current = false;
     // Final seek to exact slider position
-    seek(sliderValue);
+    seek(sliderValueRef.current);
     if (wasPlayingRef.current) {
       setIsPlaying(true);
     }

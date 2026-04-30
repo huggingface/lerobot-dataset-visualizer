@@ -64,7 +64,10 @@ export const TimeProvider: React.FC<{
       listeners.current.forEach((fn) => fn(t));
 
       if (source === "external") {
+        lastRenderTime.current = performance.now();
+        setCurrentTimeState(t);
         setExternalSeekVersion((v) => v + 1);
+        return;
       }
 
       // Throttle React state updates — during playback, timeupdate fires ~4×/sec

@@ -7,6 +7,12 @@ import { SimpleVideosPlayer } from "@/components/simple-videos-player";
 import PlaybackBar from "@/components/playback-bar";
 import { TimeProvider, useTime } from "@/context/time-context";
 import { FlaggedEpisodesProvider } from "@/context/flagged-episodes-context";
+import {
+  AnnotationsProvider,
+  useAnnotations,
+} from "@/context/annotations-context";
+import { AnnotationsPanel } from "@/components/annotations-panel";
+import { AnnotationsTimeline } from "@/components/annotations-timeline";
 import Sidebar from "@/components/side-nav";
 import StatsPanel from "@/components/stats-panel";
 import OverviewPanel from "@/components/overview-panel";
@@ -41,6 +47,7 @@ const DataRecharts = lazy(() => import("@/components/data-recharts"));
 
 type ActiveTab =
   | "episodes"
+  | "annotations"
   | "statistics"
   | "frames"
   | "insights"
@@ -180,10 +187,33 @@ export default function EpisodeViewer({
   return (
     <TimeProvider duration={data!.duration}>
       <FlaggedEpisodesProvider>
-        <EpisodeViewerInner data={data!} org={org} dataset={dataset} />
+        <AnnotationsProvider>
+          <EpisodeBootstrap data={data!} />
+          <EpisodeViewerInner data={data!} org={org} dataset={dataset} />
+        </AnnotationsProvider>
       </FlaggedEpisodesProvider>
     </TimeProvider>
   );
+}
+
+/** Wires the loaded episode into the AnnotationsProvider. */
+function EpisodeBootstrap({ data }: { data: EpisodeData }) {
+  const { setEpisode } = useAnnotations();
+  useEffect(() => {
+    setEpisode(
+      data.episodeId,
+      { repoId: data.datasetInfo.repoId },
+      data.languageAtoms,
+      data.frameTimestamps,
+    );
+  }, [
+    data.episodeId,
+    data.datasetInfo.repoId,
+    data.languageAtoms,
+    data.frameTimestamps,
+    setEpisode,
+  ]);
+  return null;
 }
 
 function EpisodeViewerInner({
@@ -274,6 +304,7 @@ function EpisodeViewerInner({
       stored &&
       [
         "episodes",
+        "annotations",
         "statistics",
         "frames",
         "insights",
@@ -550,6 +581,11 @@ function EpisodeViewerInner({
       {/* Top tab bar */}
       <div className="flex items-center border-b border-white/5 bg-[var(--surface-0)] shrink-0">
         {renderTab("episodes", "Episodes")}
+        {renderTab(
+          "annotations",
+          "Annotations",
+          "Edit subtask / plan / memory / interjection / VQA atoms (lerobot v3.1 schema)",
+        )}
         {hasURDFSupport(datasetInfo.robot_type) &&
           datasetInfo.codebase_version >= "v3.0" &&
           renderTab("urdf", "3D Replay")}
@@ -570,7 +606,9 @@ function EpisodeViewerInner({
       {/* Body: sidebar + content */}
       <div className="flex flex-1 min-h-0">
         {/* Sidebar — on Episodes and 3D Replay tabs */}
-        {(activeTab === "episodes" || activeTab === "urdf") && (
+        {(activeTab === "episodes" ||
+          activeTab === "annotations" ||
+          activeTab === "urdf") && (
           <Sidebar
             datasetInfo={datasetInfo}
             paginatedEpisodes={paginatedEpisodes}
@@ -666,6 +704,30 @@ function EpisodeViewerInner({
 
               <PlaybackBar />
             </>
+          )}
+
+          {activeTab === "annotations" && (
+            <div className="annotations-skin flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <p className="text-base font-medium text-slate-200 truncate">
+                  {datasetInfo.repoId}
+                </p>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 tabular">
+                  Episode · {episodeId}
+                </p>
+              </div>
+              {videosInfo.length > 0 && (
+                <SimpleVideosPlayer
+                  videosInfo={videosInfo}
+                  onVideosReady={() => setVideosReady(true)}
+                />
+              )}
+              <PlaybackBar />
+              <AnnotationsTimeline duration={data.duration} />
+              <AnnotationsPanel
+                cameraKeys={videosInfo.map((v) => v.filename)}
+              />
+            </div>
           )}
 
           {activeTab === "statistics" && (
