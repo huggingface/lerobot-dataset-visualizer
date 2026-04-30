@@ -345,7 +345,9 @@ def _frame_timestamps(state: DatasetState, episode_index: int) -> list[float]:
     return ts
 
 
-def _coerce_existing_atom(raw: Any) -> dict[str, Any] | None:
+def _coerce_existing_atom(
+    raw: Any, fallback_ts: float | None = None
+) -> dict[str, Any] | None:
     if raw is None:
         return None
     if not isinstance(raw, dict):
@@ -361,11 +363,21 @@ def _coerce_existing_atom(raw: Any) -> dict[str, Any] | None:
     camera = raw.get("camera")
     if isinstance(camera, str) and not camera:
         camera = None
+    raw_ts = raw.get("timestamp")
+    if raw_ts is None:
+        # v3.1 event rows don't carry a ``timestamp`` field in the struct —
+        # the writer drops it because the parquet row's frame timestamp is
+        # already the event's firing time. Use the caller-provided fallback
+        # so dedup doesn't collapse every event atom into one (timestamp=0.0)
+        # entry.
+        timestamp = float(fallback_ts) if fallback_ts is not None else 0.0
+    else:
+        timestamp = float(raw_ts)
     return {
         "role": str(raw["role"]),
         "content": None if raw.get("content") is None else str(raw.get("content")),
         "style": raw.get("style"),
-        "timestamp": float(raw.get("timestamp", 0.0)),
+        "timestamp": timestamp,
         "camera": camera if isinstance(camera, str) else None,
         "tool_calls": tool_calls or None,
     }
@@ -386,16 +398,26 @@ def _extract_existing_atoms_from_table(table: pa.Table, episode_index: int) -> l
         if LANGUAGE_EVENTS in table.column_names
         else None
     )
+    # Event rows don't carry their own ``timestamp`` in the v3.1 struct;
+    # the parquet row's frame timestamp IS the event's firing time. Read
+    # the timestamp column so we can pass it as a fallback to
+    # ``_coerce_existing_atom`` — without this, every event row defaults
+    # to timestamp=0.0 and dedup collapses them all into one.
+    ts_col = (
+        table.column("timestamp").to_pylist()
+        if "timestamp" in table.column_names
+        else None
+    )
 
     atoms: list[dict[str, Any]] = []
     seen: set[str] = set()
     persistent_loaded = False
 
-    def add_many(raw_atoms: Any) -> None:
+    def add_many(raw_atoms: Any, fallback_ts: float | None = None) -> None:
         if not raw_atoms:
             return
         for raw in raw_atoms:
-            atom = _coerce_existing_atom(raw)
+            atom = _coerce_existing_atom(raw, fallback_ts=fallback_ts)
             if atom is None:
                 continue
             key = json.dumps(atom, sort_keys=True, default=str)
@@ -411,7 +433,8 @@ def _extract_existing_atoms_from_table(table: pa.Table, episode_index: int) -> l
             add_many(persistent_col[row_idx])
             persistent_loaded = True
         if events_col is not None:
-            add_many(events_col[row_idx])
+            row_ts = float(ts_col[row_idx]) if ts_col is not None else None
+            add_many(events_col[row_idx], fallback_ts=row_ts)
 
     atoms.sort(key=lambda a: (a["timestamp"], a.get("style") or "", a.get("role") or ""))
     return atoms
@@ -682,11 +705,18 @@ def get_episode_atoms(
             try:
                 schema = pq.read_schema(path)
                 columns = ["episode_index"]
+                # Always pull the row timestamp — needed as a fallback for
+                # event rows whose v3.1 struct intentionally omits it.
+                if "timestamp" in schema.names:
+                    columns.append("timestamp")
                 if LANGUAGE_PERSISTENT in schema.names:
                     columns.append(LANGUAGE_PERSISTENT)
                 if LANGUAGE_EVENTS in schema.names:
                     columns.append(LANGUAGE_EVENTS)
-                if len(columns) > 1:
+                if (
+                    LANGUAGE_PERSISTENT in columns
+                    or LANGUAGE_EVENTS in columns
+                ):
                     atoms = _extract_existing_atoms_from_table(
                         pq.read_table(path, columns=columns),
                         episode_index,
