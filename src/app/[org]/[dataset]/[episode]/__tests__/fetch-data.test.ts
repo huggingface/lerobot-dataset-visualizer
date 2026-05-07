@@ -1,6 +1,39 @@
 import { describe, expect, test } from "bun:test";
-import { computeColumnMinMax } from "@/app/[org]/[dataset]/[episode]/fetch-data";
+import {
+  computeColumnMinMax,
+  isChartableNumericFeature,
+} from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import type { ChartRow } from "@/app/[org]/[dataset]/[episode]/fetch-data";
+
+// ---------------------------------------------------------------------------
+// Feature dtype detection
+// ---------------------------------------------------------------------------
+
+describe("isChartableNumericFeature", () => {
+  test("includes float64 vector features used by v2.1 LeRobot datasets", () => {
+    expect(
+      isChartableNumericFeature({
+        dtype: "float64",
+        shape: [43],
+      }),
+    ).toBe(true);
+  });
+
+  test("excludes videos and multidimensional numeric tensors from charts", () => {
+    expect(
+      isChartableNumericFeature({
+        dtype: "video",
+        shape: [480, 640, 3],
+      }),
+    ).toBe(false);
+    expect(
+      isChartableNumericFeature({
+        dtype: "float32",
+        shape: [1, 72],
+      }),
+    ).toBe(false);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // computeColumnMinMax

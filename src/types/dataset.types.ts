@@ -7,7 +7,21 @@
 export type DatasetVersion = "v2.0" | "v2.1" | "v3.0";
 
 // Feature data types
-export type FeatureDType = "video" | "float32" | "int32" | "int64" | "bool";
+export type FeatureDType =
+  | "video"
+  | "float16"
+  | "float32"
+  | "float64"
+  | "int8"
+  | "int16"
+  | "int32"
+  | "int64"
+  | "uint8"
+  | "uint16"
+  | "uint32"
+  | "uint64"
+  | "bool"
+  | "boolean";
 
 // Video-specific feature
 export interface VideoFeature {
@@ -25,7 +39,7 @@ export interface VideoFeature {
 
 // Numeric feature (state, action, etc.)
 export interface NumericFeature {
-  dtype: "float32" | "int32" | "int64";
+  dtype: Exclude<FeatureDType, "video" | "bool" | "boolean">;
   shape: number[];
   names: string[] | { motors: string[] } | { [key: string]: string[] } | null;
   fps?: number;
