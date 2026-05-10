@@ -46,6 +46,7 @@ type ActiveTab =
   | "insights"
   | "filtering"
   | "doctor"
+  | "leguard"
   | "urdf";
 
 // Subscribes to `currentTime` so its parent doesn't have to. Keeping this
@@ -278,6 +279,8 @@ function EpisodeViewerInner({
         "frames",
         "insights",
         "filtering",
+        "doctor",
+        "leguard",
         "urdf",
       ].includes(stored)
     ) {
@@ -562,6 +565,11 @@ function EpisodeViewerInner({
           "Doctor",
           "Dataset quality diagnostics (powered by lerobot-doctor)",
         )}
+        {renderTab(
+          "leguard",
+          "LeGuard",
+          "Dataset guardrails diagnostics (powered by LeGuard)",
+        )}
         <div className="ml-auto">
           <HfAuthButton variant="tab" />
         </div>
@@ -738,6 +746,38 @@ function EpisodeViewerInner({
               <iframe
                 src={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${org}/${dataset}`}
                 title="lerobot-doctor"
+                className="flex-1 w-full rounded border border-slate-700 bg-white"
+                sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+              />
+            </div>
+          )}
+
+          {activeTab === "leguard" && (
+            <div className="flex flex-col h-full">
+              <div className="flex items-center justify-between px-1 pb-2 text-xs text-slate-400">
+                <span>
+                  Dataset guardrails diagnostics &mdash; powered by{" "}
+                  <a
+                    href="https://huggingface.co/spaces/praedico/LeGuard"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:text-slate-200"
+                  >
+                    LeGuard
+                  </a>
+                </span>
+                <a
+                  href={`https://praedico-leguard.hf.space/?dataset=${org}/${dataset}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-slate-200"
+                >
+                  Open in new tab
+                </a>
+              </div>
+              <iframe
+                src={`https://praedico-leguard.hf.space/?dataset=${org}/${dataset}`}
+                title="LeGuard"
                 className="flex-1 w-full rounded border border-slate-700 bg-white"
                 sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
               />
