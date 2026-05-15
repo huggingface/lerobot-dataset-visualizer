@@ -45,6 +45,22 @@ const FilteringPanel = lazy(() => import("@/components/filtering-panel"));
 // videos start downloading in parallel with the chart bundle.
 const DataRecharts = lazy(() => import("@/components/data-recharts"));
 
+/** Skip global playback / navigation shortcuts while typing in a field. */
+function isKeyboardFocusInsideTextEntry(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable || target.closest('[contenteditable="true"]')) {
+    return true;
+  }
+  const tag = target.tagName;
+  return (
+    tag === "TEXTAREA" ||
+    tag === "SELECT" ||
+    tag === "INPUT" ||
+    tag === "BUTTON" ||
+    (tag === "A" && target.hasAttribute("href"))
+  );
+}
+
 type ActiveTab =
   | "episodes"
   | "annotations"
@@ -514,8 +530,10 @@ function EpisodeViewerInner({
     const onKeyDown = (e: KeyboardEvent) => {
       const { key } = e;
       const s = keyStateRef.current;
+      const inTextEntry = isKeyboardFocusInsideTextEntry(e.target);
 
       if (key === " ") {
+        if (inTextEntry) return;
         e.preventDefault();
         if (s.activeTab === "urdf") {
           urdfPlayToggleRef.current?.();
@@ -523,6 +541,7 @@ function EpisodeViewerInner({
           setIsPlaying((prev: boolean) => !prev);
         }
       } else if (key === "ArrowDown" || key === "ArrowUp") {
+        if (inTextEntry) return;
         e.preventDefault();
         if (s.activeTab === "urdf") {
           const nextEp =
