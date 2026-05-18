@@ -258,8 +258,29 @@ function EpisodeViewerInner({
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Tab state & lazy stats
-  const [activeTab, setActiveTab] = useState<ActiveTab>("episodes");
+  // Tab state & lazy stats — read sessionStorage in the initializer so the
+  // correct tab renders on the very first frame (no post-mount flash).
+  // Safe because EpisodeViewerInner only mounts client-side (behind a loading gate).
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    if (typeof window !== "undefined") {
+      const stored = sessionStorage.getItem("activeTab");
+      if (
+        stored &&
+        [
+          "episodes",
+          "annotations",
+          "statistics",
+          "frames",
+          "insights",
+          "filtering",
+          "urdf",
+        ].includes(stored)
+      ) {
+        return stored as ActiveTab;
+      }
+    }
+    return "episodes";
+  });
   const isLoading = activeTab === "episodes" && (!videosReady || !chartsReady);
 
   useEffect(() => {
@@ -278,8 +299,16 @@ function EpisodeViewerInner({
     useState<EpisodeFramesData | null>(null);
   const [framesLoading, setFramesLoading] = useState(false);
   const framesLoadedRef = useRef(false);
-  const [framesFlaggedOnly, setFramesFlaggedOnly] = useState(false);
-  const [sidebarFlaggedOnly, setSidebarFlaggedOnly] = useState(false);
+  const [framesFlaggedOnly, setFramesFlaggedOnly] = useState(() =>
+    typeof window !== "undefined"
+      ? sessionStorage.getItem("framesFlaggedOnly") === "true"
+      : false,
+  );
+  const [sidebarFlaggedOnly, setSidebarFlaggedOnly] = useState(() =>
+    typeof window !== "undefined"
+      ? sessionStorage.getItem("sidebarFlaggedOnly") === "true"
+      : false,
+  );
   const [crossEpData, setCrossEpData] =
     useState<CrossEpisodeVarianceData | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -312,29 +341,6 @@ function EpisodeViewerInner({
       void import("@/components/urdf-viewer");
     }
   }, [datasetInfo.robot_type, datasetInfo.codebase_version]);
-
-  // Hydrate UI state from sessionStorage after mount (avoids SSR/client mismatch)
-  useEffect(() => {
-    const stored = sessionStorage.getItem("activeTab");
-    if (
-      stored &&
-      [
-        "episodes",
-        "annotations",
-        "statistics",
-        "frames",
-        "insights",
-        "filtering",
-        "urdf",
-      ].includes(stored)
-    ) {
-      setActiveTab(stored as ActiveTab);
-    }
-    if (sessionStorage.getItem("framesFlaggedOnly") === "true")
-      setFramesFlaggedOnly(true);
-    if (sessionStorage.getItem("sidebarFlaggedOnly") === "true")
-      setSidebarFlaggedOnly(true);
-  }, []);
 
   // Persist UI state across episode navigations. One effect instead of
   // three near-identical writes — fewer commit hooks per render and the
@@ -644,7 +650,9 @@ function EpisodeViewerInner({
                     setUrdfEpisode(ep);
                     urdfChangerRef.current?.(ep);
                   }
-                : undefined
+                : activeTab === "annotations"
+                  ? (ep) => router.push(`./episode_${ep}`)
+                  : undefined
             }
           />
         )}
