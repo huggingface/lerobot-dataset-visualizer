@@ -46,14 +46,23 @@ const LABEL_WIDTH = 84;
 const DRAG_THRESHOLD_PX = 4;
 
 // `render` controls how a lane draws: "span-edit" = resizable + drag-to-create
-// (subtask), "span-ro" = read-only spans (plan), "tick" = point markers.
+// (subtask), "span-ro" = read-only spans (task_aug / plan), "tick" = point
+// markers.
 const TRACK_GROUPS = [
   {
     column: "persistent",
     title: "Persistent",
     sub: "language_persistent · broadcast across every frame",
     tracks: [
-      { key: "task_aug", label: "task aug", color: "#38bdf8", render: "tick" },
+      // task_aug applies to the whole episode (it's a rephrasing of the task,
+      // stored at t0 but persistent across every frame), so it reads as a
+      // full-episode span — matching how the annotation pipeline treats it.
+      {
+        key: "task_aug",
+        label: "task aug",
+        color: "#38bdf8",
+        render: "span-ro",
+      },
       {
         key: "subtask",
         label: "subtask",
@@ -155,7 +164,7 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
     };
 
     const subtask: SpanMarker[] = [];
-    const task_aug: TickMarker[] = [];
+    const task_aug: SpanMarker[] = [];
     const plan: SpanMarker[] = [];
     const memory: TickMarker[] = [];
     const interjection: TickMarker[] = [];
@@ -203,16 +212,24 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
       });
     });
 
+    // Task augmentations → full-episode spans: each is a rephrasing of the
+    // task and applies to the whole episode (persistent, stored at t0), so it
+    // spans [t0, t_last] rather than sitting as a tick at the start.
     atoms.forEach((a, i) => {
       if (a.style === "task_aug") {
         task_aug.push({
-          kind: "tick",
-          t: a.timestamp,
+          kind: "span",
+          start: 0,
+          end: duration,
           label: a.content || "task augmentation",
           atom: a,
           atomIdx: i,
         });
-      } else if (a.style === "memory") {
+      }
+    });
+
+    atoms.forEach((a, i) => {
+      if (a.style === "memory") {
         memory.push({
           kind: "tick",
           t: a.timestamp,
@@ -569,10 +586,20 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
                         />
                       )}
 
-                      {/* Read-only persistent spans (plan): active until the
-                          next refresh. Click seeks + selects; no resize. */}
+                      {/* Read-only persistent spans (task_aug spans the whole
+                          episode; plan is active until its next refresh).
+                          Click seeks + selects; no resize. */}
                       {tk.render === "span-ro" &&
-                        lanes.plan.map((s, k) => {
+                        (
+                          lanes[tk.key as "task_aug" | "plan"] as Array<{
+                            kind: "span";
+                            start: number;
+                            end: number;
+                            label: string;
+                            atom: LanguageAtom;
+                            atomIdx: number;
+                          }>
+                        ).map((s, k) => {
                           const left = (s.start / duration) * 100;
                           const width = Math.max(
                             0.3,

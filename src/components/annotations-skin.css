@@ -401,6 +401,11 @@
   user-select: none;
   font-weight: 500;
 }
+.annotations-skin .tl-seg.task_aug {
+  background: rgba(56, 189, 248, 0.18);
+  border: 1px solid #38bdf8;
+  color: #bae6fd;
+}
 .annotations-skin .tl-seg.subtask {
   background: rgba(255, 210, 30, 0.25);
   border: 1px solid var(--hf-yellow);
