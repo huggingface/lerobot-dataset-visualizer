@@ -2,13 +2,20 @@
 
 /**
  * Multi-track timeline for v3.1 language atoms — like a video-editing
- * scrubber, but stacked vertically by style:
+ * scrubber, but stacked vertically by style and split into two banded
+ * sections that mirror the two language columns:
  *
- *   - task_aug: persistent task phrasings shown as point-in-time ticks at episode start.
- *   - subtask: persistent atoms shown as filled spans from each emit time
- *     until the next subtask emit (or episode end). Numbered. Resizable
- *     edges; the empty subtask track also accepts drag-to-create.
- *   - plan, memory: persistent atoms as tick marks (point-in-time emits).
+ *   PERSISTENT (language_persistent — broadcast across every frame):
+ *   - task_aug: task phrasings shown as point-in-time ticks at episode start.
+ *   - subtask: filled spans from each emit time until the next subtask emit
+ *     (or episode end). Numbered. Resizable edges; the empty subtask track
+ *     also accepts drag-to-create.
+ *   - plan: filled (read-only) spans from each plan emit until the next plan
+ *     refresh (or episode end) — a plan is the active state until superseded,
+ *     so it reads as a span, not an instantaneous event.
+ *   - memory: tick marks (state snapshots captured at subtask boundaries).
+ *
+ *   EVENTS (language_events — fire on a single frame):
  *   - interjections + speech: combined event track.
  *   - vqa: event track.
  *
@@ -35,18 +42,42 @@ import {
   type LanguageAtom,
 } from "../types/language.types";
 
-const TRACK_HEIGHT = 22;
-const TRACK_GAP = 4;
 const LABEL_WIDTH = 84;
 const DRAG_THRESHOLD_PX = 4;
 
-const TRACKS = [
-  { key: "task_aug", label: "task aug", color: "#38bdf8" },
-  { key: "subtask", label: "subtask", color: "#ffd21e" },
-  { key: "plan", label: "plan", color: "#5b8cff" },
-  { key: "memory", label: "memory", color: "#b78bff" },
-  { key: "interjection", label: "speech", color: "#ef5350" },
-  { key: "vqa", label: "vqa", color: "#34d399" },
+// `render` controls how a lane draws: "span-edit" = resizable + drag-to-create
+// (subtask), "span-ro" = read-only spans (plan), "tick" = point markers.
+const TRACK_GROUPS = [
+  {
+    column: "persistent",
+    title: "Persistent",
+    sub: "language_persistent · broadcast across every frame",
+    tracks: [
+      { key: "task_aug", label: "task aug", color: "#38bdf8", render: "tick" },
+      {
+        key: "subtask",
+        label: "subtask",
+        color: "#ffd21e",
+        render: "span-edit",
+      },
+      { key: "plan", label: "plan", color: "#5b8cff", render: "span-ro" },
+      { key: "memory", label: "memory", color: "#b78bff", render: "tick" },
+    ],
+  },
+  {
+    column: "events",
+    title: "Events",
+    sub: "language_events · fire on a single frame",
+    tracks: [
+      {
+        key: "interjection",
+        label: "speech",
+        color: "#ef5350",
+        render: "tick",
+      },
+      { key: "vqa", label: "vqa", color: "#34d399", render: "tick" },
+    ],
+  },
 ] as const;
 
 interface Props {
@@ -125,7 +156,7 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
 
     const subtask: SpanMarker[] = [];
     const task_aug: TickMarker[] = [];
-    const plan: TickMarker[] = [];
+    const plan: SpanMarker[] = [];
     const memory: TickMarker[] = [];
     const interjection: TickMarker[] = [];
     const vqa: TickMarker[] = [];
@@ -150,20 +181,34 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
       });
     });
 
+    // Plans → read-only spans: a plan is the active state from its emit time
+    // until the next plan refresh (or episode end), exactly like a subtask
+    // span. Rendering it as a span (not a tick) makes its persistent nature
+    // visible — it isn't a point-in-time event.
+    const planWithIdx = atoms
+      .map((a, i) => ({ a, i }))
+      .filter(({ a }) => a.style === "plan")
+      .sort((x, y) => x.a.timestamp - y.a.timestamp);
+    planWithIdx.forEach(({ a, i }, k) => {
+      const start = a.timestamp;
+      const end =
+        k + 1 < planWithIdx.length ? planWithIdx[k + 1].a.timestamp : duration;
+      plan.push({
+        kind: "span",
+        start,
+        end,
+        label: a.content || "plan",
+        atom: a,
+        atomIdx: i,
+      });
+    });
+
     atoms.forEach((a, i) => {
       if (a.style === "task_aug") {
         task_aug.push({
           kind: "tick",
           t: a.timestamp,
           label: a.content || "task augmentation",
-          atom: a,
-          atomIdx: i,
-        });
-      } else if (a.style === "plan") {
-        plan.push({
-          kind: "tick",
-          t: a.timestamp,
-          label: a.content || "plan",
           atom: a,
           atomIdx: i,
         });
@@ -422,164 +467,203 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
         })}
       </div>
 
-      {/* Tracks */}
-      {TRACKS.map((tk) => (
-        <div className="tl-row" key={tk.key}>
-          <div className="label">
-            <span className={`style-dot dot-${tk.key}`} />
-            {tk.label}
-          </div>
-          <div
-            className={`track ${
-              tk.key === "subtask" && drag?.kind === "create" ? "creating" : ""
-            }`}
-            ref={tk.key === "subtask" ? trackBandRef : undefined}
-            onClick={tk.key !== "subtask" ? onTrackBandClick : undefined}
-            onPointerDown={
-              tk.key === "subtask" ? onSubtaskTrackDown : undefined
-            }
-          >
-            {/* Track contents */}
-            {tk.key === "subtask" &&
-              lanes.subtask.map((s, k) => {
-                const left = (s.start / duration) * 100;
-                const width = Math.max(
-                  0.3,
-                  ((s.end - s.start) / duration) * 100,
-                );
-                return (
-                  <div
-                    key={k}
-                    className={`tl-seg subtask ${drag?.kind === "edge" && drag.atomIdx === s.atomIdx ? "dragging" : ""}`}
-                    style={{ left: `${left}%`, width: `${width}%` }}
-                    onClick={(e) => onSpanBodyClick(e, s.atomIdx, s.start)}
-                    onMouseEnter={(e) =>
-                      showTip(
-                        e,
-                        `subtask · ${s.start.toFixed(2)}s → ${s.end.toFixed(2)}s`,
-                        s.label,
-                      )
-                    }
-                    onMouseMove={moveTip}
-                    onMouseLeave={hideTip}
-                  >
-                    <span style={{ opacity: 0.7, fontSize: 10 }}>{k}</span>
-                    <span
-                      style={{
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      {s.label}
-                    </span>
-                    {/* Resize handles */}
+      {/* Tracks, grouped into Persistent / Events sections that mirror the
+           two language columns. The whole region is position:relative so the
+           playhead can span its full height via top/bottom (no brittle
+           per-track pixel math that section headers would throw off). The
+           playhead's x uses calc() to start at the track band's left edge
+           (after the LABEL_WIDTH label column + 10px gap). */}
+      {(() => {
+        const bandLeft = `${LABEL_WIDTH + 10}px`;
+        const playheadLeft = `calc(${bandLeft} + ${
+          duration ? currentTime / duration : 0
+        } * (100% - ${bandLeft}))`;
+        return (
+          <div className="tl-tracks" style={{ position: "relative" }}>
+            {TRACK_GROUPS.map((group) => (
+              <div className="tl-section" key={group.column}>
+                <div className={`tl-section-head ${group.column}`}>
+                  <span className="tl-section-title">{group.title}</span>
+                  <span className="tl-section-sub">{group.sub}</span>
+                </div>
+                {group.tracks.map((tk) => (
+                  <div className="tl-row" key={tk.key}>
+                    <div className="label">
+                      <span className={`style-dot dot-${tk.key}`} />
+                      {tk.label}
+                    </div>
                     <div
-                      className="resize l"
-                      onPointerDown={(e) => onEdgeDown(e, "l", k)}
-                    />
-                    {/* The right edge only makes sense if there's a next
-                        subtask (its timestamp = our end). For the last
-                        span, we hide the right handle. */}
-                    {k + 1 < lanes.subtask.length && (
-                      <div
-                        className="resize r"
-                        onPointerDown={(e) => onEdgeDown(e, "r", k)}
-                      />
-                    )}
+                      className={`track ${
+                        tk.key === "subtask" && drag?.kind === "create"
+                          ? "creating"
+                          : ""
+                      }`}
+                      ref={tk.key === "subtask" ? trackBandRef : undefined}
+                      onClick={
+                        tk.render === "span-edit" ? undefined : onTrackBandClick
+                      }
+                      onPointerDown={
+                        tk.key === "subtask" ? onSubtaskTrackDown : undefined
+                      }
+                    >
+                      {/* Editable subtask spans (resize + drag-to-create) */}
+                      {tk.render === "span-edit" &&
+                        lanes.subtask.map((s, k) => {
+                          const left = (s.start / duration) * 100;
+                          const width = Math.max(
+                            0.3,
+                            ((s.end - s.start) / duration) * 100,
+                          );
+                          return (
+                            <div
+                              key={k}
+                              className={`tl-seg subtask ${drag?.kind === "edge" && drag.atomIdx === s.atomIdx ? "dragging" : ""}`}
+                              style={{ left: `${left}%`, width: `${width}%` }}
+                              onClick={(e) =>
+                                onSpanBodyClick(e, s.atomIdx, s.start)
+                              }
+                              onMouseEnter={(e) =>
+                                showTip(
+                                  e,
+                                  `subtask · ${s.start.toFixed(2)}s → ${s.end.toFixed(2)}s`,
+                                  s.label,
+                                )
+                              }
+                              onMouseMove={moveTip}
+                              onMouseLeave={hideTip}
+                            >
+                              <span style={{ opacity: 0.7, fontSize: 10 }}>
+                                {k}
+                              </span>
+                              <span
+                                style={{
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {s.label}
+                              </span>
+                              <div
+                                className="resize l"
+                                onPointerDown={(e) => onEdgeDown(e, "l", k)}
+                              />
+                              {k + 1 < lanes.subtask.length && (
+                                <div
+                                  className="resize r"
+                                  onPointerDown={(e) => onEdgeDown(e, "r", k)}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+
+                      {/* Drag-to-create preview rectangle (subtask only) */}
+                      {tk.render === "span-edit" && drag?.kind === "create" && (
+                        <div
+                          className="tl-create-preview"
+                          style={{
+                            left: `${(Math.min(drag.startTs ?? 0, drag.endTs ?? 0) / duration) * 100}%`,
+                            width: `${(Math.abs((drag.endTs ?? 0) - (drag.startTs ?? 0)) / duration) * 100}%`,
+                          }}
+                        />
+                      )}
+
+                      {/* Read-only persistent spans (plan): active until the
+                          next refresh. Click seeks + selects; no resize. */}
+                      {tk.render === "span-ro" &&
+                        lanes.plan.map((s, k) => {
+                          const left = (s.start / duration) * 100;
+                          const width = Math.max(
+                            0.3,
+                            ((s.end - s.start) / duration) * 100,
+                          );
+                          return (
+                            <div
+                              key={k}
+                              className={`tl-seg ${tk.key}`}
+                              style={{ left: `${left}%`, width: `${width}%` }}
+                              onClick={(e) =>
+                                onSpanBodyClick(e, s.atomIdx, s.start)
+                              }
+                              onMouseEnter={(e) =>
+                                showTip(
+                                  e,
+                                  `${tk.label} · ${s.start.toFixed(2)}s → ${s.end.toFixed(2)}s`,
+                                  s.label,
+                                )
+                              }
+                              onMouseMove={moveTip}
+                              onMouseLeave={hideTip}
+                            >
+                              <span
+                                style={{
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {s.label}
+                              </span>
+                            </div>
+                          );
+                        })}
+
+                      {/* Point-in-time tick markers (task_aug / memory /
+                          interjection / vqa) */}
+                      {tk.render === "tick" &&
+                        (
+                          lanes[
+                            tk.key as
+                              | "task_aug"
+                              | "memory"
+                              | "interjection"
+                              | "vqa"
+                          ] as Array<{
+                            kind: "tick";
+                            t: number;
+                            label: string;
+                            atom: LanguageAtom;
+                            atomIdx: number;
+                            subtype?: string;
+                          }>
+                        ).map((m, i) => {
+                          const left = (m.t / duration) * 100;
+                          return (
+                            <div
+                              key={i}
+                              className={`tl-tick ${tk.key}`}
+                              style={{ left: `${left}%` }}
+                              onClick={(e) => onTickClick(e, m.atomIdx, m.t)}
+                              onMouseEnter={(e) =>
+                                showTip(
+                                  e,
+                                  `${tk.label}${m.subtype ? ` · ${m.subtype}` : ""} · ${m.t.toFixed(3)}s`,
+                                  m.label,
+                                )
+                              }
+                              onMouseMove={moveTip}
+                              onMouseLeave={hideTip}
+                            />
+                          );
+                        })}
+                    </div>
                   </div>
-                );
-              })}
+                ))}
+              </div>
+            ))}
 
-            {/* Drag-to-create preview rectangle */}
-            {tk.key === "subtask" && drag?.kind === "create" && (
-              <div
-                className="tl-create-preview"
-                style={{
-                  left: `${(Math.min(drag.startTs ?? 0, drag.endTs ?? 0) / duration) * 100}%`,
-                  width: `${(Math.abs((drag.endTs ?? 0) - (drag.startTs ?? 0)) / duration) * 100}%`,
-                }}
-              />
-            )}
-
-            {/* Tick markers for non-subtask tracks */}
-            {tk.key !== "subtask" &&
-              lanes[tk.key as keyof typeof lanes] !== lanes.subWithIdx &&
-              (
-                lanes[
-                  tk.key as
-                    | "task_aug"
-                    | "plan"
-                    | "memory"
-                    | "interjection"
-                    | "vqa"
-                ] as Array<{
-                  kind: "tick";
-                  t: number;
-                  label: string;
-                  atom: LanguageAtom;
-                  atomIdx: number;
-                  subtype?: string;
-                }>
-              ).map((m, i) => {
-                const left = (m.t / duration) * 100;
-                return (
-                  <div
-                    key={i}
-                    className={`tl-tick ${tk.key}`}
-                    style={{ left: `${left}%` }}
-                    onClick={(e) => onTickClick(e, m.atomIdx, m.t)}
-                    onMouseEnter={(e) =>
-                      showTip(
-                        e,
-                        `${tk.label}${m.subtype ? ` · ${m.subtype}` : ""} · ${m.t.toFixed(3)}s`,
-                        m.label,
-                      )
-                    }
-                    onMouseMove={moveTip}
-                    onMouseLeave={hideTip}
-                  />
-                );
-              })}
-
-            {/* Playhead — only render in the first track band; the band is
-                 a sibling of the others, but visually we render the playhead
-                 spanning all tracks via a dedicated overlay below. */}
+            {/* Playhead — spans the full tracks region via top/bottom. */}
+            <div className="tl-playhead" style={{ left: playheadLeft }} />
+            <div
+              className="tl-playhead-handle"
+              style={{ left: playheadLeft, top: -6 }}
+              onPointerDown={onPlayheadDown}
+              title="Drag to scrub"
+            />
           </div>
-        </div>
-      ))}
-
-      {/* Playhead overlay spanning all tracks — positioned absolutely over
-           the subtask track band (which we've reffed for x→ts math). */}
-      <div
-        style={{
-          position: "relative",
-          marginLeft: LABEL_WIDTH + 10,
-          height: 0,
-        }}
-      >
-        <div
-          className="tl-playhead"
-          style={{
-            position: "absolute",
-            left: `${(currentTime / duration) * 100}%`,
-            // Span all tracks above us — vertical positioning is via the
-            // playhead's absolute placement against the timeline container.
-            top: -((TRACK_HEIGHT + TRACK_GAP) * TRACKS.length + 2),
-            height: (TRACK_HEIGHT + TRACK_GAP) * TRACKS.length + 4,
-          }}
-        />
-        <div
-          className="tl-playhead-handle"
-          style={{
-            position: "absolute",
-            left: `${(currentTime / duration) * 100}%`,
-            top: -((TRACK_HEIGHT + TRACK_GAP) * TRACKS.length + 8),
-          }}
-          onPointerDown={onPlayheadDown}
-          title="Drag to scrub"
-        />
-      </div>
+        );
+      })()}
 
       {/* Tooltip */}
       {tooltip && (

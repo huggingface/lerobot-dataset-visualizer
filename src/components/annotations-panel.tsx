@@ -341,6 +341,12 @@ interface RailGroupDef {
   key: string;
   title: string;
   dotClass: string;
+  // Which v3.1 language column this style is written to. Used to group the
+  // rail under "Persistent" vs "Events" headers so it's clear at a glance
+  // that task_aug / subtask / plan / memory broadcast across the whole
+  // episode (language_persistent) while interjection / speech / vqa fire on
+  // a single frame (language_events). Mirrors columnForStyle() exactly.
+  column: "persistent" | "events";
   match: (
     atom: LanguageAtom,
     otherCamera: (a: LanguageAtom) => boolean,
@@ -359,6 +365,7 @@ const RAIL_GROUPS: RailGroupDef[] = [
     key: "task_aug",
     title: "task aug",
     dotClass: "dot-task-aug",
+    column: "persistent",
     match: (a) => a.style === "task_aug",
     label: (a) => a.content || "(empty)",
   },
@@ -366,6 +373,7 @@ const RAIL_GROUPS: RailGroupDef[] = [
     key: "subtask",
     title: "subtask",
     dotClass: "dot-subtask",
+    column: "persistent",
     match: (a) => a.style === "subtask",
     label: (a) => a.content || "(empty)",
   },
@@ -373,6 +381,7 @@ const RAIL_GROUPS: RailGroupDef[] = [
     key: "plan",
     title: "plan",
     dotClass: "dot-plan",
+    column: "persistent",
     match: (a) => a.style === "plan",
     label: (a, { firstLine }) => firstLine(a.content),
   },
@@ -380,6 +389,7 @@ const RAIL_GROUPS: RailGroupDef[] = [
     key: "memory",
     title: "memory",
     dotClass: "dot-memory",
+    column: "persistent",
     match: (a) => a.style === "memory",
     label: (a, { firstLine }) => firstLine(a.content),
   },
@@ -387,6 +397,7 @@ const RAIL_GROUPS: RailGroupDef[] = [
     key: "interjection",
     title: "interjection",
     dotClass: "dot-interjection",
+    column: "events",
     match: (a) => a.style === "interjection",
     label: (a) => a.content || "(empty)",
   },
@@ -394,6 +405,7 @@ const RAIL_GROUPS: RailGroupDef[] = [
     key: "speech",
     title: "speech",
     dotClass: "dot-speech",
+    column: "events",
     match: (a) => isSpeechAtom(a),
     label: (a) => speechText(a) || "(empty)",
   },
@@ -401,6 +413,7 @@ const RAIL_GROUPS: RailGroupDef[] = [
     key: "vqa",
     title: "vqa",
     dotClass: "dot-vqa",
+    column: "events",
     match: (a, otherCamera) => a.style === "vqa" && !otherCamera(a),
     label: (a, { activeCamera }) => {
       const role = a.role === "user" ? "Q" : "A";
@@ -638,15 +651,37 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
               Add text above or draw on the active video.
             </div>
           )}
-          {groups.map(({ def, entries }) => (
-            <RailGroup
-              key={def.key}
-              title={def.title}
-              dotClass={def.dotClass}
-              entries={entries}
-              currentTime={currentTime}
-            />
-          ))}
+          {(["persistent", "events"] as const).map((column) => {
+            const colGroups = groups.filter(({ def }) => def.column === column);
+            const total = colGroups.reduce(
+              (n, { entries }) => n + entries.length,
+              0,
+            );
+            if (total === 0) return null;
+            return (
+              <div className="rail-column" key={column}>
+                <div className={`rail-column-head ${column}`}>
+                  <span className="rail-column-title">
+                    {column === "persistent" ? "Persistent" : "Events"}
+                  </span>
+                  <span className="rail-column-sub">
+                    {column === "persistent"
+                      ? "language_persistent · broadcast across every frame"
+                      : "language_events · fire on a single frame"}
+                  </span>
+                </div>
+                {colGroups.map(({ def, entries }) => (
+                  <RailGroup
+                    key={def.key}
+                    title={def.title}
+                    dotClass={def.dotClass}
+                    entries={entries}
+                    currentTime={currentTime}
+                  />
+                ))}
+              </div>
+            );
+          })}
         </div>
 
         <div className="editor inspector">

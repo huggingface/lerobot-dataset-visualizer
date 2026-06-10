@@ -479,18 +479,30 @@ def _validate_atom(atom: dict[str, Any]) -> None:
         )
 
 
-def _normalize_atom(atom: dict[str, Any]) -> dict[str, Any]:
+def _normalize_atom(atom: dict[str, Any], *, with_timestamp: bool) -> dict[str, Any]:
+    """Coerce an atom into a language-column struct row.
+
+    Field order matches the canonical schema in ``lerobot.datasets.language``
+    (``PERSISTENT_ROW_FIELDS`` / ``EVENT_ROW_FIELDS``); pyarrow infers the
+    struct schema from insertion order. Persistent rows carry their own
+    ``timestamp`` (the moment the state became active); event rows do NOT —
+    the parquet frame's ``timestamp`` column IS the event's firing time, so a
+    per-row ``timestamp`` field would be redundant (matches lerobot#3471's
+    ``language_event_row_arrow_type``, which omits it).
+    """
     camera = atom.get("camera")
     if isinstance(camera, str) and not camera:
         camera = None
-    return {
+    row: dict[str, Any] = {
         "role": str(atom["role"]),
         "content": None if atom.get("content") is None else str(atom["content"]),
         "style": atom.get("style"),
-        "timestamp": float(atom.get("timestamp", 0.0)),
-        "camera": camera if isinstance(camera, str) else None,
-        "tool_calls": list(atom["tool_calls"]) if atom.get("tool_calls") else None,
     }
+    if with_timestamp:
+        row["timestamp"] = float(atom.get("timestamp", 0.0))
+    row["camera"] = camera if isinstance(camera, str) else None
+    row["tool_calls"] = list(atom["tool_calls"]) if atom.get("tool_calls") else None
+    return row
 
 
 # --- Export -------------------------------------------------------------------
@@ -519,27 +531,28 @@ def _materialize_table(table: pa.Table, atoms_by_ep: dict[int, list[dict[str, An
         if atoms is None:
             atoms = _extract_existing_atoms_from_table(table, int(ep_idx))
         persistent_rows: list[dict[str, Any]] = []
-        event_rows: list[dict[str, Any]] = []
         frame_ts = sorted({ts_col[i] for i in range(n_rows) if episode_col[i] == ep_idx})
 
+        buckets: dict[float, list[dict[str, Any]]] = {}
         for atom in atoms:
-            normalized = _normalize_atom(atom)
             col = column_for_style(atom.get("style"))
             if col == LANGUAGE_PERSISTENT:
-                persistent_rows.append(normalized)
+                persistent_rows.append(_normalize_atom(atom, with_timestamp=True))
             else:
+                # The event row's firing time lives in the parquet frame's
+                # ``timestamp`` column, so we bucket by the snapped timestamp
+                # but do NOT store it inside the event struct (matches the
+                # lerobot#3471 writer / canonical schema).
+                ts = float(atom.get("timestamp", 0.0))
                 if frame_ts:
-                    normalized["timestamp"] = _snap(normalized["timestamp"], frame_ts)
-                event_rows.append(normalized)
+                    ts = _snap(ts, frame_ts)
+                buckets.setdefault(ts, []).append(_normalize_atom(atom, with_timestamp=False))
 
         persistent_rows.sort(
             key=lambda r: (r["timestamp"], r.get("style") or "", r.get("role") or "")
         )
         persistent_by_ep[ep_idx] = persistent_rows
 
-        buckets: dict[float, list[dict[str, Any]]] = {}
-        for r in event_rows:
-            buckets.setdefault(r["timestamp"], []).append(r)
         for ts in buckets:
             buckets[ts].sort(key=lambda r: (r.get("style") or "", r.get("role") or ""))
         events_by_ep_ts[ep_idx] = buckets
@@ -564,12 +577,37 @@ def _materialize_table(table: pa.Table, atoms_by_ep: dict[int, list[dict[str, An
 
     persistent_arr = pa.array(per_row_persistent)
     events_arr = pa.array(per_row_events)
-    tools_json = json.dumps([SAY_TOOL_SCHEMA], sort_keys=True)
-    tools_arr = pa.array([tools_json] * n_rows, type=pa.string())
 
-    new_names = keep_names + [LANGUAGE_PERSISTENT, LANGUAGE_EVENTS, "tools"]
-    new_cols = keep_cols + [persistent_arr, events_arr, tools_arr]
+    # NOTE: we deliberately do NOT add a per-row ``tools`` column. The ``say``
+    # tool *schema* is dataset-level metadata and lives in
+    # ``meta/info.json["tools"]`` (written in ``_do_export``), exactly as the
+    # lerobot#3471 pipeline does. Tool *calls* travel per-row inside the
+    # ``tool_calls`` field of the language structs. Any pre-existing ``tools``
+    # column is stripped in the keep-loop above.
+    new_names = keep_names + [LANGUAGE_PERSISTENT, LANGUAGE_EVENTS]
+    new_cols = keep_cols + [persistent_arr, events_arr]
     return pa.Table.from_arrays(new_cols, names=new_names), n_persistent_total, n_event_total
+
+
+def _materialize_tree(src: Path, dst: Path, *, force_copy: bool) -> None:
+    """Recreate ``src`` under ``dst`` as real files (no symlinks).
+
+    Hardlinks each file when ``force_copy`` is False and the source/target sit
+    on the same filesystem (cheap, self-contained, uploadable); otherwise
+    falls back to a byte copy. The result is always a standalone tree that
+    survives being moved and is uploaded verbatim by ``upload_folder``.
+    """
+
+    def _copy_file(s: str, d: str) -> None:
+        if not force_copy:
+            try:
+                os.link(s, d)
+                return
+            except OSError:
+                pass
+        shutil.copy2(s, d)
+
+    shutil.copytree(src, dst, copy_function=_copy_file)
 
 
 def _do_export(state: DatasetState, output_dir: str | None, copy_videos: bool) -> dict[str, Any]:
@@ -595,7 +633,18 @@ def _do_export(state: DatasetState, output_dir: str | None, copy_videos: bool) -
     info["features"].pop("subtask_index", None)
     info["features"][LANGUAGE_PERSISTENT] = {"dtype": "language", "shape": [1], "names": None}
     info["features"][LANGUAGE_EVENTS] = {"dtype": "language", "shape": [1], "names": None}
-    info["features"]["tools"] = {"dtype": "string", "shape": [1], "names": None}
+    # The ``say`` tool schema is dataset-level metadata, stored at the top of
+    # info.json under "tools" (NOT as a per-frame feature). Mirrors the
+    # lerobot#3471 pipeline's ``_ensure_annotation_metadata_in_info``: merge
+    # additively so any user-declared tools are preserved, and stop emitting
+    # the stray ``tools`` feature older exports added.
+    info["features"].pop("tools", None)
+    existing_tools = info.get("tools") or []
+    tool_names = {
+        (t.get("function") or {}).get("name") for t in existing_tools if isinstance(t, dict)
+    }
+    if SAY_TOOL_SCHEMA["function"]["name"] not in tool_names:
+        info["tools"] = [*existing_tools, SAY_TOOL_SCHEMA]
     info_path.write_text(json.dumps(info, indent=2))
 
     # Drop legacy meta files if present
@@ -604,7 +653,12 @@ def _do_export(state: DatasetState, output_dir: str | None, copy_videos: bool) -
         if p.exists():
             p.unlink()
 
-    # Make sure data is downloaded for HF datasets
+    # Make sure data AND videos are downloaded for HF datasets. The export
+    # must be a self-contained, loadable dataset (the writer only rewrites
+    # the parquet shards; videos are carried over untouched), so we pull the
+    # video shards too — otherwise the exported folder is missing the
+    # observation videos and won't load. Mirrors the lerobot#3471 pipeline,
+    # which annotates a full local snapshot in place.
     data_dir = state.root / "data"
     data_files = sorted(data_dir.rglob("*.parquet"))
     if not data_files and state.repo_id:
@@ -613,7 +667,7 @@ def _do_export(state: DatasetState, output_dir: str | None, copy_videos: bool) -
             repo_type="dataset",
             revision=state.revision,
             local_dir=state.root,
-            allow_patterns=["data/**/*.parquet"],
+            allow_patterns=["data/**/*.parquet", "videos/**"],
         )
         data_files = sorted(data_dir.rglob("*.parquet"))
     if not data_files:
@@ -633,18 +687,22 @@ def _do_export(state: DatasetState, output_dir: str | None, copy_videos: bool) -
         n_events += ne_n
         pq.write_table(new_table, dst_path)
 
+    # Carry over the video shards so the export is self-contained. We
+    # materialize *real* files (hardlink where the filesystem allows it, else
+    # copy) rather than symlinking the source tree: a symlinked ``videos/``
+    # breaks as soon as the folder is moved and is not uploaded by
+    # ``HfApi.upload_folder``, which is exactly the "downloaded dataset isn't
+    # usable" problem. ``copy_videos=True`` forces a full byte copy (used by
+    # the push-to-hub path, where the upload reads the bytes anyway).
     src_videos = state.root / "videos"
     dst_videos = out_root / "videos"
     if src_videos.exists():
-        if dst_videos.exists():
-            shutil.rmtree(dst_videos)
-        if copy_videos:
-            shutil.copytree(src_videos, dst_videos)
-        else:
-            try:
-                os.symlink(src_videos, dst_videos)
-            except OSError:
-                shutil.copytree(src_videos, dst_videos)
+        if dst_videos.exists() or dst_videos.is_symlink():
+            if dst_videos.is_symlink():
+                dst_videos.unlink()
+            else:
+                shutil.rmtree(dst_videos)
+        _materialize_tree(src_videos, dst_videos, force_copy=copy_videos)
 
     return {"output_dir": str(out_root), "persistent_rows": n_persistent, "event_rows": n_events}
 

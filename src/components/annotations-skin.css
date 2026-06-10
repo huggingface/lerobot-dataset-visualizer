@@ -481,6 +481,49 @@
   padding-left: 3px;
 }
 
+/* ----- Persistent / Events section banding (timeline + rail) ----- */
+.annotations-skin .tl-section {
+  margin-bottom: 6px;
+}
+.annotations-skin .tl-section-head,
+.annotations-skin .rail-column-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0 4px 2px;
+  margin-bottom: 4px;
+  border-left: 3px solid var(--border-2, #2a3344);
+  padding-left: 8px;
+}
+.annotations-skin .tl-section-head.persistent,
+.annotations-skin .rail-column-head.persistent {
+  border-left-color: var(--hf-blue, #5b8cff);
+}
+.annotations-skin .tl-section-head.events,
+.annotations-skin .rail-column-head.events {
+  border-left-color: var(--hf-green, #34d399);
+}
+.annotations-skin .tl-section-title,
+.annotations-skin .rail-column-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-1);
+}
+.annotations-skin .tl-section-sub,
+.annotations-skin .rail-column-sub {
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--fg-3);
+}
+.annotations-skin .rail-column {
+  margin-bottom: 10px;
+}
+.annotations-skin .rail-column-head {
+  margin-top: 2px;
+}
+
 /* ----- Quick label popup over the video ----- */
 .annotations-skin .quick-popup {
   position: absolute;
