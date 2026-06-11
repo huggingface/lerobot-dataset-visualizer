@@ -57,11 +57,13 @@ const TRACK_GROUPS = [
       // task_aug applies to the whole episode (it's a rephrasing of the task,
       // stored at t0 but persistent across every frame), so it reads as a
       // full-episode span — matching how the annotation pipeline treats it.
+      // We collapse all rephrasings into a single full-width bar with a ×N badge;
+      // clicking opens a popover listing every phrasing.
       {
         key: "task_aug",
         label: "task aug",
         color: "#38bdf8",
-        render: "span-ro",
+        render: "task-aug",
       },
       {
         key: "subtask",
@@ -277,6 +279,17 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
   const onTickClick = (e: React.MouseEvent, atomIdx: number, t: number) => {
     e.stopPropagation();
     jumpAndSelect(t, atomIdx);
+  };
+
+  // ============ task_aug collapsed-bar click ============
+  // All phrasings share t0, so there is no spatial way to disambiguate them
+  // on the track — clicking just selects the first one (the full list is
+  // shown on hover). The inspector + rail still expose every rewording.
+  const onTaskAugClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const augs = lanes.task_aug;
+    if (augs.length === 0) return;
+    jumpAndSelect(0, augs[0].atomIdx);
   };
 
   // ============ Subtask span drag ============
@@ -586,12 +599,54 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
                         />
                       )}
 
-                      {/* Read-only persistent spans (task_aug spans the whole
-                          episode; plan is active until its next refresh).
-                          Click seeks + selects; no resize. */}
+                      {/* Collapsed task-augmentation bar: one full-width bar
+                          (rephrasings carry no temporal info), with a ×N badge
+                          when there is more than one. Click selects the single
+                          phrasing, or opens the rewordings popover. */}
+                      {tk.render === "task-aug" &&
+                        lanes.task_aug.length > 0 &&
+                        (() => {
+                          const augs = lanes.task_aug;
+                          const primary = augs[0];
+                          const count = augs.length;
+                          return (
+                            <div
+                              className="tl-seg task_aug"
+                              style={{ left: "0%", width: "100%" }}
+                              onClick={onTaskAugClick}
+                              onMouseEnter={(e) =>
+                                showTip(
+                                  e,
+                                  `task aug · ${count} phrasing${count > 1 ? "s" : ""}`,
+                                  count > 1
+                                    ? augs.map((s) => `• ${s.label}`).join("\n")
+                                    : primary.label,
+                                )
+                              }
+                              onMouseMove={moveTip}
+                              onMouseLeave={hideTip}
+                            >
+                              <span
+                                style={{
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {primary.label}
+                              </span>
+                              {count > 1 && (
+                                <span className="aug-count">×{count}</span>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                      {/* Read-only persistent spans (plan is active until its
+                          next refresh). Click seeks + selects; no resize. */}
                       {tk.render === "span-ro" &&
                         (
-                          lanes[tk.key as "task_aug" | "plan"] as Array<{
+                          lanes[tk.key as "plan"] as Array<{
                             kind: "span";
                             start: number;
                             end: number;
@@ -641,11 +696,7 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
                       {tk.render === "tick" &&
                         (
                           lanes[
-                            tk.key as
-                              | "task_aug"
-                              | "memory"
-                              | "interjection"
-                              | "vqa"
+                            tk.key as "memory" | "interjection" | "vqa"
                           ] as Array<{
                             kind: "tick";
                             t: number;
