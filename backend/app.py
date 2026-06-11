@@ -802,7 +802,9 @@ def set_episode_atoms(episode_index: int, payload: EpisodeAtomsPayload) -> JSONR
             atom["timestamp"] = _snap(float(atom["timestamp"]), frame_ts)
     state.annotations[episode_index] = EpisodeAnnotations(atoms=atoms)
     _save_annotations(state)
-    return JSONResponse({"ok": True, "saved": len(atoms)})
+    return JSONResponse(
+        {"ok": True, "saved": len(atoms), "path": str(state.annotations_path)}
+    )
 
 
 @app.get("/api/episodes/{episode_index}/frame_timestamps")

@@ -117,7 +117,7 @@ interface AnnotationsContextType {
   setPendingDraw: (draw: PendingDraw) => void;
   clearPendingDraw: () => void;
 
-  save: () => Promise<{ ok: boolean; error?: string }>;
+  save: () => Promise<{ ok: boolean; error?: string; path?: string | null }>;
   // Snap an arbitrary timestamp to the nearest source frame (when known).
   snap: (ts: number) => number;
 }
@@ -306,21 +306,26 @@ export const AnnotationsProvider: React.FC<{ children: React.ReactNode }> = ({
   const save = useCallback(async (): Promise<{
     ok: boolean;
     error?: string;
+    path?: string | null;
   }> => {
     if (episodeId == null) return { ok: false, error: "no episode" };
     if (!isAnnotateBackendEnabled()) {
       // Persistence is sessionStorage-only — that already happened in the
-      // effect above. Nothing to do.
+      // effect above. Report the storage key as the location so the UI can
+      // show a concrete "path" instead of a vague offline message.
       savedSnapshotRef.current = JSON.stringify(atoms);
       setDirty(false);
-      return { ok: true };
+      return {
+        ok: true,
+        path: `sessionStorage://${storageKey(identKey(ident), episodeId)}`,
+      };
     }
     setSaving(true);
     try {
-      await saveEpisodeAtoms(episodeId, ident, atoms);
+      const { path } = await saveEpisodeAtoms(episodeId, ident, atoms);
       savedSnapshotRef.current = JSON.stringify(atoms);
       setDirty(false);
-      return { ok: true };
+      return { ok: true, path };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     } finally {

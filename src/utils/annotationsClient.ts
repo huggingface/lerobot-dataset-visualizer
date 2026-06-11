@@ -84,8 +84,8 @@ export async function saveEpisodeAtoms(
   episodeId: number,
   ident: DatasetIdent,
   atoms: LanguageAtom[],
-): Promise<void> {
-  if (!ENV_URL) return;
+): Promise<{ path: string | null }> {
+  if (!ENV_URL) return { path: null };
   const res = await fetch(
     new URL(`/api/episodes/${episodeId}/atoms`, ENV_URL).toString(),
     {
@@ -103,6 +103,8 @@ export async function saveEpisodeAtoms(
     const text = await res.text().catch(() => `${res.status}`);
     throw new Error(text || `save atoms: ${res.status}`);
   }
+  const data = (await res.json().catch(() => ({}))) as { path?: string | null };
+  return { path: data.path ?? null };
 }
 
 export async function fetchFrameTimestamps(

@@ -519,7 +519,15 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
   // ============ Save / export ============
   const handleSave = async () => {
     const r = await save();
-    setExportStatus(r.ok ? "Saved." : `Save failed: ${r.error || "unknown"}`);
+    if (!r.ok) {
+      setExportStatus(`Save failed: ${r.error || "unknown"}`);
+    } else {
+      setExportStatus(
+        r.path
+          ? `Saved episode to ${r.path}`
+          : "Saved episode (backend did not report a path — update/restart backend/app.py).",
+      );
+    }
   };
 
   const handleSaveDataset = async () => {
