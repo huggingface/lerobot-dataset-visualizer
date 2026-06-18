@@ -63,6 +63,81 @@ TRANSCODE_CACHE = Path(
     os.environ.get("LEROBOT_TRANSCODE_CACHE", "/tmp/lerobot_visualizer_transcode_cache")
 )
 
+
+def _env_gb_to_bytes(name: str, default_gb: float) -> int:
+    try:
+        gb = float(os.environ.get(name, default_gb))
+    except ValueError:
+        gb = default_gb
+    return int(gb * 1024**3)
+
+
+# Soft disk caps. After a new file is cached/downloaded the oldest files are
+# evicted until the directory is back under its cap (LRU by mtime). The big
+# consumers are downloaded video shards (CACHE_ROOT) and their transcoded copies
+# (TRANSCODE_CACHE); both grow without bound across datasets otherwise. Set the
+# env vars to 0 to disable eviction.
+TRANSCODE_CACHE_MAX_BYTES = _env_gb_to_bytes("LEROBOT_TRANSCODE_CACHE_MAX_GB", 10)
+DATASET_CACHE_MAX_BYTES = _env_gb_to_bytes("LEROBOT_DATASET_CACHE_MAX_GB", 20)
+_prune_guard = threading.Lock()
+
+
+def _prune_cache_dir(
+    root: Path,
+    max_bytes: int,
+    *,
+    keep: Path | None = None,
+    skip_parts: tuple[str, ...] = (),
+    skip_suffixes: tuple[str, ...] = (),
+) -> None:
+    """Evict the oldest files under ``root`` until its size is <= ``max_bytes``.
+
+    LRU by mtime (callers bump it with ``os.utime`` on cache hits). ``keep`` is
+    never evicted; files whose path contains a ``skip_parts`` segment (e.g.
+    ``meta``) or whose name ends with a ``skip_suffixes`` value (e.g. a partial
+    write) are ignored entirely. Best-effort: missing files / races are skipped.
+    """
+    if max_bytes <= 0 or not root.exists():
+        return
+    with _prune_guard:
+        entries: list[tuple[float, int, Path]] = []
+        total = 0
+        for path in root.rglob("*"):
+            if path.is_symlink() or not path.is_file():
+                continue
+            if skip_parts and any(part in skip_parts for part in path.parts):
+                continue
+            if skip_suffixes and path.name.endswith(skip_suffixes):
+                continue
+            try:
+                st = path.stat()
+            except OSError:
+                continue
+            entries.append((st.st_mtime, st.st_size, path))
+            total += st.st_size
+        if total <= max_bytes:
+            return
+
+        keep_resolved = keep.resolve() if keep else None
+        freed = 0
+        for _mtime, size, path in sorted(entries):  # oldest first
+            if total - freed <= max_bytes:
+                break
+            if keep_resolved and path.resolve() == keep_resolved:
+                continue
+            try:
+                path.unlink()
+                freed += size
+            except OSError:
+                continue
+        if freed:
+            logger.info(
+                "pruned %.1f MB from %s (cap %.1f GB)",
+                freed / 1024**2,
+                root,
+                max_bytes / 1024**3,
+            )
+
 # --- Schema mirrors src/lerobot/datasets/language.py --------------------------
 
 PERSISTENT_STYLES = {"task_aug", "subtask", "plan", "memory"}
@@ -730,7 +805,7 @@ DEPTH_COLORMAP = os.environ.get("LEROBOT_DEPTH_COLORMAP", "viridis")
 
 # Colormap range source: "stats" spans meta/stats.json percentiles (high
 # contrast); "fixed" spans the full encoded depth range from meta/info.json
-# (consistent across datasets, lower contrast).
+# (consistent across cameras/datasets, lower contrast).
 DEPTH_RANGE_MODE = os.environ.get("LEROBOT_DEPTH_RANGE", "stats").lower()
 
 # Percentile keys driving the "stats" window (tighter = higher contrast).
@@ -797,6 +872,7 @@ def _resolve_video_source(
         slug = repo_id.replace("/", "__") + (f"@{revision}" if revision else "")
         root = CACHE_ROOT / slug
         root.mkdir(parents=True, exist_ok=True)
+        existed = (root / rel).exists()
         try:
             downloaded = hf_hub_download(
                 repo_id=repo_id,
@@ -808,7 +884,21 @@ def _resolve_video_source(
             )
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=404, detail=f"could not fetch video: {e}")
-        return Path(downloaded)
+        path = Path(downloaded)
+        try:
+            os.utime(path, None)  # LRU: mark recently used
+        except OSError:
+            pass
+        # Only prune when we actually added a file; skip meta/ (needed by loaded
+        # datasets) and hf_hub's internal .cache bookkeeping.
+        if not existed:
+            _prune_cache_dir(
+                CACHE_ROOT,
+                DATASET_CACHE_MAX_BYTES,
+                keep=path,
+                skip_parts=("meta", ".cache"),
+            )
+        return path
 
     raise HTTPException(status_code=400, detail="need repo_id or local_path")
 
@@ -1147,23 +1237,30 @@ def _ensure_web_playable(
     window = _depth_colormap_window(repo_id, revision, local_path, rel_path, hf_token)
 
     dst = _transcode_cache_path(src, codec, pix_fmt, window)
-    if dst.exists() and dst.stat().st_size > 0:
-        return dst
-
-    with _lock_for(dst.name):
-        # Re-check inside the lock: a concurrent request may have finished
-        # the transcode while we were waiting.
-        if dst.exists() and dst.stat().st_size > 0:
-            return dst
-        logger.info(
-            "transcoding %s (codec=%s pix_fmt=%s window=%s) -> %s",
-            src,
-            codec,
-            pix_fmt,
-            window,
-            dst.name,
-        )
-        _transcode_to_web(src, dst, window)
+    if not (dst.exists() and dst.stat().st_size > 0):
+        with _lock_for(dst.name):
+            # Re-check inside the lock: a concurrent request may have finished
+            # the transcode while we were waiting.
+            if not (dst.exists() and dst.stat().st_size > 0):
+                logger.info(
+                    "transcoding %s (codec=%s pix_fmt=%s window=%s) -> %s",
+                    src,
+                    codec,
+                    pix_fmt,
+                    window,
+                    dst.name,
+                )
+                _transcode_to_web(src, dst, window)
+                _prune_cache_dir(
+                    TRANSCODE_CACHE,
+                    TRANSCODE_CACHE_MAX_BYTES,
+                    keep=dst,
+                    skip_suffixes=(".partial.mp4",),
+                )
+    try:
+        os.utime(dst, None)  # LRU: mark recently used
+    except OSError:
+        pass
     return dst
 
 

@@ -69,6 +69,11 @@ The colormap range comes from the depth quantization params in `meta/info.json`
 
 Falls back to a full-range colormap when the metadata is missing.
 
+Downloaded shards (`CACHE_ROOT`) and their transcoded copies (`TRANSCODE_CACHE`)
+are capped on disk: after a new file is added the oldest are evicted (LRU) back
+under the cap. Defaults are `LEROBOT_DATASET_CACHE_MAX_GB=20` and
+`LEROBOT_TRANSCODE_CACHE_MAX_GB=10`; set either to `0` to disable eviction.
+
 ## Storage layout
 
 Annotations are persisted to `<dataset_root>/meta/lerobot_annotations.json`,
