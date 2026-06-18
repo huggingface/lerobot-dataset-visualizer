@@ -58,15 +58,12 @@ export const SimpleVideosPlayer = ({
   const [enlargedVideo, setEnlargedVideo] = React.useState<string | null>(null);
   const [showHiddenMenu, setShowHiddenMenu] = React.useState(false);
   const [videosReady, setVideosReady] = React.useState(false);
-  // Filenames whose native decode failed (e.g. depth cameras stored as
-  // gray12le). For these we swap the <video> src to the backend transcode
-  // endpoint, which serves a browser-friendly H.264 copy. Empty unless a
-  // decode error actually fires AND a transcode backend is configured.
+  // Filenames whose native decode failed; their <video> src is swapped to the
+  // backend transcode endpoint.
   const [transcodeFallbacks, setTranscodeFallbacks] = React.useState<
     Set<string>
   >(() => new Set());
-  // Tracks which fallbacks we've already pushed to the element via load(), so
-  // the apply-effect doesn't repeatedly reload the same video.
+  // Fallbacks already pushed via load(), so the effect doesn't reload twice.
   const appliedFallbackRef = useRef<Set<string>>(new Set());
 
   const hiddenSet = React.useMemo(() => new Set(hiddenVideos), [hiddenVideos]);
@@ -104,8 +101,8 @@ export const SimpleVideosPlayer = ({
     onVideosReadyRef.current = onVideosReady;
   }, [onVideosReady]);
 
-  // Mirror isPlaying so the transcode-apply effect can re-assert play() after
-  // load() without depending on isPlaying (which would churn the effect).
+  // Mirror isPlaying so the transcode-apply effect can re-assert play() without
+  // depending on it.
   const isPlayingRef = useRef(isPlaying);
   useEffect(() => {
     isPlayingRef.current = isPlaying;
@@ -160,7 +157,6 @@ export const SimpleVideosPlayer = ({
       if (!video) return;
       const info = videosInfo[index];
 
-      // Count this camera toward readiness at most once.
       let counted = false;
       const countReadyOnce = () => {
         if (counted) return;
@@ -216,19 +212,14 @@ export const SimpleVideosPlayer = ({
 
       const handleLoadedData = info.isSegmented
         ? () => {
-            // Seek into the episode's segment. We deliberately DON'T count
-            // readiness here: loadeddata only guarantees the first frame at
-            // position 0, but segmented v3 cameras share one big file and the
-            // byte-range at segmentStart still has to be fetched. Counting now
-            // lets play() start before that range arrives — the camera then
-            // shows a black/stale frame while a luckier camera plays ahead.
+            // Seek into the segment; readiness is counted later, once the
+            // byte-range at segmentStart is buffered (counting now would let
+            // play() start on a black frame for shared v3 segment files).
             video.currentTime = info.segmentStart ?? 0;
           }
         : null;
 
-      // A segmented camera is only ready once it can actually play AT the
-      // seeked segment offset: the seek has finished (!seeking) and it's
-      // buffered to HAVE_FUTURE_DATA. Driven by canplay/seeked below.
+      // Ready only once the seek finished and the segment offset is buffered.
       const handleSegmentReady = info.isSegmented
         ? () => {
             if (video.seeking) return;
@@ -263,14 +254,11 @@ export const SimpleVideosPlayer = ({
       if (info.isSegmented && handleLoadedData && handleSegmentReady) {
         if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
           queueMicrotask(handleLoadedData);
-          // Cover the already-buffered case: when segmentStart needs no seek
-          // (or its data is already cached) canplay/seeked won't re-fire.
+          // Already-buffered case: canplay/seeked won't re-fire.
           queueMicrotask(handleSegmentReady);
         } else {
           video.addEventListener("loadeddata", handleLoadedData);
         }
-        // canplay fires once the post-seek buffer is playable; seeked covers a
-        // segmentStart whose data is already fully cached (no canplay re-fire).
         video.addEventListener("canplay", handleSegmentReady);
         video.addEventListener("seeked", handleSegmentReady);
       } else if (!info.isSegmented) {
@@ -361,11 +349,8 @@ export const SimpleVideosPlayer = ({
     });
   }, [externalSeekVersion, currentTime, videosInfo, videosReady, hiddenSet]);
 
-  // Apply transcode fallbacks: when a filename newly enters the set, React has
-  // already re-rendered the <video> with the backend src; calling load() makes
-  // the element pick it up. We keep the same element (no remount) so the
-  // readiness/loop listeners attached in the big effect above stay live and
-  // fire again for the freshly-loaded transcoded source.
+  // When a filename newly enters the set, load() makes the element pick up the
+  // already-rendered backend src (same element, so listeners stay attached).
   useEffect(() => {
     videoRefs.current.forEach((video, idx) => {
       if (!video) return;
@@ -377,10 +362,8 @@ export const SimpleVideosPlayer = ({
       ) {
         appliedFallbackRef.current.add(filename);
         video.load();
-        // load() resets the element and aborts any in-flight playback. If the
-        // player is already playing (the global play() fired before this
-        // decode-error reload), nothing else will re-issue play() for this
-        // camera — so it would stay frozen while the others run. Re-assert it.
+        // load() aborts playback; re-assert play() so this camera isn't frozen
+        // while the others run.
         if (isPlayingRef.current) {
           video.play().catch((e) => {
             if (e.name !== "AbortError") {
@@ -432,10 +415,8 @@ export const SimpleVideosPlayer = ({
           if (hiddenVideos.includes(info.filename)) return null;
 
           const isEnlarged = enlargedVideo === info.filename;
-          // Depth cameras are routed through the transcode endpoint proactively
-          // (the browser may decode them natively as flat grayscale, so the
-          // onError fallback would never fire and the colormap never apply).
-          // Other cameras only switch to transcode after a decode error.
+          // Depth cameras: route proactively (no decode error fires). Others:
+          // only after onError.
           const wantsTranscode =
             isLikelyDepthCamera(info.filename) ||
             transcodeFallbacks.has(info.filename);
@@ -503,10 +484,7 @@ export const SimpleVideosPlayer = ({
                   crossOrigin="anonymous"
                   src={videoSrc}
                   onError={() => {
-                    // Decode failure (e.g. gray12le depth video). Fall back to
-                    // the backend transcode endpoint once, if available. When
-                    // no backend is configured getTranscodeUrl returns null and
-                    // we leave the original error in place (same as before).
+                    // Fall back to the transcode endpoint once, if configured.
                     if (transcodeFallbacks.has(info.filename)) return;
                     if (!getTranscodeUrl(info.url)) return;
                     setTranscodeFallbacks((prev) => {

@@ -57,9 +57,8 @@ logging.basicConfig(level=logging.INFO)
 
 CACHE_ROOT = Path(os.environ.get("LEROBOT_ANNOTATE_CACHE", "/tmp/lerobot_visualizer_annotate_cache"))
 EXPORT_ROOT = Path(os.environ.get("LEROBOT_ANNOTATE_EXPORT", "/tmp/lerobot_visualizer_annotate_exports"))
-# Where transcoded, browser-friendly copies of otherwise-undecodable videos
-# (e.g. depth cameras stored as gray12le/gray16le) are cached. Keyed by the
-# source file's identity so a given shard is only ever transcoded once.
+# Cache for transcoded copies of undecodable videos (e.g. gray12le depth),
+# keyed by source identity so each shard transcodes once.
 TRANSCODE_CACHE = Path(
     os.environ.get("LEROBOT_TRANSCODE_CACHE", "/tmp/lerobot_visualizer_transcode_cache")
 )
@@ -719,81 +718,39 @@ def _do_export(state: DatasetState, output_dir: str | None, copy_videos: bool) -
 
 # --- Video transcoding --------------------------------------------------------
 #
-# Browsers decode the dataset videos natively via the <video> element, which
-# only handles 8-bit 4:2:0 (yuv420p). Depth/IR cameras are frequently stored
-# as gray12le / gray16le (12- or 16-bit single-channel) or other exotic pixel
-# formats that no browser can decode. The frontend streams videos directly
-# from Hugging Face and only calls this endpoint as a *fallback* when a
-# <video> element fails to decode — so the common case never touches PyAV.
-#
-# Transcoding uses PyAV (in-process FFmpeg bindings) rather than shelling out
-# to an ffmpeg binary: no subprocess, no separate system dependency (PyAV's
-# wheels bundle FFmpeg), and frame-level control over the pixel-format
-# conversion.
-#
-# Strategy (efficient by construction):
-#   1. Probe the source pixel format (cheap, container header only).
-#   2. Only grayscale depth/IR sources (e.g. gray12le/gray16le) are
-#      transcoded — no browser can decode them and they need the colormap.
-#      Every other source (incl. AV1/HEVC RGB) is served untouched for the
-#      <video> element to decode natively, so the common case never re-encodes.
-#   3. The transcode runs ONCE to yuv420p H.264 with a viridis colormap,
-#      cached on disk keyed by the source's identity (path + size + mtime +
-#      pix_fmt), and served from cache. Range requests (seeking) are handled
-#      by Starlette's FileResponse against the complete cached file, so
-#      playback is as fast as a normal video after the one-time conversion.
+# Browsers can't decode grayscale depth/IR sources (e.g. gray12le/gray16le).
+# The frontend calls this endpoint as a fallback; only grayscale sources are
+# transcoded — to yuv420p H.264 with a colormap, via in-process PyAV (no ffmpeg
+# subprocess) — then cached on disk keyed by source identity and served with
+# Range support. Every other source is served untouched.
 
-# Grayscale sources (depth/IR cameras, e.g. gray12le) are colorized through
-# this FFmpeg `pseudocolor` preset instead of being shown as flat grayscale —
-# perceptually-uniform colormaps make depth gradients far easier to read.
-# Any preset supported by the `pseudocolor` filter works (magma, inferno,
-# plasma, viridis, turbo, cividis, ...). Override with LEROBOT_DEPTH_COLORMAP.
+# pseudocolor preset used to colorize grayscale depth/IR sources. Any preset the
+# filter supports works (magma, inferno, plasma, viridis, turbo, cividis, ...).
 DEPTH_COLORMAP = os.environ.get("LEROBOT_DEPTH_COLORMAP", "viridis")
 
-# How the colormap range (the depth values mapped across the colormap) is
-# chosen for depth sources:
-#   "stats" — span the configured percentiles (default q10/q90) from
-#             meta/stats.json (default mode). Those are computed on the RAW
-#             uint16 depth (millimetres), so they are converted to metres and
-#             run back through the *same* shifted-log encode
-#             (`_encode_depth_norm`) to land in the encoded code domain before
-#             being used as a `colorlevels` stretch. This spreads the colormap
-#             across the depth values that actually occur (high contrast).
-#   "fixed" — span the full encoded depth range [depth_min, depth_max] taken
-#             from meta/info.json. The codes already are lerobot's shifted-log
-#             normalization over exactly that range, so colors are consistent
-#             across episodes/datasets but lower-contrast.
+# Colormap range source: "stats" spans meta/stats.json percentiles (high
+# contrast); "fixed" spans the full encoded depth range from meta/info.json
+# (consistent across datasets, lower contrast).
 DEPTH_RANGE_MODE = os.environ.get("LEROBOT_DEPTH_RANGE", "stats").lower()
 
-# Which low/high percentile keys from meta/stats.json drive the "stats" window.
-# Tighter percentiles (e.g. q10,q90) clip more aggressively for higher contrast;
-# wider ones (q01,q99) keep more of the range. Override with LEROBOT_DEPTH_PCTL,
-# e.g. "q01,q99".
+# Percentile keys driving the "stats" window (tighter = higher contrast).
 _pctl = os.environ.get("LEROBOT_DEPTH_PCTL", "q10,q90").split(",")
 DEPTH_PCTL_LOW = _pctl[0].strip() or "q10"
 DEPTH_PCTL_HIGH = (_pctl[1].strip() if len(_pctl) > 1 else "q90") or "q90"
 
-# Identifies the current transcode recipe (codec params + colormap). It is
-# mixed into the cache key so that changing the recipe — e.g. switching the
-# depth range derivation — invalidates previously cached outputs instead of
-# serving a stale file produced by the old logic. Bump the version prefix on
-# any recipe change.
+# Mixed into the cache key so a recipe change invalidates stale cached outputs.
 TRANSCODE_RECIPE = (
     f"v3-h264-crf20-gray:{DEPTH_COLORMAP}:{DEPTH_RANGE_MODE}"
     f":{DEPTH_PCTL_LOW}-{DEPTH_PCTL_HIGH}"
 )
 
-# One lock per cache key so concurrent requests for the same shard wait for a
-# single transcode instead of racing (which would corrupt the output file).
+# One lock per cache key so concurrent requests for a shard don't race.
 _transcode_locks: dict[str, threading.Lock] = {}
 _transcode_locks_guard = threading.Lock()
 
 
 def _require_av():
-    """Import PyAV lazily so the rest of the backend works without it.
-
-    Only the transcode endpoint needs PyAV; annotation/export paths don't.
-    """
+    """Import PyAV lazily — only the transcode endpoint needs it."""
     try:
         import av
 
@@ -856,9 +813,7 @@ def _resolve_video_source(
     raise HTTPException(status_code=400, detail="need repo_id or local_path")
 
 
-# Cache of parsed meta/*.json keyed by (filename, dataset), so deriving the
-# colormap window doesn't re-read (and re-HEAD, for HF datasets) on every
-# cache-hit request.
+# Cache of parsed meta/*.json so cache-hit requests don't re-read/re-HEAD.
 _meta_cache: dict[tuple[str, str], dict[str, Any] | None] = {}
 _meta_cache_guard = threading.Lock()
 
@@ -918,13 +873,10 @@ def _load_meta_json(
 def _depth_feature_params(
     info: dict[str, Any] | None, rel_path: str
 ) -> dict[str, Any] | None:
-    """Extract the depth encoding parameters for the feature in ``rel_path``.
+    """Depth encoding params (lerobot#3253) for the feature in ``rel_path``, or None.
 
-    Reads the lerobot per-video-key encoding metadata (added in lerobot#3253)
-    from ``meta/info.json``: ``video.depth_min`` / ``video.depth_max`` (the
-    physical range in metres), ``video.shift`` and ``video.use_log`` (the
-    shifted-log quantization). Returns None unless the matching feature carries
-    a depth range.
+    Reads video.depth_min/depth_max (metres) and video.shift/use_log from
+    meta/info.json.
     """
     features = (info or {}).get("features")
     if not isinstance(features, dict):
@@ -933,8 +885,7 @@ def _depth_feature_params(
     if not key:
         return None
     feature = features.get(key) or {}
-    # Encoding params live under "info" (per the lerobot feature schema), but
-    # tolerate them sitting directly on the feature too.
+    # Params live under "info", but tolerate them directly on the feature too.
     finfo = feature.get("info") if isinstance(feature.get("info"), dict) else feature
     dmin = _stat_scalar(finfo.get("video.depth_min"))
     dmax = _stat_scalar(finfo.get("video.depth_max"))
@@ -951,16 +902,11 @@ def _depth_feature_params(
 def _encode_depth_norm(depth_m: float, params: dict[str, Any]) -> float | None:
     """Map a physical depth (metres) to lerobot's encoded code, normalized 0..1.
 
-    Mirrors the shifted-log quantization used when the depth video was written
-    (lerobot#3253), so a depth value can be placed in the encoded pixel domain
-    that the colormap actually operates on::
+    Mirrors the shifted-log quantization (lerobot#3253) so a depth value lands in
+    the encoded domain the colormap operates on; linear when use_log is False::
 
         norm = (ln(d + shift) - ln(dmin + shift))
                / (ln(dmax + shift) - ln(dmin + shift))
-
-    Falls back to a plain linear normalization when ``use_log`` is False. The
-    input is clamped to ``[depth_min, depth_max]`` first. Returns None when the
-    range is degenerate.
     """
     dmin = params.get("depth_min")
     dmax = params.get("depth_max")
@@ -979,12 +925,7 @@ def _encode_depth_norm(depth_m: float, params: dict[str, Any]) -> float | None:
 
 
 def _match_feature_key(stats: dict[str, Any], rel_path: str) -> str | None:
-    """Find the stats feature key contained in the video path (longest match).
-
-    e.g. ``videos/observation.images.top_depth/chunk-000/file-000.mp4`` matches
-    ``observation.images.top_depth`` (preferred over the shorter, also-present
-    ``observation.images.top``).
-    """
+    """Stats feature key contained in the video path, preferring the longest match."""
     candidates = [k for k in stats if k and k in rel_path]
     return max(candidates, key=len) if candidates else None
 
@@ -996,27 +937,12 @@ def _depth_colormap_window(
     rel_path: str,
     hf_token: str | None,
 ) -> tuple[float, float] | None:
-    """Derive a [low, high] colormap window (0..1, encoded domain) for depth.
+    """[low, high] colormap stretch window (0..1, encoded domain) for depth.
 
-    The colormap operates on the encoded video codes, which are lerobot's
-    shifted-log quantization of the physical depth over ``[depth_min,
-    depth_max]`` (read from ``meta/info.json``). The chosen depth range is
-    therefore put *through that same encode* (``_encode_depth_norm``) so it
-    lands in the code domain the `colorlevels` filter expects.
-
-    Two modes (``LEROBOT_DEPTH_RANGE``):
-
-    - ``stats`` (default): span the configured percentiles (``DEPTH_PCTL_LOW``/
-      ``DEPTH_PCTL_HIGH``, default q10/q90) from ``meta/stats.json``. Those are
-      computed on the RAW uint16 depth in millimetres, so they are converted to
-      metres and re-encoded into the code domain before being used as a stretch
-      window (higher contrast, data-dependent).
-    - ``fixed``: span the full ``[depth_min, depth_max]`` range. By construction
-      that encodes to the full ``[0, 1]`` code range, so no stretch is needed
-      and we return None (colors stay consistent across episodes).
-
-    Returns None (full-range colormap, no stretch) when metadata is missing or
-    the window would be degenerate.
+    In "stats" mode, percentiles from meta/stats.json (raw uint16 mm) are
+    converted to metres and run through ``_encode_depth_norm`` into the code
+    domain the colorlevels filter expects. Returns None (no stretch) in "fixed"
+    mode or when metadata is missing/degenerate.
     """
     if DEPTH_RANGE_MODE != "stats":
         # Fixed mode: [depth_min, depth_max] == full encoded range, no stretch.
@@ -1072,13 +998,8 @@ def _probe_video(src: Path) -> tuple[str | None, str | None]:
 
 
 def _needs_transcode(pix_fmt: str | None) -> bool:
-    """Whether ``src`` must be transcoded for the browser's <video> element.
-
-    Only grayscale depth/IR sources (e.g. gray12le, gray16le) qualify: no
-    browser can decode them, and they need the colormap to be readable. Every
-    other source — including AV1/HEVC RGB — is left for the <video> element to
-    decode natively (with the frontend's onError path as a last-resort fallback).
-    """
+    """True only for grayscale depth/IR sources (e.g. gray12le); everything else
+    is left for the browser to decode natively."""
     return (pix_fmt or "").startswith("gray")
 
 
@@ -1101,22 +1022,13 @@ def _transcode_cache_path(
 
 
 def _build_depth_colormap_graph(av, in_stream, window: tuple[float, float] | None):
-    """Filter graph that colorizes a grayscale (depth) stream with a colormap.
+    """Colorize a grayscale depth stream: gbrp -> [colorlevels] -> pseudocolor
+    -> yuv420p.
 
-    Chain: format=gbrp -> [colorlevels stretch] -> pseudocolor=preset=<map>
-           -> format=yuv420p.
-
-    The `gbrp` step is required because `pseudocolor` preserves the input
-    pixel format — a gray input would only ever yield gray output, so we first
-    promote to a packed-colour planar format that the filter can write the
-    colormap into. Converting from a high-bit-depth gray source to gbrp also
-    rescales the luma range into 0..255 with a fixed (temporally stable)
-    mapping, so depth gradients don't flicker frame to frame.
-
-    When ``window`` (a [low, high] pair in 0..1, in the encoded depth domain —
-    see ``_depth_colormap_window``) is given, a `colorlevels` filter first
-    stretches that input range to full scale, so the colormap spans the depth
-    values that actually occur rather than the whole sensor range.
+    gbrp is required because pseudocolor preserves the input format (gray in =>
+    gray out) and it gives a fixed luma->0..255 mapping so gradients don't
+    flicker. ``window`` (see ``_depth_colormap_window``) stretches the colormap
+    over the depth range that actually occurs.
     """
     chain: list[tuple[str, str]] = [("format", "gbrp")]
     if window is not None:
@@ -1148,12 +1060,8 @@ def _transcode_to_web(
     dst: Path,
     window: tuple[float, float] | None = None,
 ) -> None:
-    """Transcode a grayscale depth/IR source to a browser-friendly file.
-
-    The source (gray, gray10le, gray12le, gray16le) is colorized with the
-    ``DEPTH_COLORMAP`` colormap (viridis by default) and written as yuv420p
-    H.264 at ``dst`` — stretched to ``window`` when one is given.
-    """
+    """Colorize a grayscale depth source and write it as yuv420p H.264 at ``dst``,
+    stretched to ``window`` when given."""
     av = _require_av()
     TRANSCODE_CACHE.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_suffix(".partial.mp4")
@@ -1236,9 +1144,6 @@ def _ensure_web_playable(
     if not _needs_transcode(pix_fmt):
         return src
 
-    # Grayscale (depth/IR) sources are colorized; the colormap spans the depth
-    # range derived from meta/info.json encoding params (optionally stretched to
-    # observed stats — see _depth_colormap_window).
     window = _depth_colormap_window(repo_id, revision, local_path, rel_path, hf_token)
 
     dst = _transcode_cache_path(src, codec, pix_fmt, window)
@@ -1295,10 +1200,8 @@ def transcode_video(
 ) -> FileResponse:
     """Serve a browser-decodable copy of a dataset video.
 
-    The frontend calls this only when a <video> element fails to decode the
-    original (e.g. depth cameras stored as gray12le). Web-playable sources are
-    streamed back untouched; everything else is transcoded once and cached.
-    Starlette's FileResponse handles HTTP Range, so seeking works normally.
+    Grayscale depth sources are transcoded once and cached; everything else is
+    streamed back untouched. FileResponse handles HTTP Range for seeking.
     """
     src = _resolve_video_source(repo_id, revision, local_path, path, hf_token)
     served = _ensure_web_playable(
