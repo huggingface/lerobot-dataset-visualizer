@@ -23,6 +23,19 @@ import { bigIntToNumber } from "@/utils/typeGuards";
 import type { VideoInfo, AdjacentEpisodeVideos } from "@/types";
 
 const SERIES_NAME_DELIMITER = CHART_CONFIG.SERIES_NAME_DELIMITER;
+const CHARTABLE_NUMERIC_DTYPES = new Set([
+  "float16",
+  "float32",
+  "float64",
+  "int8",
+  "int16",
+  "int32",
+  "int64",
+  "uint8",
+  "uint16",
+  "uint32",
+  "uint64",
+]);
 
 export type CameraInfo = { name: string; width: number; height: number };
 
@@ -45,6 +58,16 @@ export type ColumnMinMax = {
   min: number;
   max: number;
 };
+
+export function isChartableNumericFeature(feature: {
+  dtype: string;
+  shape: number[];
+}): boolean {
+  return (
+    CHARTABLE_NUMERIC_DTYPES.has(feature.dtype.toLowerCase()) &&
+    feature.shape.length === 1
+  );
+}
 
 export type EpisodeLengthInfo = {
   episodeIndex: number;
@@ -509,10 +532,7 @@ async function getEpisodeDataV2(
 
   // Column data
   const columnNames = Object.entries(info.features)
-    .filter(
-      ([, value]) =>
-        ["float32", "int32"].includes(value.dtype) && value.shape.length === 1,
-    )
+    .filter(([, value]) => isChartableNumericFeature(value))
     .map(([key, { shape }]) => ({ key, length: shape[0] }));
 
   // Exclude specific columns
@@ -648,7 +668,8 @@ async function getEpisodeDataV2(
   const ignoredColumns = Object.entries(info.features)
     .filter(
       ([, value]) =>
-        ["float32", "int32"].includes(value.dtype) && value.shape.length > 1,
+        CHARTABLE_NUMERIC_DTYPES.has(value.dtype.toLowerCase()) &&
+        value.shape.length > 1,
     )
     .map(([key]) => key);
 
@@ -1096,9 +1117,7 @@ function processEpisodeDataForCharts(
   const columns: ColumnDef[] = Object.entries(info.features)
     .filter(
       ([key, value]) =>
-        ["float32", "int32"].includes(value.dtype) &&
-        value.shape.length === 1 &&
-        !excludedColumns.includes(key),
+        isChartableNumericFeature(value) && !excludedColumns.includes(key),
     )
     .map(([key, feature]) => {
       let column_names: unknown = feature.names;
@@ -1222,7 +1241,8 @@ function processEpisodeDataForCharts(
     ...Object.entries(info.features)
       .filter(
         ([, value]) =>
-          ["float32", "int32"].includes(value.dtype) && value.shape.length > 2, // Only ignore 3D+ data
+          CHARTABLE_NUMERIC_DTYPES.has(value.dtype.toLowerCase()) &&
+          value.shape.length > 2, // Only ignore 3D+ data
       )
       .map(([key]) => key),
     ...excludedColumns, // Also include the manually excluded columns
