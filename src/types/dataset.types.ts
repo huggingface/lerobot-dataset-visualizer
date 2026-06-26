@@ -68,3 +68,21 @@ export interface DatasetInfo {
   total_episodes: number;
   fps: number;
 }
+
+/**
+ * Compact dataset record powering the /explore page, derived from the HuggingFace
+ * datasets list API (one cached call covers the whole corpus). The list API does NOT
+ * expose `robot_type`, so `robotTags` is a best-effort set of canonical robot keys
+ * derived from free-form tags (see `ROBOT_TAG_TO_KEY` in utils/constants.ts); each card
+ * refines to the exact `robot_type` lazily from `meta/info.json`.
+ */
+export interface ExploreDataset {
+  id: string; // "org/name"
+  downloads: number;
+  likes: number;
+  lastModified: string; // ISO timestamp
+  sizeBytes: number | null; // from `mainSize`; null when unavailable (~2/1000)
+  license: string | null; // from cardData.license → "license:*" tag → null
+  robotTags: string[]; // canonical robot keys (may be empty → "Unknown" bucket)
+  freeTags: string[]; // free-form tags (excludes structured "x:y" tags & robots)
+}
