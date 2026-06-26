@@ -17,12 +17,10 @@ import {
   computeFacets,
   emptySelection,
   FACET_GROUP_IDS,
-  type ExploreStats,
   type FacetGroupId,
   type FacetSelection,
 } from "@/utils/explore-facets";
 import FiltersSidebar from "./filters-sidebar";
-import StatsBar from "./stats-bar";
 import DatasetCard from "./dataset-card";
 
 const PER_PAGE = 30;
@@ -53,8 +51,8 @@ function sortDatasets(list: ExploreDataset[], key: SortKey): ExploreDataset[] {
 
 interface ExploreClientProps {
   datasets: ExploreDataset[];
-  globalStats: ExploreStats;
-  totalCount: number;
+  /** Corpus-wide stats panel, streamed in from the server via Suspense. */
+  statsSlot: React.ReactNode;
 }
 
 export default function ExploreClient(props: ExploreClientProps) {
@@ -65,11 +63,7 @@ export default function ExploreClient(props: ExploreClientProps) {
   );
 }
 
-function ExploreInner({
-  datasets,
-  globalStats,
-  totalCount,
-}: ExploreClientProps) {
+function ExploreInner({ datasets, statsSlot }: ExploreClientProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -166,10 +160,8 @@ function ExploreInner({
   const loaded = datasets.length;
   const narrowed = filtered.length !== loaded;
   const gridCountLabel = narrowed
-    ? `${filtered.length.toLocaleString()} match${filtered.length === 1 ? "" : "es"} in the ${loaded.toLocaleString()} most-recent datasets`
-    : totalCount > loaded
-      ? `Browsing the ${loaded.toLocaleString()} most-recent of ${totalCount.toLocaleString()} datasets`
-      : `Browsing ${loaded.toLocaleString()} datasets`;
+    ? `${filtered.length.toLocaleString()} match${filtered.length === 1 ? "" : "es"} among the ${loaded.toLocaleString()} most-recent datasets`
+    : `Browsing the ${loaded.toLocaleString()} most-recent datasets`;
 
   return (
     <main className="flex min-h-screen">
@@ -189,7 +181,7 @@ function ExploreInner({
           <HfAuthButton />
         </div>
 
-        <StatsBar stats={globalStats} />
+        {statsSlot}
 
         {/* Search + sort */}
         <div className="flex items-center gap-3 mb-6 flex-wrap">

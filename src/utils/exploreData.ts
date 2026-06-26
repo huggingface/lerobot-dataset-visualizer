@@ -42,15 +42,9 @@ const MAX_PAGES = 100;
 // filterable grid. Global stats are still computed over the full crawl.
 const GRID_LIMIT = 10000;
 
-/** Server payload for the explore page. */
-export interface ExploreData {
-  /** Most-recent `GRID_LIMIT` datasets, for client-side search/faceting/grid. */
-  datasets: ExploreDataset[];
-  /** Aggregate stats over the ENTIRE crawled corpus. */
-  globalStats: ExploreStats;
-  /** Total datasets in the corpus (== globalStats.count). */
-  totalCount: number;
-}
+// ISR window for the cached crawl. The full-corpus stats crawl is expensive (~62
+// sequential pages), so cache it for an hour; the grid's first pages share the cache.
+const REVALIDATE_SECONDS = 3600;
 
 /** Raw shape of a dataset entry from the HF list API (only fields we read). */
 interface RawDataset {
@@ -114,12 +108,11 @@ export function compactDataset(raw: RawDataset): ExploreDataset {
 }
 
 /**
- * Crawl the entire LeRobot dataset corpus (server-side), following the `Link: rel="next"`
- * cursor until exhausted (capped by `MAX_PAGES`). Returns global stats over ALL datasets
- * plus the most-recent `GRID_LIMIT` records for the client grid. Cached for 5 min via Next
- * ISR so the multi-page crawl runs at most once per window, not per request.
+ * Crawl the LeRobot dataset list (server-side), following the `Link: rel="next"` cursor.
+ * Stops once `maxItems` datasets are collected (null = whole corpus) or `MAX_PAGES` is hit.
+ * Cached via Next ISR, so the grid's first pages and the full stats crawl share fetches.
  */
-export async function fetchExploreDatasets(): Promise<ExploreData> {
+async function crawl(maxItems: number | null): Promise<ExploreDataset[]> {
   const params = new URLSearchParams({
     filter: "LeRobot",
     sort: "lastModified",
@@ -133,10 +126,11 @@ export async function fetchExploreDatasets(): Promise<ExploreData> {
   let pages = 0;
 
   while (url && pages < MAX_PAGES) {
-    // Next.js ISR: cache the crawl for 5 min. `next` is a Next extension absent from
-    // the ambient (Bun) RequestInit type, so it is passed via an intersection cast.
+    if (maxItems != null && all.length >= maxItems) break;
+    // `next` is a Next extension absent from the ambient (Bun) RequestInit type,
+    // so it is passed via an intersection cast.
     const res: Response = await fetch(url, {
-      next: { revalidate: 300 },
+      next: { revalidate: REVALIDATE_SECONDS },
     } as RequestInit & { next: { revalidate: number } });
     if (!res.ok) {
       if (pages === 0) {
@@ -157,14 +151,25 @@ export async function fetchExploreDatasets(): Promise<ExploreData> {
     pages += 1;
   }
 
-  // Stats over the whole corpus; ship only the most-recent slice (API returns
-  // lastModified-desc) for the browsable grid to keep the client payload small.
-  const globalStats = computeStats(all);
-  return {
-    datasets: all.slice(0, GRID_LIMIT),
-    globalStats,
-    totalCount: globalStats.count,
-  };
+  return all;
+}
+
+/**
+ * Fast fetch for the browsable grid: only the most-recent `GRID_LIMIT` datasets
+ * (~10 pages). Renders immediately while global stats stream in separately.
+ */
+export async function fetchExploreGrid(): Promise<ExploreDataset[]> {
+  const recent = await crawl(GRID_LIMIT);
+  return recent.slice(0, GRID_LIMIT);
+}
+
+/**
+ * Slow fetch for the corpus-wide stats panel: crawls every page so totals (count,
+ * total size, breakdowns) cover all datasets. Streamed via Suspense on the page.
+ */
+export async function fetchGlobalStats(): Promise<ExploreStats> {
+  const all = await crawl(null);
+  return computeStats(all);
 }
 
 /**
