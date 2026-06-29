@@ -118,6 +118,47 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
   }
 }
 
+// Per-feature statistics from meta/stats.json (min/max/mean/std and, when
+// present, quantiles like q10/q90). Not every dataset ships this file, so the
+// fetch is best-effort and returns null on any failure.
+const datasetStatsCache = new Map<
+  string,
+  { data: Record<string, unknown> | null; expiry: number }
+>();
+
+export async function getDatasetStats(
+  repoId: string,
+): Promise<Record<string, unknown> | null> {
+  const now = Date.now();
+  const cached = datasetStatsCache.get(repoId);
+  if (cached && now < cached.expiry) return cached.data;
+
+  let data: Record<string, unknown> | null = null;
+  try {
+    const url = `${DATASET_URL}/${repoId}/resolve/main/meta/stats.json`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const response = await fetch(url, {
+      method: "GET",
+      cache: "no-store",
+      signal: controller.signal,
+      headers: authHeaders(),
+    });
+    clearTimeout(timeoutId);
+    if (response.ok) {
+      const json = await response.json();
+      if (json && typeof json === "object") {
+        data = json as Record<string, unknown>;
+      }
+    }
+  } catch {
+    data = null;
+  }
+
+  datasetStatsCache.set(repoId, { data, expiry: Date.now() + CACHE_TTL_MS });
+  return data;
+}
+
 const SUPPORTED_VERSIONS = ["v3.0", "v2.1", "v2.0"];
 
 /**

@@ -8,6 +8,7 @@ import { pick } from "@/utils/pick";
 import {
   getDatasetVersionAndInfo,
   buildVersionedUrl,
+  getDatasetStats,
 } from "@/utils/versionUtils";
 import { PADDING, CHART_CONFIG, EXCLUDED_COLUMNS } from "@/utils/constants";
 import {
@@ -20,7 +21,11 @@ import {
   buildV3EpisodesMetadataPath,
 } from "@/utils/stringFormatting";
 import { bigIntToNumber } from "@/utils/typeGuards";
-import { isGrayscaleShape } from "@/utils/colormaps";
+import {
+  isGrayscaleShape,
+  depthColormapRange,
+  depthEncodingFromFeature,
+} from "@/utils/colormaps";
 import type { VideoInfo, AdjacentEpisodeVideos } from "@/types";
 
 const SERIES_NAME_DELIMITER = CHART_CONFIG.SERIES_NAME_DELIMITER;
@@ -336,14 +341,32 @@ export async function getEpisodeData(
     // timestamps at the end. Now loadEpisodeProgressGroup returns a
     // builder we apply once both promises settle.
     // Vercel rule: async-parallel.
+    // Only depth/grayscale feeds use q10/q90 from stats.json — skip the
+    // extra fetch entirely for ordinary RGB datasets.
+    const hasGrayscaleFeed = Object.values(rawInfo.features).some(
+      (f) => f.dtype === "video" && isGrayscaleShape(f.shape),
+    );
+
     console.time(`[perf] getEpisodeData (${version})`);
-    const [result, progressBuilder] = await Promise.all([
+    const [result, progressBuilder, stats] = await Promise.all([
       version === "v3.0"
         ? getEpisodeDataV3(repoId, version, info, episodeId)
         : getEpisodeDataV2(repoId, version, info, episodeId),
       loadEpisodeProgressGroup(repoId, version, episodeId),
+      hasGrayscaleFeed ? getDatasetStats(repoId) : Promise.resolve(null),
     ]);
     console.timeEnd(`[perf] getEpisodeData (${version})`);
+
+    // Stretch each grayscale feed's colormap to its q10/q90 band so depth
+    // outliers don't wash out the visualization.
+    if (stats) {
+      for (const v of result.videosInfo) {
+        if (!v.isGrayscale) continue;
+        const encoding = depthEncodingFromFeature(rawInfo.features[v.filename]);
+        const range = depthColormapRange(stats[v.filename], encoding);
+        if (range) v.colormapRange = range;
+      }
+    }
 
     // Extract camera resolutions from features
     const cameras: CameraInfo[] = Object.entries(rawInfo.features)

@@ -54,3 +54,90 @@ export function isGrayscaleShape(
 ): boolean {
   return shape?.[2] === 1;
 }
+
+// Unwraps lerobot's nested per-channel image-stat shape (e.g. [[[v]]] for a
+// single-channel depth feature) down to its first scalar.
+function firstScalar(value: unknown): number | undefined {
+  let v: unknown = value;
+  while (Array.isArray(v)) v = v[0];
+  return typeof v === "number" ? v : undefined;
+}
+
+// Log/linear depth-video encoding params from an info.json feature's `info`
+// block (lerobot.datasets.depth_utils.quantize_depth). Depths are in metres.
+export interface DepthEncoding {
+  depthMin: number;
+  depthMax: number;
+  shift: number;
+  useLog: boolean;
+}
+
+// Reads the depth-quantization params from an info.json feature. Returns
+// undefined unless the feature is flagged `is_depth_map` and carries valid
+// tuning params — callers then treat the feed as plain (already [0,1]) data.
+export function depthEncodingFromFeature(
+  feature: unknown,
+): DepthEncoding | undefined {
+  if (feature == null || typeof feature !== "object") return undefined;
+  const info = (feature as Record<string, unknown>).info;
+  if (info == null || typeof info !== "object") return undefined;
+  const i = info as Record<string, unknown>;
+  if (i.is_depth_map !== true) return undefined;
+  const depthMin = i["video.depth_min"];
+  const depthMax = i["video.depth_max"];
+  const shift = i["video.shift"];
+  const useLog = i["video.use_log"];
+  if (
+    typeof depthMin !== "number" ||
+    typeof depthMax !== "number" ||
+    typeof shift !== "number" ||
+    typeof useLog !== "boolean" ||
+    !(depthMax > depthMin) ||
+    (useLog && depthMin + shift <= 0)
+  ) {
+    return undefined;
+  }
+  return { depthMin, depthMax, shift, useLog };
+}
+
+// Derives the [low, high] luminance band the colormap should span from a
+// meta/stats.json feature entry's q10/q90 quantiles, stretching the feed so
+// outliers don't wash out the colormap. Returns undefined when the quantiles
+// are missing, non-finite, or don't form a valid increasing range — callers
+// then fall back to 0..1.
+//
+// For a plain (already 0..1) grayscale feed the q10/q90 band is used directly.
+// For a depth map, q10/q90 live in the feed's stored depth units, so they're
+// mapped through the same forward quantization the video used: the browser's
+// decoded luminance equals that normalized code, so the quantized q10/q90
+// become the luminance window to stretch across the colormap. depth_min/max/
+// shift are in metres while uint16 depth stats are millimetres — a quantile
+// above depth_max is therefore rescaled to metres before the transform.
+export function depthColormapRange(
+  statsEntry: unknown,
+  encoding?: DepthEncoding,
+): [number, number] | undefined {
+  if (statsEntry == null || typeof statsEntry !== "object") return undefined;
+  const entry = statsEntry as Record<string, unknown>;
+  const low = firstScalar(entry.q10);
+  const high = firstScalar(entry.q90);
+  if (low === undefined || high === undefined) return undefined;
+  if (!Number.isFinite(low) || !Number.isFinite(high)) return undefined;
+  if (high <= low) return undefined;
+  if (!encoding) return [low, high];
+
+  const { depthMin, depthMax, shift, useLog } = encoding;
+  const toMetres = high > depthMax ? 1 / 1000 : 1;
+  const normCode = (depth: number): number => {
+    const d = depth * toMetres;
+    const norm = useLog
+      ? (Math.log(d + shift) - Math.log(depthMin + shift)) /
+        (Math.log(depthMax + shift) - Math.log(depthMin + shift))
+      : (d - depthMin) / (depthMax - depthMin);
+    return Math.min(1, Math.max(0, norm));
+  };
+  const normLow = normCode(low);
+  const normHigh = normCode(high);
+  if (normHigh <= normLow) return undefined;
+  return [normLow, normHigh];
+}

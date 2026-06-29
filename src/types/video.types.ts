@@ -13,6 +13,9 @@ export interface VideoInfo {
   // Single-channel feed (info.json feature shape [h, w, 1]) — rendered with
   // the viridis colormap instead of raw grayscale.
   isGrayscale?: boolean;
+  // [low, high] normalized luminance band the colormap spans, derived from the
+  // feature's q10/q90 in meta/stats.json. Undefined → span the full 0..1.
+  colormapRange?: [number, number];
 }
 
 // Adjacent episode video info for preloading

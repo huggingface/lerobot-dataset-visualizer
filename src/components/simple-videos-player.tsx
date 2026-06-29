@@ -415,6 +415,7 @@ export const SimpleVideosPlayer = ({
                 <ColormappedVideo
                   videoEl={videoEls[idx] ?? null}
                   active={info.isGrayscale}
+                  range={info.colormapRange}
                 />
                 {/* VQA bbox/keypoint overlay. Reads atoms + drawMode from
                     AnnotationsContext; pointer-events fall through when
