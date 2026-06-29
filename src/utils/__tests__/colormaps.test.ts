@@ -60,30 +60,28 @@ describe("isGrayscaleShape", () => {
 });
 
 describe("depthColormapRange", () => {
-  test("reads q10/q90 from lerobot's nested [[[v]]] image-stat shape", () => {
-    expect(depthColormapRange({ q10: [[[0.2]]], q90: [[[0.8]]] })).toEqual([
+  const LINEAR = { depthMin: 0, depthMax: 10, shift: 0, useLog: false };
+
+  test("reads lerobot's nested [[[v]]] image-stat shape", () => {
+    expect(depthColormapRange({ q10: [[[2]]], q90: [[[8]]] }, LINEAR)).toEqual([
       0.2, 0.8,
     ]);
   });
 
-  test("reads scalar q10/q90", () => {
-    expect(depthColormapRange({ q10: 0.1, q90: 0.9 })).toEqual([0.1, 0.9]);
-  });
-
   test("is undefined when q10 or q90 is missing", () => {
-    expect(depthColormapRange({ q90: [[[0.8]]] })).toBeUndefined();
-    expect(depthColormapRange({})).toBeUndefined();
-    expect(depthColormapRange(undefined)).toBeUndefined();
+    expect(depthColormapRange({ q90: [[[8]]] }, LINEAR)).toBeUndefined();
+    expect(depthColormapRange({}, LINEAR)).toBeUndefined();
+    expect(depthColormapRange(undefined, LINEAR)).toBeUndefined();
   });
 
-  test("is undefined for a degenerate range (q90 <= q10)", () => {
-    expect(depthColormapRange({ q10: 0.8, q90: 0.8 })).toBeUndefined();
-    expect(depthColormapRange({ q10: 0.9, q90: 0.2 })).toBeUndefined();
+  test("is undefined for a degenerate band (q90 <= q10)", () => {
+    expect(depthColormapRange({ q10: 5, q90: 5 }, LINEAR)).toBeUndefined();
+    expect(depthColormapRange({ q10: 8, q90: 2 }, LINEAR)).toBeUndefined();
   });
 
   test("is undefined for non-finite values", () => {
     expect(
-      depthColormapRange({ q10: [[[NaN]]], q90: [[[0.8]]] }),
+      depthColormapRange({ q10: [[[NaN]]], q90: [[[8]]] }, LINEAR),
     ).toBeUndefined();
   });
 

@@ -341,8 +341,8 @@ export async function getEpisodeData(
     // timestamps at the end. Now loadEpisodeProgressGroup returns a
     // builder we apply once both promises settle.
     // Vercel rule: async-parallel.
-    // Only depth/grayscale feeds use q10/q90 from stats.json — skip the
-    // extra fetch entirely for ordinary RGB datasets.
+    // Only single-channel feeds are recolored, so only they need q10/q90 from
+    // stats.json — skip the extra fetch entirely for ordinary RGB datasets.
     const hasGrayscaleFeed = Object.values(rawInfo.features).some(
       (f) => f.dtype === "video" && isGrayscaleShape(f.shape),
     );
@@ -357,8 +357,10 @@ export async function getEpisodeData(
     ]);
     console.timeEnd(`[perf] getEpisodeData (${version})`);
 
-    // Stretch each grayscale feed's colormap to its q10/q90 band so depth
-    // outliers don't wash out the visualization.
+    // Stretch each grayscale feed's colormap to its q10/q90 band so outliers
+    // don't wash out the visualization. Single-channel depth feeds map the
+    // quantiles through their quantization params; plain grayscale feeds use
+    // the already-normalized quantiles directly.
     if (stats) {
       for (const v of result.videosInfo) {
         if (!v.isGrayscale) continue;
