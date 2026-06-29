@@ -10,6 +10,9 @@ export interface VideoInfo {
   segmentStart?: number;
   segmentEnd?: number;
   segmentDuration?: number;
+  // Single-channel feed (info.json feature shape [h, w, 1]) — rendered with
+  // the viridis colormap instead of raw grayscale.
+  isGrayscale?: boolean;
 }
 
 // Adjacent episode video info for preloading

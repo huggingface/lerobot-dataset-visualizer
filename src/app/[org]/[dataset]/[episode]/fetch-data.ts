@@ -20,6 +20,7 @@ import {
   buildV3EpisodesMetadataPath,
 } from "@/utils/stringFormatting";
 import { bigIntToNumber } from "@/utils/typeGuards";
+import { isGrayscaleShape } from "@/utils/colormaps";
 import type { VideoInfo, AdjacentEpisodeVideos } from "@/types";
 
 const SERIES_NAME_DELIMITER = CHART_CONFIG.SERIES_NAME_DELIMITER;
@@ -419,7 +420,7 @@ export async function getAdjacentEpisodesVideoInfo(
               const episode_chunk = Math.floor(episodeId / chunkSize);
               videosInfo = Object.entries(info.features)
                 .filter(([, value]) => value.dtype === "video")
-                .map(([key]) => {
+                .map(([key, value]) => {
                   const videoPath = formatStringWithVars(info.video_path!, {
                     video_key: key,
                     episode_chunk: episode_chunk
@@ -432,6 +433,7 @@ export async function getAdjacentEpisodesVideoInfo(
                   return {
                     filename: key,
                     url: buildVersionedUrl(repoId, version, videoPath),
+                    isGrayscale: isGrayscaleShape(value.shape),
                   };
                 });
             }
@@ -490,7 +492,7 @@ async function getEpisodeDataV2(
     info.video_path !== null
       ? Object.entries(info.features)
           .filter(([, value]) => value.dtype === "video")
-          .map(([key]) => {
+          .map(([key, value]) => {
             const videoPath = formatStringWithVars(info.video_path!, {
               video_key: key,
               episode_chunk: episode_chunk
@@ -503,6 +505,7 @@ async function getEpisodeDataV2(
             return {
               filename: key,
               url: buildVersionedUrl(repoId, version, videoPath),
+              isGrayscale: isGrayscaleShape(value.shape),
             };
           })
       : [];
@@ -1258,7 +1261,7 @@ function extractVideoInfoV3WithSegmentation(
     ([, value]) => value.dtype === "video",
   );
 
-  const videosInfo = videoFeatures.map(([videoKey]) => {
+  const videosInfo = videoFeatures.map(([videoKey, videoFeature]) => {
     // Check if we have per-camera metadata in the episode row
     const cameraSpecificKeys = Object.keys(episodeMetadata).filter((key) =>
       key.startsWith(`videos/${videoKey}/`),
@@ -1308,6 +1311,7 @@ function extractVideoInfoV3WithSegmentation(
       segmentStart: startNum,
       segmentEnd: endNum,
       segmentDuration: endNum - startNum,
+      isGrayscale: isGrayscaleShape(videoFeature.shape),
     };
   });
 
