@@ -63,15 +63,16 @@ describe("depthColormapRange", () => {
   const LINEAR = { depthMin: 0, depthMax: 10, shift: 0, useLog: false };
 
   test("reads lerobot's nested [[[v]]] image-stat shape", () => {
-    expect(depthColormapRange({ q01: [[[2]]], q99: [[[8]]] }, LINEAR)).toEqual([
-      0.2, 0.8,
-    ]);
+    // q01/q99 are millimetres; rescaled to metres before quantization.
+    expect(
+      depthColormapRange({ q01: [[[2000]]], q99: [[[8000]]] }, LINEAR),
+    ).toEqual([0.2, 0.8]);
   });
 
   test("falls back to min/max when a quantile is absent", () => {
-    expect(depthColormapRange({ min: [[[1]]], max: [[[6]]] }, LINEAR)).toEqual([
-      0.1, 0.6,
-    ]);
+    expect(
+      depthColormapRange({ min: [[[1000]]], max: [[[6000]]] }, LINEAR),
+    ).toEqual([0.1, 0.6]);
   });
 
   test("is undefined when bounds are missing", () => {
@@ -97,16 +98,15 @@ describe("depthColormapRange", () => {
       { q01: [[[0.0]]], q99: [[[801.7945796579397]]] },
       { depthMin: 0.01, depthMax: 10.0, shift: 3.5, useLog: true },
     )!;
-    // q99 > depth_max ⇒ treated as mm; matches lerobot quantize_depth code.
     expect(low).toBeCloseTo(0, 5);
     expect(high).toBeCloseTo(0.151006, 4);
   });
 
   test("uses linear quantization when use_log is false", () => {
-    // metric q01/q99 (≤ depth_max) stay in metres; (d-min)/(max-min).
+    // mm q01/q99 rescaled to metres; (d-min)/(max-min).
     expect(
       depthColormapRange(
-        { q01: 1, q99: 6 },
+        { q01: 1000, q99: 6000 },
         { depthMin: 0, depthMax: 10, shift: 0, useLog: false },
       ),
     ).toEqual([0.1, 0.6]);

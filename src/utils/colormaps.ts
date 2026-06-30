@@ -111,8 +111,8 @@ export function depthEncodingFromFeature(
 // mapped through the same forward quantization the video used: the browser's
 // decoded luminance equals that normalized code, so the quantized q01/q99
 // become the luminance window to stretch across the colormap. depth_min/max/
-// shift are in metres while uint16 depth stats are millimetres — a quantile
-// above depth_max is therefore rescaled to metres before the transform.
+// shift are in metres while the depth stats are in millimetres, so the
+// quantiles are rescaled to metres first.
 export function depthColormapRange(
   statsEntry: unknown,
   encoding?: DepthEncoding,
@@ -127,9 +127,8 @@ export function depthColormapRange(
   if (!encoding) return [low, high];
 
   const { depthMin, depthMax, shift, useLog } = encoding;
-  const toMetres = high > depthMax ? 1 / 1000 : 1;
   const normCode = (depth: number): number => {
-    const d = depth * toMetres;
+    const d = depth / 1000;
     const norm = useLog
       ? (Math.log(d + shift) - Math.log(depthMin + shift)) /
         (Math.log(depthMax + shift) - Math.log(depthMin + shift))
