@@ -60,19 +60,33 @@ describe("isGrayscaleShape", () => {
 });
 
 describe("depthColormapRange", () => {
-  const LINEAR = { depthMin: 0, depthMax: 10, shift: 0, useLog: false };
+  const LINEAR = {
+    depthMin: 0,
+    depthMax: 10,
+    shift: 0,
+    useLog: false,
+    unitToMetres: 1,
+  };
 
   test("reads lerobot's nested [[[v]]] image-stat shape", () => {
-    // q01/q99 are millimetres; rescaled to metres before quantization.
+    expect(depthColormapRange({ q01: [[[2]]], q99: [[[8]]] }, LINEAR)).toEqual([
+      0.2, 0.8,
+    ]);
+  });
+
+  test("rescales stats when unitToMetres marks them as millimetres", () => {
     expect(
-      depthColormapRange({ q01: [[[2000]]], q99: [[[8000]]] }, LINEAR),
+      depthColormapRange(
+        { q01: [[[2000]]], q99: [[[8000]]] },
+        { ...LINEAR, unitToMetres: 1 / 1000 },
+      ),
     ).toEqual([0.2, 0.8]);
   });
 
   test("falls back to min/max when a quantile is absent", () => {
-    expect(
-      depthColormapRange({ min: [[[1000]]], max: [[[6000]]] }, LINEAR),
-    ).toEqual([0.1, 0.6]);
+    expect(depthColormapRange({ min: [[[1]]], max: [[[6]]] }, LINEAR)).toEqual([
+      0.1, 0.6,
+    ]);
   });
 
   test("is undefined when bounds are missing", () => {
@@ -96,20 +110,21 @@ describe("depthColormapRange", () => {
     // Real CarolinePascal/depth_dataset_video stats (mm) + info.json params.
     const [low, high] = depthColormapRange(
       { q01: [[[0.0]]], q99: [[[801.7945796579397]]] },
-      { depthMin: 0.01, depthMax: 10.0, shift: 3.5, useLog: true },
+      {
+        depthMin: 0.01,
+        depthMax: 10.0,
+        shift: 3.5,
+        useLog: true,
+        unitToMetres: 1 / 1000,
+      },
     )!;
     expect(low).toBeCloseTo(0, 5);
     expect(high).toBeCloseTo(0.151006, 4);
   });
 
   test("uses linear quantization when use_log is false", () => {
-    // mm q01/q99 rescaled to metres; (d-min)/(max-min).
-    expect(
-      depthColormapRange(
-        { q01: 1000, q99: 6000 },
-        { depthMin: 0, depthMax: 10, shift: 0, useLog: false },
-      ),
-    ).toEqual([0.1, 0.6]);
+    // (d - min) / (max - min) with stats used as-is.
+    expect(depthColormapRange({ q01: 1, q99: 6 }, LINEAR)).toEqual([0.1, 0.6]);
   });
 });
 
@@ -122,13 +137,25 @@ describe("depthEncodingFromFeature", () => {
     "video.use_log": true,
   };
 
-  test("extracts params from a depth-map feature", () => {
+  test("extracts params; without depth_unit the stats are used as-is", () => {
     expect(depthEncodingFromFeature({ info: depthInfo })).toEqual({
       depthMin: 0.01,
       depthMax: 10.0,
       shift: 3.5,
       useLog: true,
+      unitToMetres: 1,
     });
+  });
+
+  test("reads depth_unit to set the metres conversion", () => {
+    expect(
+      depthEncodingFromFeature({ info: { ...depthInfo, depth_unit: "m" } })
+        ?.unitToMetres,
+    ).toBe(1);
+    expect(
+      depthEncodingFromFeature({ info: { ...depthInfo, depth_unit: "mm" } })
+        ?.unitToMetres,
+    ).toBe(1 / 1000);
   });
 
   test("is undefined for non-depth feeds or missing/invalid params", () => {

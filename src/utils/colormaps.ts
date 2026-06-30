@@ -64,12 +64,14 @@ function firstScalar(value: unknown): number | undefined {
 }
 
 // Log/linear depth-video encoding params from an info.json feature's `info`
-// block (lerobot.datasets.depth_utils.quantize_depth). Depths are in metres.
+// block (lerobot.datasets.depth_utils.quantize_depth). depthMin/Max/shift are
+// in metres; unitToMetres scales the stored depth stats into metres.
 export interface DepthEncoding {
   depthMin: number;
   depthMax: number;
   shift: number;
   useLog: boolean;
+  unitToMetres: number;
 }
 
 // Reads the depth-quantization params from an info.json feature. Returns
@@ -97,7 +99,16 @@ export function depthEncodingFromFeature(
   ) {
     return undefined;
   }
-  return { depthMin, depthMax, shift, useLog };
+  // depth_unit names the unit of the stored depth stats. Without it we don't
+  // rescale — the stats are used as-is. "mm" scales down to metres; "m" is a
+  // no-op.
+  if (i.depth_unit == null) {
+    console.warn(
+      '[depth] feature is missing `info["depth_unit"]` in info.json — using the stats as-is (no rescaling). Set depth_unit to "mm" or "m" to silence this.',
+    );
+  }
+  const unitToMetres = i.depth_unit === "mm" ? 1 / 1000 : 1;
+  return { depthMin, depthMax, shift, useLog, unitToMetres };
 }
 
 // Derives the [low, high] luminance band the colormap should span from a
@@ -111,8 +122,8 @@ export function depthEncodingFromFeature(
 // mapped through the same forward quantization the video used: the browser's
 // decoded luminance equals that normalized code, so the quantized q01/q99
 // become the luminance window to stretch across the colormap. depth_min/max/
-// shift are in metres while the depth stats are in millimetres, so the
-// quantiles are rescaled to metres first.
+// shift are in metres, so the quantiles are first scaled to metres via the
+// encoding's unitToMetres factor (derived from the feature's depth_unit).
 export function depthColormapRange(
   statsEntry: unknown,
   encoding?: DepthEncoding,
@@ -126,9 +137,9 @@ export function depthColormapRange(
   if (high <= low) return undefined;
   if (!encoding) return [low, high];
 
-  const { depthMin, depthMax, shift, useLog } = encoding;
+  const { depthMin, depthMax, shift, useLog, unitToMetres } = encoding;
   const normCode = (depth: number): number => {
-    const d = depth / 1000;
+    const d = depth * unitToMetres;
     const norm = useLog
       ? (Math.log(d + shift) - Math.log(depthMin + shift)) /
         (Math.log(depthMax + shift) - Math.log(depthMin + shift))
