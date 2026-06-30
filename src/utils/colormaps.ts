@@ -101,15 +101,15 @@ export function depthEncodingFromFeature(
 }
 
 // Derives the [low, high] luminance band the colormap should span from a
-// meta/stats.json feature entry's q10/q90 quantiles, stretching the feed so
+// meta/stats.json feature entry's q01/q99 quantiles, stretching the feed so
 // outliers don't wash out the colormap. Returns undefined when the quantiles
 // are missing, non-finite, or don't form a valid increasing range — callers
 // then fall back to 0..1.
 //
-// For a plain (already 0..1) grayscale feed the q10/q90 band is used directly.
-// For a depth map, q10/q90 live in the feed's stored depth units, so they're
+// For a plain (already 0..1) grayscale feed the q01/q99 band is used directly.
+// For a depth map, q01/q99 live in the feed's stored depth units, so they're
 // mapped through the same forward quantization the video used: the browser's
-// decoded luminance equals that normalized code, so the quantized q10/q90
+// decoded luminance equals that normalized code, so the quantized q01/q99
 // become the luminance window to stretch across the colormap. depth_min/max/
 // shift are in metres while uint16 depth stats are millimetres — a quantile
 // above depth_max is therefore rescaled to metres before the transform.
@@ -119,8 +119,8 @@ export function depthColormapRange(
 ): [number, number] | undefined {
   if (statsEntry == null || typeof statsEntry !== "object") return undefined;
   const entry = statsEntry as Record<string, unknown>;
-  const low = firstScalar(entry.q10);
-  const high = firstScalar(entry.q90);
+  const low = firstScalar(entry.q01) ?? firstScalar(entry.min);
+  const high = firstScalar(entry.q99) ?? firstScalar(entry.max);
   if (low === undefined || high === undefined) return undefined;
   if (!Number.isFinite(low) || !Number.isFinite(high)) return undefined;
   if (high <= low) return undefined;

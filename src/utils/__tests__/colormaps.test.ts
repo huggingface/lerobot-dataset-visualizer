@@ -63,44 +63,50 @@ describe("depthColormapRange", () => {
   const LINEAR = { depthMin: 0, depthMax: 10, shift: 0, useLog: false };
 
   test("reads lerobot's nested [[[v]]] image-stat shape", () => {
-    expect(depthColormapRange({ q10: [[[2]]], q90: [[[8]]] }, LINEAR)).toEqual([
+    expect(depthColormapRange({ q01: [[[2]]], q99: [[[8]]] }, LINEAR)).toEqual([
       0.2, 0.8,
     ]);
   });
 
-  test("is undefined when q10 or q90 is missing", () => {
-    expect(depthColormapRange({ q90: [[[8]]] }, LINEAR)).toBeUndefined();
+  test("falls back to min/max when a quantile is absent", () => {
+    expect(depthColormapRange({ min: [[[1]]], max: [[[6]]] }, LINEAR)).toEqual([
+      0.1, 0.6,
+    ]);
+  });
+
+  test("is undefined when bounds are missing", () => {
+    expect(depthColormapRange({ q99: [[[8]]] }, LINEAR)).toBeUndefined();
     expect(depthColormapRange({}, LINEAR)).toBeUndefined();
     expect(depthColormapRange(undefined, LINEAR)).toBeUndefined();
   });
 
-  test("is undefined for a degenerate band (q90 <= q10)", () => {
-    expect(depthColormapRange({ q10: 5, q90: 5 }, LINEAR)).toBeUndefined();
-    expect(depthColormapRange({ q10: 8, q90: 2 }, LINEAR)).toBeUndefined();
+  test("is undefined for a degenerate band (q99 <= q01)", () => {
+    expect(depthColormapRange({ q01: 5, q99: 5 }, LINEAR)).toBeUndefined();
+    expect(depthColormapRange({ q01: 8, q99: 2 }, LINEAR)).toBeUndefined();
   });
 
   test("is undefined for non-finite values", () => {
     expect(
-      depthColormapRange({ q10: [[[NaN]]], q90: [[[8]]] }, LINEAR),
+      depthColormapRange({ q01: [[[NaN]]], q99: [[[8]]] }, LINEAR),
     ).toBeUndefined();
   });
 
-  test("maps a depth feed's mm q10/q90 through the log quantization", () => {
+  test("maps a depth feed's mm q01/q99 through the log quantization", () => {
     // Real CarolinePascal/depth_dataset_video stats (mm) + info.json params.
     const [low, high] = depthColormapRange(
-      { q10: [[[0.0]]], q90: [[[801.7945796579397]]] },
+      { q01: [[[0.0]]], q99: [[[801.7945796579397]]] },
       { depthMin: 0.01, depthMax: 10.0, shift: 3.5, useLog: true },
     )!;
-    // q90 > depth_max ⇒ treated as mm; matches lerobot quantize_depth code.
+    // q99 > depth_max ⇒ treated as mm; matches lerobot quantize_depth code.
     expect(low).toBeCloseTo(0, 5);
     expect(high).toBeCloseTo(0.151006, 4);
   });
 
   test("uses linear quantization when use_log is false", () => {
-    // metric q10/q90 (≤ depth_max) stay in metres; (d-min)/(max-min).
+    // metric q01/q99 (≤ depth_max) stay in metres; (d-min)/(max-min).
     expect(
       depthColormapRange(
-        { q10: 1, q90: 6 },
+        { q01: 1, q99: 6 },
         { depthMin: 0, depthMax: 10, shift: 0, useLog: false },
       ),
     ).toEqual([0.1, 0.6]);
