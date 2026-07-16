@@ -53,9 +53,6 @@ function getRobotConfig(robotType: string | null) {
       scale: 3,
     };
   }
-  if (lower.includes("so100") && !lower.includes("so101")) {
-    return { urdfUrl: `${URDF_BASE_URL}/so101/so100.urdf`, scale: 10 };
-  }
   return {
     urdfUrl: `${URDF_BASE_URL}/so101/so101_new_calib.urdf`,
     scale: 10,
