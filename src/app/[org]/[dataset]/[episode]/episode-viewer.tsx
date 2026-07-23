@@ -262,6 +262,9 @@ function EpisodeViewerInner({
   // correct tab renders on the very first frame (no post-mount flash).
   // Safe because EpisodeViewerInner only mounts client-side (behind a loading gate).
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    if (searchParams.get("tab") === "annotations") {
+      return "annotations";
+    }
     if (typeof window !== "undefined") {
       const stored = sessionStorage.getItem("activeTab");
       if (
