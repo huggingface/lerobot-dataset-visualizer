@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { computeColumnMinMax } from "@/app/[org]/[dataset]/[episode]/fetch-data";
+import {
+  computeColumnMinMax,
+  extractLanguageAtoms,
+} from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import type { ChartRow } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 
 // ---------------------------------------------------------------------------
@@ -110,6 +113,74 @@ describe("computeColumnMinMax — nested group values (grouped suffix format)", 
     expect(colMap["action | 0"].min).toBe(-1.0);
     expect(colMap["action | 0"].max).toBe(-1.0);
     expect(colMap["action | 1"].min).toBe(1.0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractLanguageAtoms
+// v3.1 language atoms (lerobot#3467) live in the `language_persistent` and
+// `language_events` parquet columns. lerobot can write these onto v2.x datasets
+// (codebase_version stays 2.x), so BOTH the v2 and v3 loaders must extract them.
+// These tests pin the extraction shape that both loaders rely on.
+// ---------------------------------------------------------------------------
+
+describe("extractLanguageAtoms", () => {
+  test("returns [] for empty rows (un-annotated dataset)", () => {
+    expect(extractLanguageAtoms([])).toEqual([]);
+  });
+
+  test("returns [] when the language columns are absent (plain v2 rows)", () => {
+    // A v2.x parquet with no annotations has no language_* columns; requesting
+    // them is a no-op in hyparquet, so rows arrive without those keys.
+    const rows = [
+      { timestamp: 0, "observation.state": [0.1] },
+      { timestamp: 0.1, "observation.state": [0.2] },
+    ];
+    expect(extractLanguageAtoms(rows)).toEqual([]);
+  });
+
+  test("reads a persistent (broadcast) atom once, deduped across rows", () => {
+    const persistent = [
+      { role: "annotator", content: "fold the shirt", style: "subtask" },
+    ];
+    // Broadcast: the same list is present on every row of the episode.
+    const rows = [
+      { timestamp: 0, language_persistent: persistent, language_events: [] },
+      { timestamp: 0.1, language_persistent: persistent, language_events: [] },
+      { timestamp: 0.2, language_persistent: persistent, language_events: [] },
+    ];
+    const atoms = extractLanguageAtoms(rows);
+    expect(atoms).toHaveLength(1);
+    expect(atoms[0].style).toBe("subtask");
+    expect(atoms[0].content).toBe("fold the shirt");
+  });
+
+  test("collects per-row events and falls back to the frame timestamp", () => {
+    const rows = [
+      { timestamp: 0, language_persistent: [], language_events: [] },
+      {
+        timestamp: 1.5,
+        language_persistent: [],
+        // Event rows omit their own timestamp — the frame timestamp is the
+        // firing time and must be back-filled.
+        language_events: [{ role: "user", content: "how many?", style: "vqa" }],
+      },
+    ];
+    const atoms = extractLanguageAtoms(rows);
+    expect(atoms).toHaveLength(1);
+    expect(atoms[0].style).toBe("vqa");
+    expect(atoms[0].timestamp).toBe(1.5);
+  });
+
+  test("drops malformed atoms missing a role", () => {
+    const rows = [
+      {
+        timestamp: 0,
+        language_persistent: [{ content: "no role here", style: "plan" }],
+        language_events: [],
+      },
+    ];
+    expect(extractLanguageAtoms(rows)).toEqual([]);
   });
 });
 

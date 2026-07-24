@@ -585,10 +585,34 @@ async function getEpisodeDataV2(
       "task",
       "task_index",
       "language_instruction",
+      // v3.1 language schema (lerobot#3467) — list<struct{...}> columns the
+      // annotations panel renders / edits. lerobot can write these onto v2.x
+      // datasets too (the codebase_version stays 2.x), so a v2 episode may
+      // carry annotations. Requesting columns absent from the parquet schema
+      // is a no-op in hyparquet, so this is safe for un-annotated datasets.
+      "language_persistent",
+      "language_events",
       ...filteredColumns.map((c) => c.key),
     ]),
   );
   const allData = await readParquetAsObjects(arrayBuffer, parquetColumns);
+
+  // Frame timestamps (sorted, seconds) let the annotations editor snap atoms
+  // to exact frames. v3.1 language atoms are broadcast in `language_persistent`
+  // and fired per-row in `language_events`; extract them so annotations written
+  // onto v2.x datasets render in the panel/timeline just like on v3.0.
+  const frameTimestamps = allData
+    .map((r) => {
+      const t = r.timestamp;
+      return typeof t === "number"
+        ? t
+        : typeof t === "bigint"
+          ? Number(t)
+          : Number.NaN;
+    })
+    .filter((t) => Number.isFinite(t))
+    .sort((a, b) => a - b);
+  const languageAtoms = extractLanguageAtoms(allData);
 
   // Extract task from language_instruction fields, task field, or tasks.jsonl
   let task: string | undefined;
@@ -710,6 +734,8 @@ async function getEpisodeDataV2(
     ignoredColumns,
     duration,
     task,
+    languageAtoms,
+    frameTimestamps,
   };
 }
 
@@ -1008,7 +1034,7 @@ async function loadEpisodeDataV3(
  * We coerce loosely-typed values to the canonical `LanguageAtom` shape and
  * drop rows that don't validate.
  */
-function extractLanguageAtoms(
+export function extractLanguageAtoms(
   episodeRows: Record<string, unknown>[],
 ): import("@/types/language.types").LanguageAtom[] {
   if (!episodeRows.length) return [];
