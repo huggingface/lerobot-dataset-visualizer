@@ -3,9 +3,15 @@
  */
 
 import { authHeaders } from "./auth";
+import { toFetchUrl } from "./dataUrl";
 
+// `NEXT_PUBLIC_DATASET_URL` is browser-visible; in local mode it points at the
+// same-origin `/local-data` route handler. Unset on the hosted deployment, so this
+// falls back to `DATASET_URL` / the Hub default. See docs/local-datasets.md.
 const DATASET_URL =
-  process.env.DATASET_URL || "https://huggingface.co/datasets";
+  process.env.NEXT_PUBLIC_DATASET_URL ||
+  process.env.DATASET_URL ||
+  "https://huggingface.co/datasets";
 
 /**
  * Dataset information structure from info.json
@@ -80,7 +86,7 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-    const response = await fetch(testUrl, {
+    const response = await fetch(toFetchUrl(testUrl), {
       method: "GET",
       cache: "no-store",
       signal: controller.signal,
@@ -138,7 +144,7 @@ export async function getDatasetStats(
     const url = `${DATASET_URL}/${repoId}/resolve/main/meta/stats.json`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
-    const response = await fetch(url, {
+    const response = await fetch(toFetchUrl(url), {
       method: "GET",
       cache: "no-store",
       signal: controller.signal,

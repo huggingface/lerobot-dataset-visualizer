@@ -6,6 +6,7 @@ import {
   type AsyncBuffer,
 } from "hyparquet";
 import { authHeaders } from "./auth";
+import { toFetchUrl } from "./dataUrl";
 
 export interface DatasetMetadata {
   codebase_version: string;
@@ -32,7 +33,7 @@ export interface DatasetMetadata {
 }
 
 export async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, {
+  const res = await fetch(toFetchUrl(url), {
     cache: "no-store",
     headers: authHeaders(),
   });
@@ -61,7 +62,7 @@ export async function fetchParquetFile(url: string): Promise<ParquetFile> {
   if (cached) return cached;
 
   const file = await asyncBufferFromUrl({
-    url,
+    url: toFetchUrl(url),
     requestInit: { cache: "no-store", headers: authHeaders() },
   });
   const wrapped = cachedAsyncBuffer(file);

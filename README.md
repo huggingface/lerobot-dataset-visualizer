@@ -80,6 +80,8 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+To visualize LeRobot datasets from **local disk**, run `bun run local <path/to/datasets>` — see [docs/local-datasets.md](docs/local-datasets.md).
+
 You can start editing the page by modifying `src/app/page.tsx` or other files in the `src/` directory. The app supports hot-reloading for rapid development.
 
 ### Other Commands
