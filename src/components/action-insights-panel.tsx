@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { useFlaggedEpisodes } from "@/context/flagged-episodes-context";
 import { CHART_CONFIG } from "@/utils/constants";
+import { speedVarianceStats } from "@/utils/speedStats";
 import type {
   CrossEpisodeVarianceData,
   AggVelocityStat,
@@ -1073,60 +1074,89 @@ function SpeedVarianceSection({
   numEpisodes: number;
 }) {
   const isFs = useIsFullscreen();
-  const { speeds, mean, std, cv, median, bins, lo, binW, maxBin, verdict } =
-    useMemo(() => {
-      const sp = distribution.map((d) => d.speed).sort((a, b) => a - b);
-      const m = sp.reduce((a, b) => a + b, 0) / sp.length;
-      const s = Math.sqrt(sp.reduce((a, v) => a + (v - m) ** 2, 0) / sp.length);
-      const c = m > 0 ? s / m : 0;
-      const med = sp[Math.floor(sp.length / 2)];
+  const {
+    speeds,
+    dropped,
+    mean,
+    std,
+    cv,
+    median,
+    bins,
+    lo,
+    binW,
+    maxBin,
+    verdict,
+  } = useMemo(() => {
+    // NaN-safe: partial-tracking datasets carry NaN speeds, and a plain mean/std over
+    // them is NaN — after which `NaN > 0` is false, cv silently became 0, and the
+    // verdict rendered a green "Consistent" computed from no data at all. Stats now
+    // come from the finite entries only, and the dropped count is shown to the user.
+    const {
+      speeds: sp,
+      dropped,
+      mean: m,
+      std: s,
+      cv: c,
+      median: med,
+    } = speedVarianceStats(distribution.map((d) => d.speed));
 
-      const binCount = Math.min(30, Math.ceil(Math.sqrt(sp.length)));
-      const lo = sp[0],
-        hi = sp[sp.length - 1];
-      const bw = (hi - lo || 1) / binCount;
-      const b = new Array(binCount).fill(0);
-      for (const v of sp) {
-        let i = Math.floor((v - lo) / bw);
-        if (i >= binCount) i = binCount - 1;
-        b[i]++;
-      }
+    const binCount = Math.min(30, Math.ceil(Math.sqrt(sp.length)));
+    const lo = sp[0],
+      hi = sp[sp.length - 1];
+    const bw = (hi - lo || 1) / binCount;
+    const b = new Array(binCount).fill(0);
+    for (const v of sp) {
+      let i = Math.floor((v - lo) / bw);
+      if (i >= binCount) i = binCount - 1;
+      b[i]++;
+    }
 
-      let v: { label: string; color: string; tip: string };
-      if (c < 0.2)
-        v = {
-          label: "Consistent",
-          color: "text-green-400",
-          tip: "Demonstrators execute at similar speeds — no velocity normalization needed.",
-        };
-      else if (c < 0.4)
-        v = {
-          label: "Moderate variance",
-          color: "text-yellow-400",
-          tip: "Some speed variation across demonstrators. Consider velocity normalization for best results.",
-        };
-      else
-        v = {
-          label: "High variance",
-          color: "text-red-400",
-          tip: "Large speed differences between demonstrations. Velocity normalization before training is strongly recommended.",
-        };
-
-      return {
-        speeds: sp,
-        mean: m,
-        std: s,
-        cv: c,
-        median: med,
-        bins: b,
-        lo,
-        binW: bw,
-        maxBin: Math.max(...b),
-        verdict: v,
+    let v: { label: string; color: string; tip: string };
+    if (!Number.isFinite(c))
+      // Nothing finite survived: say so instead of any confidence-coloured verdict.
+      v = {
+        label: "Not measurable",
+        color: "text-slate-400",
+        tip: "No episode has a finite speed (all values NaN/∞) — speed consistency cannot be assessed for this dataset.",
       };
-    }, [distribution]);
+    else if (c < 0.2)
+      v = {
+        label: "Consistent",
+        color: "text-green-400",
+        tip: "Demonstrators execute at similar speeds — no velocity normalization needed.",
+      };
+    else if (c < 0.4)
+      v = {
+        label: "Moderate variance",
+        color: "text-yellow-400",
+        tip: "Some speed variation across demonstrators. Consider velocity normalization for best results.",
+      };
+    else
+      v = {
+        label: "High variance",
+        color: "text-red-400",
+        tip: "Large speed differences between demonstrations. Velocity normalization before training is strongly recommended.",
+      };
 
-  if (speeds.length < 3) return null;
+    return {
+      speeds: sp,
+      dropped,
+      mean: m,
+      std: s,
+      cv: c,
+      median: med,
+      bins: b,
+      lo,
+      binW: bw,
+      maxBin: Math.max(...b),
+      verdict: v,
+    };
+  }, [distribution]);
+
+  // Hide only when there are too few episodes AT ALL; when episodes exist but their
+  // speeds are non-finite, render with the honest "Not measurable" verdict instead of
+  // silently disappearing (an absent section reads as "nothing to flag").
+  if (speeds.length < 3 && dropped === 0) return null;
 
   const barH = isFs ? 250 : 100;
   const barW = Math.max(8, Math.floor((isFs ? 900 : 500) / bins.length));
@@ -1138,7 +1168,8 @@ function SpeedVarianceSection({
           <h3 className="text-sm font-semibold text-slate-200">
             Demonstrator Speed Variance
             <span className="text-xs text-slate-500 ml-2 font-normal">
-              ({numEpisodes} episodes)
+              ({numEpisodes} episodes
+              {dropped > 0 ? `, ${dropped} excluded: non-finite speed` : ""})
             </span>
           </h3>
           <InfoToggle>

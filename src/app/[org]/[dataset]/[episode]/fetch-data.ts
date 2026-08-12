@@ -11,6 +11,7 @@ import {
   getDatasetStats,
 } from "@/utils/versionUtils";
 import { PADDING, CHART_CONFIG, EXCLUDED_COLUMNS } from "@/utils/constants";
+import { episodeMovementScore } from "@/utils/speedStats";
 import {
   processChartDataGroups,
   groupRowBySuffix,
@@ -2135,28 +2136,29 @@ export async function loadCrossEpisodeActionVariance(
   }
 
   // Per-episode average movement per frame: mean L2 norm of frame-to-frame action deltas
+  // NaN-safe (`?? 0` catches null/undefined but NOT NaN): datasets with partial tracking
+  // carry NaN action frames, and one such frame used to turn the whole episode's score —
+  // and then every downstream mean/median — into NaN. episodeMovementScore averages over
+  // the finite frame pairs only, and returns NaN when nothing at all was measurable.
   const movementScores: LowMovementEpisode[] = episodeActions.map(
-    ({ index, actions: ep }) => {
-      if (ep.length < 2) return { episodeIndex: index, totalMovement: 0 };
-      let total = 0;
-      for (let t = 1; t < ep.length; t++) {
-        let sumSq = 0;
-        for (let d = 0; d < actionDim; d++) {
-          const delta = (ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0);
-          sumSq += delta * delta;
-        }
-        total += Math.sqrt(sumSq);
-      }
-      const avgPerFrame = total / (ep.length - 1);
-      return {
-        episodeIndex: index,
-        totalMovement: Math.round(avgPerFrame * 10000) / 10000,
-      };
-    },
+    ({ index, actions: ep }) => ({
+      episodeIndex: index,
+      totalMovement: episodeMovementScore(ep, actionDim),
+    }),
   );
 
-  movementScores.sort((a, b) => a.totalMovement - b.totalMovement);
-  const lowMovementEpisodes = movementScores.slice(0, 10);
+  // NaN-scored episodes (nothing measurable) sort LAST: the comparator is otherwise
+  // undefined on NaN, and an unmeasured episode must not surface as "lowest movement".
+  movementScores.sort(
+    (a, b) =>
+      (Number.isFinite(a.totalMovement) ? a.totalMovement : Infinity) -
+      (Number.isFinite(b.totalMovement) ? b.totalMovement : Infinity),
+  );
+  // Finite only: an episode where nothing was measurable is not a "low movement" episode,
+  // and its NaN would break the section's Math.max/toFixed rendering.
+  const lowMovementEpisodes = movementScores
+    .filter((s) => Number.isFinite(s.totalMovement))
+    .slice(0, 10);
 
   // Precompute per-dimension normalization: motor range (max − min) and unique value count
   const motorRanges: number[] = new Array(actionDim);
