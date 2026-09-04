@@ -23,6 +23,8 @@ import UrdfPlaybackBar from "@/components/urdf-playback-bar";
 import { CHART_CONFIG } from "@/utils/constants";
 import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
 import type { DatasetMetadata } from "@/utils/parquetUtils";
+import { buildDatasetId, isLocalDatasetId } from "@/utils/datasetSource";
+import { fetchEpisodeChartData } from "@/app/[org]/[dataset]/[episode]/actions";
 
 const SERIES_DELIM = CHART_CONFIG.SERIES_NAME_DELIMITER;
 const DEG2RAD = Math.PI / 180;
@@ -703,7 +705,7 @@ export default function URDFViewer({
   const { urdfUrl, scale } = robotConfig;
   const isG1 = urdfUrl.includes("g1");
   const isOpenArm = urdfUrl.includes("openarm");
-  const repoId = org && dataset ? `${org}/${dataset}` : null;
+  const repoId = org && dataset ? buildDatasetId(org, dataset) : null;
   const datasetInfoRef = useRef<{
     version: string;
     info: DatasetMetadata;
@@ -740,6 +742,16 @@ export default function URDFViewer({
 
       if (!repoId) return;
       setEpisodeLoading(true);
+      if (isLocalDatasetId(repoId) && org && dataset) {
+        fetchEpisodeChartData(org, dataset, epId)
+          .then((result) => {
+            chartDataCache.current[epId] = result;
+            setChartData(result);
+          })
+          .catch((err) => console.error("Failed to load episode:", err))
+          .finally(() => setEpisodeLoading(false));
+        return;
+      }
       ensureDatasetInfo()
         .then((payload) => {
           if (!payload) return null;
@@ -758,7 +770,7 @@ export default function URDFViewer({
         .catch((err) => console.error("Failed to load episode:", err))
         .finally(() => setEpisodeLoading(false));
     },
-    [ensureDatasetInfo, repoId],
+    [dataset, ensureDatasetInfo, org, repoId],
   );
 
   useEffect(() => {

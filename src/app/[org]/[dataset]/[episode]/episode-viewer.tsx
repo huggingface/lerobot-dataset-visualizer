@@ -34,6 +34,21 @@ import {
 } from "./fetch-data";
 import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
 import type { DatasetMetadata } from "@/utils/parquetUtils";
+import {
+  buildDatasetId,
+  buildHuggingFaceDatasetPageUrl,
+  getDatasetDisplayName,
+  isLocalDatasetId,
+  isLocalDatasetRoute,
+  parseDatasetSource,
+} from "@/utils/datasetSource";
+import {
+  fetchAdjacentEpisodeVideos,
+  fetchCrossEpisodeVariance,
+  fetchEpisodeDataSafe as fetchEpisodeDataSafeServer,
+  fetchEpisodeFrames,
+  fetchEpisodeLengthStats,
+} from "./actions";
 
 const URDFViewer = lazy(() => import("@/components/urdf-viewer"));
 const ActionInsightsPanel = lazy(
@@ -161,7 +176,10 @@ export default function EpisodeViewer({
     const requestId = ++requestIdRef.current;
     setError(null);
     setData(null);
-    getEpisodeDataSafe(org, dataset, episodeId)
+    const loadEpisode = isLocalDatasetRoute(org)
+      ? fetchEpisodeDataSafeServer
+      : getEpisodeDataSafe;
+    loadEpisode(org, dataset, episodeId)
       .then(({ data: loaded, error: loadError }) => {
         if (requestIdRef.current !== requestId) return;
         if (loadError) {
@@ -216,9 +234,12 @@ export default function EpisodeViewer({
 function EpisodeBootstrap({ data }: { data: EpisodeData }) {
   const { setEpisode } = useAnnotations();
   useEffect(() => {
+    const source = parseDatasetSource(data.datasetInfo.repoId);
     setEpisode(
       data.episodeId,
-      { repoId: data.datasetInfo.repoId },
+      source.kind === "local"
+        ? { localPath: source.root }
+        : { repoId: data.datasetInfo.repoId },
       data.languageAtoms,
       data.frameTimestamps,
     );
@@ -314,6 +335,8 @@ function EpisodeViewerInner({
   const [insightsLoading, setInsightsLoading] = useState(false);
   const insightsLoadedRef = useRef(false);
   const mountedRef = useRef(true);
+  const datasetId = org && dataset ? buildDatasetId(org, dataset) : null;
+  const localDataset = datasetId ? isLocalDatasetId(datasetId) : false;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -356,13 +379,14 @@ function EpisodeViewerInner({
     statsLoadedRef.current = true;
     setStatsLoading(true);
     setColumnMinMax(computeColumnMinMax(data.chartDataGroups));
-    if (org && dataset) {
-      const repoId = `${org}/${dataset}`;
-      getDatasetVersionAndInfo(repoId)
-        .then(({ version, info }) => {
-          if (version !== "v3.0") return null;
-          return loadAllEpisodeLengthsV3(repoId, version, info.fps);
-        })
+    if (org && dataset && datasetId) {
+      const request = localDataset
+        ? fetchEpisodeLengthStats(org, dataset)
+        : getDatasetVersionAndInfo(datasetId).then(({ version, info }) => {
+            if (version !== "v3.0") return null;
+            return loadAllEpisodeLengthsV3(datasetId, version, info.fps);
+          });
+      request
         .then((result) => {
           if (!mountedRef.current) return;
           setEpisodeLengthStats(result);
@@ -377,18 +401,19 @@ function EpisodeViewerInner({
   };
 
   const loadFrames = () => {
-    if (framesLoadedRef.current || !org || !dataset) return;
+    if (framesLoadedRef.current || !org || !dataset || !datasetId) return;
     framesLoadedRef.current = true;
     setFramesLoading(true);
-    const repoId = `${org}/${dataset}`;
-    getDatasetVersionAndInfo(repoId)
-      .then(({ version, info }) =>
-        loadAllEpisodeFrameInfo(
-          repoId,
-          version,
-          info as unknown as DatasetMetadata,
-        ),
-      )
+    const request = localDataset
+      ? fetchEpisodeFrames(org, dataset)
+      : getDatasetVersionAndInfo(datasetId).then(({ version, info }) =>
+          loadAllEpisodeFrameInfo(
+            datasetId,
+            version,
+            info as unknown as DatasetMetadata,
+          ),
+        );
+    request
       .then((result) => {
         if (!mountedRef.current) return;
         setEpisodeFramesData(result);
@@ -403,19 +428,20 @@ function EpisodeViewerInner({
   };
 
   const loadInsights = () => {
-    if (insightsLoadedRef.current || !org || !dataset) return;
+    if (insightsLoadedRef.current || !org || !dataset || !datasetId) return;
     insightsLoadedRef.current = true;
     setInsightsLoading(true);
-    const repoId = `${org}/${dataset}`;
-    getDatasetVersionAndInfo(repoId)
-      .then(({ version, info }) =>
-        loadCrossEpisodeActionVariance(
-          repoId,
-          version,
-          info as unknown as DatasetMetadata,
-          info.fps,
-        ),
-      )
+    const request = localDataset
+      ? fetchCrossEpisodeVariance(org, dataset)
+      : getDatasetVersionAndInfo(datasetId).then(({ version, info }) =>
+          loadCrossEpisodeActionVariance(
+            datasetId,
+            version,
+            info as unknown as DatasetMetadata,
+            info.fps,
+          ),
+        );
+    request
       .then((result) => {
         if (!mountedRef.current) return;
         setCrossEpData(result);
@@ -476,7 +502,10 @@ function EpisodeViewerInner({
     if (!org || !dataset) return;
     const links: HTMLLinkElement[] = [];
 
-    getAdjacentEpisodesVideoInfo(org, dataset, episodeId, 2)
+    const request = localDataset
+      ? fetchAdjacentEpisodeVideos(org, dataset, episodeId, 2)
+      : getAdjacentEpisodesVideoInfo(org, dataset, episodeId, 2);
+    request
       .then((adjacentVideos) => {
         for (const ep of adjacentVideos) {
           for (const v of ep.videosInfo) {
@@ -494,7 +523,7 @@ function EpisodeViewerInner({
     return () => {
       links.forEach((l) => l.remove());
     };
-  }, [org, dataset, episodeId]);
+  }, [org, dataset, episodeId, localDataset]);
 
   // Initialize based on URL time parameter
   useEffect(() => {
@@ -681,12 +710,19 @@ function EpisodeViewerInner({
 
                 <div className="min-w-0">
                   <a
-                    href={`https://huggingface.co/datasets/${datasetInfo.repoId}`}
-                    target="_blank"
-                    className="text-slate-200 hover:text-cyan-300 transition-colors"
+                    href={
+                      buildHuggingFaceDatasetPageUrl(datasetInfo.repoId) ??
+                      undefined
+                    }
+                    target={localDataset ? undefined : "_blank"}
+                    className={`text-slate-200 ${
+                      localDataset
+                        ? "cursor-default"
+                        : "hover:text-cyan-300 transition-colors"
+                    }`}
                   >
                     <p className="text-base font-medium truncate">
-                      {datasetInfo.repoId}
+                      {getDatasetDisplayName(datasetInfo.repoId)}
                     </p>
                   </a>
                   <p className="text-[10px] uppercase tracking-wide text-slate-500 mt-0.5 tabular">
@@ -737,7 +773,7 @@ function EpisodeViewerInner({
             <div className="annotations-skin flex flex-col gap-4">
               <div className="flex items-center gap-3">
                 <p className="text-base font-medium text-slate-200 truncate">
-                  {datasetInfo.repoId}
+                  {getDatasetDisplayName(datasetInfo.repoId)}
                 </p>
                 <p className="text-[10px] uppercase tracking-wide text-slate-500 tabular">
                   Episode · {episodeId}
@@ -816,7 +852,7 @@ function EpisodeViewerInner({
             </Suspense>
           )}
 
-          {activeTab === "doctor" && (
+          {activeTab === "doctor" && !localDataset && (
             <div className="flex flex-col h-full">
               <div className="flex items-center justify-between px-1 pb-2 text-xs text-slate-400">
                 <span>
@@ -831,7 +867,7 @@ function EpisodeViewerInner({
                   </a>
                 </span>
                 <a
-                  href={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${org}/${dataset}`}
+                  href={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${encodeURIComponent(datasetId ?? "")}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline hover:text-slate-200"
@@ -840,7 +876,7 @@ function EpisodeViewerInner({
                 </a>
               </div>
               <iframe
-                src={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${org}/${dataset}`}
+                src={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${encodeURIComponent(datasetId ?? "")}`}
                 title="lerobot-doctor"
                 className="flex-1 w-full rounded border border-slate-700 bg-white"
                 sandbox="allow-scripts allow-same-origin allow-popups allow-forms"

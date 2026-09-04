@@ -1,5 +1,5 @@
 import { describe, expect, test, mock, afterEach } from "bun:test";
-import { buildVersionedUrl } from "@/utils/versionUtils";
+import { buildDatasetAssetUrl, buildVersionedUrl } from "@/utils/versionUtils";
 
 // ---------------------------------------------------------------------------
 // buildVersionedUrl — pure function, no mocking needed
@@ -53,6 +53,28 @@ describe("buildVersionedUrl", () => {
     const url = buildVersionedUrl("myorg/mydataset", "v3.0", "meta/info.json");
     expect(url).toBe(
       "https://huggingface.co/datasets/myorg/mydataset/resolve/main/meta/info.json",
+    );
+  });
+
+  test("prefixes paths for a dataset stored in a Hub subdirectory", () => {
+    const url = buildVersionedUrl(
+      "simple-world-lab/HiFi-UMI-2K/chunk-0000/part-0000",
+      "v3.0",
+      "meta/info.json",
+    );
+    expect(url).toBe(
+      "https://huggingface.co/datasets/simple-world-lab/HiFi-UMI-2K/resolve/main/chunk-0000/part-0000/meta/info.json",
+    );
+  });
+
+  test("uses the local file API for browser assets", () => {
+    const url = buildDatasetAssetUrl(
+      "local:/data/lerobot/demo",
+      "v3.0",
+      "videos/camera/chunk-000/file-000.mp4",
+    );
+    expect(url).toBe(
+      "/api/local-dataset/file?root=%2Fdata%2Flerobot%2Fdemo&path=videos%2Fcamera%2Fchunk-000%2Ffile-000.mp4",
     );
   });
 });

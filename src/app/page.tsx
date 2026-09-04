@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { authHeaders } from "@/utils/auth";
 import HfAuthButton from "@/components/hf-auth-button";
+import {
+  buildDatasetRoute,
+  isHuggingFaceSubdirectoryInput,
+  isLikelyLocalDatasetInput,
+} from "@/utils/datasetSource";
 
 export default function Home() {
   return (
@@ -33,7 +38,7 @@ function HomeInner() {
           .map((x) => parseInt(x.trim(), 10))
           .filter((x) => !isNaN(x))[0] ?? 0;
 
-      router.push(`/${process.env.REPO_ID}/episode_${episodeN}`);
+      router.push(buildDatasetRoute(process.env.REPO_ID, episodeN));
       return;
     }
 
@@ -82,6 +87,16 @@ function HomeInner() {
       setHasFetched(false);
       return;
     }
+    if (
+      isLikelyLocalDatasetInput(query) ||
+      isHuggingFaceSubdirectoryInput(query)
+    ) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      setIsLoading(false);
+      setHasFetched(false);
+      return;
+    }
     setIsLoading(true);
     setHasFetched(false);
     setShowSuggestions(true);
@@ -123,7 +138,7 @@ function HomeInner() {
   const navigate = useCallback(
     (value: string) => {
       setShowSuggestions(false);
-      router.push(value);
+      router.push(buildDatasetRoute(value));
     },
     [router],
   );
@@ -181,7 +196,7 @@ function HomeInner() {
 
         {/* Subtitle */}
         <p className="text-white/55 text-base md:text-lg mb-8 max-w-md">
-          Explore and visualize robot learning datasets from Hugging Face
+          Explore Hugging Face datasets, nested dataset folders, or local data
         </p>
 
         {/* Search form */}
@@ -209,7 +224,7 @@ function HomeInner() {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               onFocus={() => query.trim() && setShowSuggestions(true)}
-              placeholder="Enter dataset id (e.g. lerobot/pusht)"
+              placeholder="HF dataset, nested folder, or local path"
               className="pl-10 pr-4 py-2.5 rounded-md text-base text-white bg-white/10 backdrop-blur-sm border border-white/30 focus:outline-none focus:border-cyan-400 focus:bg-white/15 w-[380px] shadow-md placeholder:text-white/40 transition-colors"
               autoComplete="off"
             />
@@ -286,6 +301,14 @@ function HomeInner() {
         <div className="mt-3 animate-fade-in-late">
           <HfAuthButton variant="ghost" />
         </div>
+
+        <p className="mt-3 max-w-2xl text-xs text-white/45">
+          Examples: <span className="font-mono">lerobot/pusht</span>,{" "}
+          <span className="font-mono">
+            simple-world-lab/HiFi-UMI-2K/chunk-0000/part-0000
+          </span>
+          , or <span className="font-mono">/data/lerobot/my_dataset</span>
+        </p>
 
         {/* Example Datasets */}
         <div className="mt-8">

@@ -82,6 +82,32 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `src/app/page.tsx` or other files in the `src/` directory. The app supports hot-reloading for rapid development.
 
+### Loading datasets
+
+The home-page input accepts three source formats:
+
+- A Hugging Face dataset id, such as `lerobot/pusht`
+- A dataset stored below the repository root, such as
+  `simple-world-lab/HiFi-UMI-2K/chunk-0000/part-0000` (a copied Hugging Face
+  `/tree/main/...` URL also works)
+- An absolute local LeRobot directory, such as `/data/lerobot/my_dataset`
+  (`~/...`, `file://...`, and Windows drive paths are also recognized)
+
+The selected directory must itself contain the standard LeRobot folders,
+including `meta/`, `data/`, and `videos/`. Local files are read by the Next.js
+server, so the server process needs read permission for the directory. Local
+videos are streamed through a same-origin endpoint with HTTP Range support.
+
+When running in Docker, mount the dataset into the container and enter the
+container path in the UI, for example:
+
+```bash
+docker run -p 7860:7860 \
+  -v /host/datasets:/datasets:ro \
+  lerobot-visualizer
+# Enter /datasets/my_dataset in the visualizer.
+```
+
 ### Other Commands
 
 ```bash

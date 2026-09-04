@@ -6,6 +6,7 @@ import {
   type AsyncBuffer,
 } from "hyparquet";
 import { authHeaders } from "./auth";
+import { parseLocalDatasetUrl } from "./datasetSource";
 
 export interface DatasetMetadata {
   codebase_version: string;
@@ -31,7 +32,62 @@ export interface DatasetMetadata {
   >;
 }
 
+function expandHomeDir(inputPath: string): string {
+  if (inputPath === "~") return process.env.HOME ?? inputPath;
+  if (inputPath.startsWith("~/")) {
+    return `${process.env.HOME ?? "~"}/${inputPath.slice(2)}`;
+  }
+  return inputPath.replace(/^file:\/\//, "");
+}
+
+async function runtimeImport<T>(specifier: string): Promise<T> {
+  const importer = Function("moduleName", "return import(moduleName)") as (
+    moduleName: string,
+  ) => Promise<unknown>;
+  return (await importer(specifier)) as T;
+}
+
+async function resolveLocalDatasetFile(root: string, relativePath: string) {
+  const path = await runtimeImport<typeof import("node:path")>("node:path");
+  const fs =
+    await runtimeImport<typeof import("node:fs/promises")>("node:fs/promises");
+  const normalizedRoot = path.resolve(expandHomeDir(root));
+  const target = path.resolve(normalizedRoot, relativePath);
+  const relative = path.relative(normalizedRoot, target);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error("Requested path is outside the dataset directory");
+  }
+  await fs.access(target);
+  return target;
+}
+
+async function readLocalDatasetFile(url: string): Promise<ArrayBuffer> {
+  const parsed = parseLocalDatasetUrl(url);
+  if (!parsed) throw new Error(`Invalid local dataset URL: ${url}`);
+  const fs =
+    await runtimeImport<typeof import("node:fs/promises")>("node:fs/promises");
+  const file = await fs.readFile(
+    await resolveLocalDatasetFile(parsed.root, parsed.path),
+  );
+  return file.buffer.slice(
+    file.byteOffset,
+    file.byteOffset + file.byteLength,
+  ) as ArrayBuffer;
+}
+
 export async function fetchJson<T>(url: string): Promise<T> {
+  const local = parseLocalDatasetUrl(url);
+  if (local) {
+    const fs =
+      await runtimeImport<typeof import("node:fs/promises")>(
+        "node:fs/promises",
+      );
+    const raw = await fs.readFile(
+      await resolveLocalDatasetFile(local.root, local.path),
+      "utf8",
+    );
+    return JSON.parse(raw) as T;
+  }
   const res = await fetch(url, {
     cache: "no-store",
     headers: authHeaders(),
@@ -42,6 +98,31 @@ export async function fetchJson<T>(url: string): Promise<T> {
     );
   }
   return res.json() as Promise<T>;
+}
+
+export async function fetchText(url: string): Promise<string> {
+  const local = parseLocalDatasetUrl(url);
+  if (local) {
+    const fs =
+      await runtimeImport<typeof import("node:fs/promises")>(
+        "node:fs/promises",
+      );
+    return fs.readFile(
+      await resolveLocalDatasetFile(local.root, local.path),
+      "utf8",
+    );
+  }
+
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Failed to fetch text ${url}: ${res.status} ${res.statusText}`,
+    );
+  }
+  return res.text();
 }
 
 export function formatStringWithVars(
@@ -57,6 +138,8 @@ type ParquetFile = ArrayBuffer | AsyncBuffer;
 const parquetFileCache = new Map<string, AsyncBuffer>();
 
 export async function fetchParquetFile(url: string): Promise<ParquetFile> {
+  if (parseLocalDatasetUrl(url)) return readLocalDatasetFile(url);
+
   const cached = parquetFileCache.get(url);
   if (cached) return cached;
 

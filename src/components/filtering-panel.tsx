@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useCallback } from "react";
 import { useFlaggedEpisodes } from "@/context/flagged-episodes-context";
+import { parseDatasetSource } from "@/utils/datasetSource";
 import type {
   CrossEpisodeVarianceData,
   LowMovementEpisode,
@@ -244,6 +245,9 @@ function FlaggedIdsCopyBar({
 
   const ids = useMemo(() => [...flagged].sort((a, b) => a - b), [flagged]);
   const idStr = ids.join(", ");
+  const source = parseDatasetSource(repoId);
+  const nestedOrLocalDataset =
+    source.kind === "local" || source.subdirectory.length > 0;
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(idStr);
@@ -330,7 +334,15 @@ function FlaggedIdsCopyBar({
           View flagged episodes
         </button>
       )}
-      <div className="bg-[var(--surface-0)]/60 rounded-md px-3 py-2 border border-white/10/60 space-y-2.5">
+      {nestedOrLocalDataset && (
+        <div className="bg-[var(--surface-0)]/60 rounded-md px-3 py-2 border border-white/10/60 space-y-2.5">
+          <p className="text-xs text-slate-400">Selected episode ids:</p>
+          <pre className="text-xs text-slate-300 bg-[var(--bg)]/50 rounded px-2 py-1.5 overflow-x-auto select-all">{`[${ids.join(", ")}]`}</pre>
+        </div>
+      )}
+      <div
+        className={`${nestedOrLocalDataset ? "hidden" : ""} bg-[var(--surface-0)]/60 rounded-md px-3 py-2 border border-white/10/60 space-y-2.5`}
+      >
         <p className="text-xs text-slate-400">
           <a
             href="https://github.com/huggingface/lerobot"
@@ -340,7 +352,10 @@ function FlaggedIdsCopyBar({
           >
             LeRobot CLI
           </a>{" "}
-          — delete flagged episodes:
+          —{" "}
+          {nestedOrLocalDataset
+            ? "review selected episode ids:"
+            : "delete flagged episodes:"}
         </p>
         <pre className="text-xs text-slate-300 bg-[var(--bg)]/50 rounded px-2 py-1.5 overflow-x-auto select-all">{`# Delete episodes (modifies original dataset)\nlerobot-edit-dataset \\\n    --repo_id ${repoId} \\\n    --operation.type delete_episodes \\\n    --operation.episode_indices "[${ids.join(", ")}]"`}</pre>
         <pre className="text-xs text-slate-300 bg-[var(--bg)]/50 rounded px-2 py-1.5 overflow-x-auto select-all">{`# Delete episodes and save to a new dataset (preserves original)\nlerobot-edit-dataset \\\n    --repo_id ${repoId} \\\n    --new_repo_id ${repoId}_filtered \\\n    --operation.type delete_episodes \\\n    --operation.episode_indices "[${ids.join(", ")}]"`}</pre>

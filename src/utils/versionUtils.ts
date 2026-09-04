@@ -3,6 +3,12 @@
  */
 
 import { authHeaders } from "./auth";
+import {
+  buildLocalDatasetAssetUrl,
+  buildLocalDatasetUrl,
+  joinDatasetPath,
+  parseDatasetSource,
+} from "./datasetSource";
 
 const DATASET_URL =
   process.env.DATASET_URL || "https://huggingface.co/datasets";
@@ -75,7 +81,43 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
   console.log(`[perf] getDatasetInfo cache MISS for ${repoId} — fetching`);
 
   try {
-    const testUrl = `${DATASET_URL}/${repoId}/resolve/main/meta/info.json`;
+    const source = parseDatasetSource(repoId);
+    if (source.kind === "local") {
+      const runtimeImport = Function(
+        "specifier",
+        "return import(specifier)",
+      ) as (specifier: string) => Promise<unknown>;
+      const fs = (await runtimeImport(
+        "node:fs/promises",
+      )) as typeof import("node:fs/promises");
+      const path = (await runtimeImport(
+        "node:path",
+      )) as typeof import("node:path");
+      const expandedRoot =
+        source.root === "~"
+          ? (process.env.HOME ?? source.root)
+          : source.root.startsWith("~/")
+            ? path.join(process.env.HOME ?? "~", source.root.slice(2))
+            : source.root.replace(/^file:\/\//, "");
+      const raw = await fs.readFile(
+        path.join(path.resolve(expandedRoot), "meta", "info.json"),
+        "utf8",
+      );
+      const data = JSON.parse(raw) as DatasetInfo;
+      if (!data.features) {
+        throw new Error(
+          "Dataset info.json does not have the expected features structure",
+        );
+      }
+      datasetInfoCache.set(repoId, {
+        data,
+        expiry: Date.now() + CACHE_TTL_MS,
+      });
+      pruneDatasetInfoCache(Date.now());
+      return data;
+    }
+
+    const testUrl = buildVersionedUrl(repoId, "", "meta/info.json");
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -135,7 +177,36 @@ export async function getDatasetStats(
 
   let data: Record<string, unknown> | null = null;
   try {
-    const url = `${DATASET_URL}/${repoId}/resolve/main/meta/stats.json`;
+    const url = buildVersionedUrl(repoId, "", "meta/stats.json");
+    const source = parseDatasetSource(repoId);
+    if (source.kind === "local") {
+      const runtimeImport = Function(
+        "specifier",
+        "return import(specifier)",
+      ) as (specifier: string) => Promise<unknown>;
+      const fs = (await runtimeImport(
+        "node:fs/promises",
+      )) as typeof import("node:fs/promises");
+      const path = (await runtimeImport(
+        "node:path",
+      )) as typeof import("node:path");
+      const expandedRoot =
+        source.root === "~"
+          ? (process.env.HOME ?? source.root)
+          : source.root.startsWith("~/")
+            ? path.join(process.env.HOME ?? "~", source.root.slice(2))
+            : source.root.replace(/^file:\/\//, "");
+      const raw = await fs.readFile(
+        path.join(path.resolve(expandedRoot), "meta", "stats.json"),
+        "utf8",
+      );
+      data = JSON.parse(raw) as Record<string, unknown>;
+      datasetStatsCache.set(repoId, {
+        data,
+        expiry: Date.now() + CACHE_TTL_MS,
+      });
+      return data;
+    }
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     const response = await fetch(url, {
@@ -193,5 +264,22 @@ export function buildVersionedUrl(
   version: string,
   path: string,
 ): string {
-  return `${DATASET_URL}/${repoId}/resolve/main/${path}`;
+  const source = parseDatasetSource(repoId);
+  if (source.kind === "local") {
+    return buildLocalDatasetUrl(source.root, path);
+  }
+  return `${DATASET_URL}/${source.repoId}/resolve/main/${joinDatasetPath(repoId, path)}`;
+}
+
+/** Browser-loadable URL. Local files are streamed by a same-origin route. */
+export function buildDatasetAssetUrl(
+  repoId: string,
+  version: string,
+  path: string,
+): string {
+  const source = parseDatasetSource(repoId);
+  if (source.kind === "local") {
+    return buildLocalDatasetAssetUrl(source.root, path);
+  }
+  return buildVersionedUrl(repoId, version, path);
 }

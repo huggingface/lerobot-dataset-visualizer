@@ -1,5 +1,6 @@
 import EpisodeViewer from "./episode-viewer";
 import { Suspense } from "react";
+import { buildDatasetId, getDatasetDisplayName } from "@/utils/datasetSource";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,7 @@ export async function generateMetadata({
 }) {
   const { org, dataset, episode } = await params;
   return {
-    title: `${org}/${dataset} | episode ${episode}`,
+    title: `${getDatasetDisplayName(buildDatasetId(org, dataset))} | episode ${episode}`,
   };
 }
 
