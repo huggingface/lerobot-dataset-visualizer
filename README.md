@@ -124,6 +124,25 @@ bun run lint
 bun run format
 ```
 
+### Desktop application
+
+The Electron application embeds the standalone Next.js server, so it supports
+the same Hugging Face and local dataset sources without requiring a separate
+server process.
+
+```bash
+# Run Next.js and Electron in development
+bun run desktop:dev
+
+# Build installers for the current operating system
+bun run desktop:dist
+```
+
+GitHub Actions builds `.AppImage` and `.deb` packages on Linux, `.exe` on
+Windows, and `.dmg` on macOS. Pushing a tag such as `v0.1.0` publishes all four
+artifacts to a GitHub Release. Builds are unsigned unless signing credentials
+are configured in the repository.
+
 ### Environment Variables
 
 - `DATASET_URL`: (optional) Base URL for dataset hosting (defaults to HuggingFace Datasets).

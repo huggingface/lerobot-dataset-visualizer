@@ -28,6 +28,13 @@ const EXAMPLE_DATASETS = [
 function HomeInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const [isDesktopApp, setIsDesktopApp] = useState(false);
+  const [isSelectingDirectory, setIsSelectingDirectory] = useState(false);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsDesktopApp(Boolean(window.desktop?.isElectron));
+  }, []);
 
   // Handle redirects with useEffect instead of direct redirect
   useEffect(() => {
@@ -151,6 +158,29 @@ function HomeInner() {
         : query.trim();
     if (target) navigate(target);
   };
+
+  const handleChooseDirectory = useCallback(async () => {
+    if (!window.desktop?.isElectron) return;
+    setDirectoryError(null);
+    setIsSelectingDirectory(true);
+    try {
+      const selected = await window.desktop.selectDatasetDirectory();
+      if (selected) {
+        setQuery(selected);
+        setSuggestions([]);
+        setShowSuggestions(false);
+        navigate(selected);
+      }
+    } catch (error) {
+      setDirectoryError(
+        error instanceof Error
+          ? error.message
+          : "Failed to choose the dataset directory.",
+      );
+    } finally {
+      setIsSelectingDirectory(false);
+    }
+  }, [navigate]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!showSuggestions) return;
@@ -297,6 +327,21 @@ function HomeInner() {
             </kbd>
           </button>
         </form>
+
+        {isDesktopApp && (
+          <button
+            type="button"
+            onClick={handleChooseDirectory}
+            disabled={isSelectingDirectory}
+            className="mt-3 rounded-md border border-white/25 bg-white/10 px-4 py-2 text-sm text-white/85 backdrop-blur-sm transition-colors hover:border-cyan-400 hover:bg-white/15 disabled:cursor-wait disabled:opacity-60"
+          >
+            {isSelectingDirectory ? "Opening…" : "Choose Local Directory"}
+          </button>
+        )}
+
+        {directoryError && (
+          <p className="mt-2 max-w-md text-xs text-red-300">{directoryError}</p>
+        )}
 
         <div className="mt-3 animate-fade-in-late">
           <HfAuthButton variant="ghost" />

@@ -22,6 +22,7 @@ package-lock.json
 
 # production
 /build
+/dist-electron
 
 # misc
 .DS_Store

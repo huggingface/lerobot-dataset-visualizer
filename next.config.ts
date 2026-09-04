@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 import packageJson from "./package.json";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -15,6 +16,7 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ["react-icons", "recharts", "@huggingface/hub"],
   },
+  allowedDevOrigins: ["127.0.0.1", "localhost", "*.localhost"],
   generateBuildId: () => packageJson.version,
 };
 
