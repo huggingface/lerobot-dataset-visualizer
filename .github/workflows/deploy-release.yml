@@ -27,13 +27,6 @@ jobs:
       - name: Install the Hugging Face CLI
         run: python3 -m pip install --upgrade "huggingface_hub>=1.0,<2"
 
-      # Printed so that a permissions failure below is diagnosable from the log
-      # alone: this shows which account the token resolves to and what it may do.
-      - name: Check the token
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: hf auth whoami
-
       - name: Upload to the Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
