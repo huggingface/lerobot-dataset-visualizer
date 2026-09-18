@@ -21,7 +21,7 @@ jobs:
           lfs: true
           ref: main
       - name: Sync to HF Space
-        uses: huggingface/hub-sync@4d340790b2a7cc86e598dce1c29a0c7c6adf3d62 # main
+        uses: huggingface/hub-sync@fdffea8e04104d0bd4e3181c5feb3025f0433ff5 # v0.3.0
         with:
           github_repo_id: huggingface/lerobot-dataset-visualizer
           huggingface_repo_id: lerobot/visualize_dataset
