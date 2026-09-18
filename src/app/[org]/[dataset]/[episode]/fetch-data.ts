@@ -15,11 +15,7 @@ import {
   processChartDataGroups,
   groupRowBySuffix,
 } from "@/utils/dataProcessing";
-import {
-  buildV3VideoPath,
-  buildV3DataPath,
-  buildV3EpisodesMetadataPath,
-} from "@/utils/stringFormatting";
+import { buildV3EpisodesMetadataPath } from "@/utils/stringFormatting";
 import { bigIntToNumber } from "@/utils/typeGuards";
 import {
   isGrayscaleShape,
@@ -27,8 +23,85 @@ import {
   depthEncodingFromFeature,
 } from "@/utils/colormaps";
 import type { VideoInfo, AdjacentEpisodeVideos } from "@/types";
+import { LeRobotDataset } from "@huggingface/lerobot";
+import type { LeRobotEpisode } from "@huggingface/lerobot";
+import { authHeaders } from "@/utils/auth";
 
 const SERIES_NAME_DELIMITER = CHART_CONFIG.SERIES_NAME_DELIMITER;
+
+/** `DATASET_URL` points at `<endpoint>/datasets`; the package wants the endpoint. */
+const HUB_ENDPOINT = (
+  process.env.DATASET_URL || "https://huggingface.co/datasets"
+).replace(/\/datasets\/?$/, "");
+
+function leRobotDataset(repoId: string): LeRobotDataset {
+  return new LeRobotDataset(repoId, {
+    endpoint: HUB_ENDPOINT,
+    additionalFetchHeaders: authHeaders(),
+  });
+}
+
+/**
+ * Locates a single episode: which video files hold it, where inside them, and which parquet rows
+ * are its frames. `@huggingface/lerobot` normalizes the v2.x and v3.0 layouts behind one shape, and
+ * reads the v3 index by row range instead of scanning every shard for a matching episode_index.
+ */
+async function loadLeRobotEpisode(
+  repoId: string,
+  episodeId: number,
+): Promise<LeRobotEpisode> {
+  const [episode] = await leRobotDataset(repoId).episodes({
+    offset: episodeId,
+    limit: 1,
+  });
+  if (!episode) {
+    throw new Error(`Episode ${episodeId} not found in ${repoId}`);
+  }
+  return episode;
+}
+
+/**
+ * v3.0 concatenates episodes into shared files, so each camera carries a time range; v2.x gives every
+ * episode its own file and the range simply spans it.
+ */
+function toVideosInfo(
+  episode: LeRobotEpisode,
+  info: DatasetMetadata,
+  segmented: boolean,
+): VideoInfo[] {
+  return episode.videos.map((video) => ({
+    filename: video.cameraKey,
+    url: video.url,
+    isGrayscale: isGrayscaleShape(info.features[video.cameraKey]?.shape ?? []),
+    ...(segmented
+      ? {
+          isSegmented: true,
+          segmentStart: video.fromSec,
+          segmentEnd: video.toSec,
+          segmentDuration: video.toSec - video.fromSec,
+        }
+      : {}),
+  }));
+}
+
+/** Adapts the package's episode onto the shape the chart loader already consumes. */
+function toEpisodeMetadataV3(episode: LeRobotEpisode): EpisodeMetadataV3 {
+  const primary = episode.videos[0];
+  return {
+    episode_index: episode.index,
+    data_chunk_index: 0,
+    data_file_index: 0,
+    dataset_from_index: episode.data.fromRow,
+    dataset_to_index: episode.data.toRow,
+    /// Unused downstream: the package resolves the video URL itself.
+    video_chunk_index: 0,
+    video_file_index: 0,
+    video_from_timestamp: primary?.fromSec ?? 0,
+    video_to_timestamp: primary?.toSec ?? episode.durationSec,
+    length: episode.length,
+    tasks: episode.tasks,
+  };
+}
 
 export type CameraInfo = { name: string; width: number; height: number };
 
@@ -424,45 +497,10 @@ export async function getAdjacentEpisodesVideoInfo(
       const episodeId = currentEpisodeId + offset;
       if (episodeId >= 0 && episodeId < totalEpisodes) {
         try {
-          let videosInfo: VideoInfo[] = [];
-
-          if (version === "v3.0") {
-            const episodeMetadata = await loadEpisodeMetadataV3Simple(
-              repoId,
-              version,
-              episodeId,
-            );
-            videosInfo = extractVideoInfoV3WithSegmentation(
-              repoId,
-              version,
-              info,
-              episodeMetadata,
-            );
-          } else {
-            // For v2.x, use simpler video info extraction
-            if (info.video_path) {
-              const chunkSize = Math.max(1, info.chunks_size || 1000);
-              const episode_chunk = Math.floor(episodeId / chunkSize);
-              videosInfo = Object.entries(info.features)
-                .filter(([, value]) => value.dtype === "video")
-                .map(([key, value]) => {
-                  const videoPath = formatStringWithVars(info.video_path!, {
-                    video_key: key,
-                    episode_chunk: episode_chunk
-                      .toString()
-                      .padStart(PADDING.CHUNK_INDEX, "0"),
-                    episode_index: episodeId
-                      .toString()
-                      .padStart(PADDING.EPISODE_INDEX, "0"),
-                  });
-                  return {
-                    filename: key,
-                    url: buildVersionedUrl(repoId, version, videoPath),
-                    isGrayscale: isGrayscaleShape(value.shape),
-                  };
-                });
-            }
-          }
+          const episode = await loadLeRobotEpisode(repoId, episodeId);
+          const videosInfo = info.video_path
+            ? toVideosInfo(episode, info, version === "v3.0")
+            : [];
 
           adjacentVideos.push({ episodeId, videosInfo });
         } catch {
@@ -515,24 +553,7 @@ async function getEpisodeDataV2(
   // Videos information
   const videosInfo =
     info.video_path !== null
-      ? Object.entries(info.features)
-          .filter(([, value]) => value.dtype === "video")
-          .map(([key, value]) => {
-            const videoPath = formatStringWithVars(info.video_path!, {
-              video_key: key,
-              episode_chunk: episode_chunk
-                .toString()
-                .padStart(PADDING.CHUNK_INDEX, "0"),
-              episode_index: episodeId
-                .toString()
-                .padStart(PADDING.EPISODE_INDEX, "0"),
-            });
-            return {
-              filename: key,
-              url: buildVersionedUrl(repoId, version, videoPath),
-              isGrayscale: isGrayscaleShape(value.shape),
-            };
-          })
+      ? toVideosInfo(await loadLeRobotEpisode(repoId, episodeId), info, false)
       : [];
 
   // Column data
@@ -760,20 +781,9 @@ async function getEpisodeDataV3(
 
   const episodes = Array.from({ length: info.total_episodes }, (_, i) => i);
 
-  // Load episode metadata to get timestamps for episode 0
-  const episodeMetadata = await loadEpisodeMetadataV3Simple(
-    repoId,
-    version,
-    episodeId,
-  );
-
-  // Create video info with segmentation using the metadata
-  const videosInfo = extractVideoInfoV3WithSegmentation(
-    repoId,
-    version,
-    info,
-    episodeMetadata,
-  );
+  const leRobotEpisode = await loadLeRobotEpisode(repoId, episodeId);
+  const episodeMetadata = toEpisodeMetadataV3(leRobotEpisode);
+  const videosInfo = toVideosInfo(leRobotEpisode, info, true);
 
   // Load episode data for charts
   const {
@@ -783,7 +793,13 @@ async function getEpisodeDataV3(
     task,
     languageAtoms,
     frameTimestamps,
-  } = await loadEpisodeDataV3(repoId, version, info, episodeMetadata);
+  } = await loadEpisodeDataV3(
+    repoId,
+    version,
+    info,
+    episodeMetadata,
+    leRobotEpisode.data.url,
+  );
 
   const duration = episodeMetadata.length
     ? episodeMetadata.length / info.fps
@@ -810,6 +826,7 @@ async function loadEpisodeDataV3(
   version: string,
   info: DatasetMetadata,
   episodeMetadata: EpisodeMetadataV3,
+  dataUrl: string,
 ): Promise<{
   chartDataGroups: ChartRow[][];
   flatChartData: Record<string, number>[];
@@ -818,13 +835,7 @@ async function loadEpisodeDataV3(
   languageAtoms?: import("@/types/language.types").LanguageAtom[];
   frameTimestamps?: number[];
 }> {
-  // Build data file path using chunk and file indices
-  const dataChunkIndex = bigIntToNumber(episodeMetadata.data_chunk_index, 0);
-  const dataFileIndex = bigIntToNumber(episodeMetadata.data_file_index, 0);
-  const dataPath = buildV3DataPath(dataChunkIndex, dataFileIndex);
-
   try {
-    const dataUrl = buildVersionedUrl(repoId, version, dataPath);
     const parquetFile = await fetchParquetFile(dataUrl);
     const v3DataColumns = Array.from(
       new Set([
@@ -1300,75 +1311,6 @@ function processEpisodeDataForCharts(
   return { chartDataGroups, flatChartData: chartData, ignoredColumns };
 }
 
-// Video info extraction with segmentation for v3.0
-function extractVideoInfoV3WithSegmentation(
-  repoId: string,
-  version: string,
-  info: DatasetMetadata,
-  episodeMetadata: EpisodeMetadataV3,
-): VideoInfo[] {
-  // Get video features from dataset info
-  const videoFeatures = Object.entries(info.features).filter(
-    ([, value]) => value.dtype === "video",
-  );
-
-  const videosInfo = videoFeatures.map(([videoKey, videoFeature]) => {
-    // Check if we have per-camera metadata in the episode row
-    const cameraSpecificKeys = Object.keys(episodeMetadata).filter((key) =>
-      key.startsWith(`videos/${videoKey}/`),
-    );
-
-    let chunkIndex: number,
-      fileIndex: number,
-      segmentStart: number,
-      segmentEnd: number;
-
-    const toNum = (v: string | number | string[] | undefined): number => {
-      if (typeof v === "string") return parseFloat(v) || 0;
-      if (typeof v === "number") return v;
-      return 0;
-    };
-
-    if (cameraSpecificKeys.length > 0) {
-      chunkIndex = toNum(episodeMetadata[`videos/${videoKey}/chunk_index`]);
-      fileIndex = toNum(episodeMetadata[`videos/${videoKey}/file_index`]);
-      segmentStart =
-        toNum(episodeMetadata[`videos/${videoKey}/from_timestamp`]) || 0;
-      segmentEnd =
-        toNum(episodeMetadata[`videos/${videoKey}/to_timestamp`]) || 30;
-    } else {
-      chunkIndex = episodeMetadata.video_chunk_index || 0;
-      fileIndex = episodeMetadata.video_file_index || 0;
-      segmentStart = episodeMetadata.video_from_timestamp || 0;
-      segmentEnd = episodeMetadata.video_to_timestamp || 30;
-    }
-
-    // Convert BigInt to number for timestamps
-    const startNum = bigIntToNumber(segmentStart);
-    const endNum = bigIntToNumber(segmentEnd);
-
-    const videoPath = buildV3VideoPath(
-      videoKey,
-      bigIntToNumber(chunkIndex, 0),
-      bigIntToNumber(fileIndex, 0),
-    );
-    const fullUrl = buildVersionedUrl(repoId, version, videoPath);
-
-    return {
-      filename: videoKey,
-      url: fullUrl,
-      // Enable segmentation with timestamps from metadata
-      isSegmented: true,
-      segmentStart: startNum,
-      segmentEnd: endNum,
-      segmentDuration: endNum - startNum,
-      isGrayscale: isGrayscaleShape(videoFeature.shape),
-    };
-  });
-
-  return videosInfo;
-}
-
 // Walks v3.0 episode-metadata parquet files across chunks/files. A new chunk
 // begins when the current chunk's files run out (404 or empty); iteration ends
 // when file-000 of the next chunk 404s. `chunks_size` caps files per chunk, so
@@ -1407,21 +1349,6 @@ async function* iterateEpisodeMetadataFilesV3(
 }
 
 // Metadata loading for v3.0 episodes
-async function loadEpisodeMetadataV3Simple(
-  repoId: string,
-  version: string,
-  episodeId: number,
-): Promise<EpisodeMetadataV3> {
-  for await (const rows of iterateEpisodeMetadataFilesV3(repoId, version)) {
-    for (const row of rows) {
-      if (parseEpisodeRowSimple(row).episode_index === episodeId) {
-        return parseEpisodeRowSimple(row);
-      }
-    }
-  }
-  throw new Error(`Episode ${episodeId} not found in metadata`);
-}
-
 // Simple parser for episode row - focuses on key fields for episodes
 function parseEpisodeRowSimple(
   row: Record<string, unknown>,
@@ -2541,16 +2468,13 @@ export async function loadEpisodeFlatChartData(
   info: DatasetMetadata,
   episodeId: number,
 ): Promise<Record<string, number>[]> {
-  const episodeMetadata = await loadEpisodeMetadataV3Simple(
-    repoId,
-    version,
-    episodeId,
-  );
+  const episode = await loadLeRobotEpisode(repoId, episodeId);
   const { flatChartData } = await loadEpisodeDataV3(
     repoId,
     version,
     info,
-    episodeMetadata,
+    toEpisodeMetadataV3(episode),
+    episode.data.url,
   );
   return flatChartData;
 }

@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@huggingface/hub": "^2.11.0",
+    "@huggingface/lerobot": "^0.0.3",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "hyparquet": "^1.12.1",
