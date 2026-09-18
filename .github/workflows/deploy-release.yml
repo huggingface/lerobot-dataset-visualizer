@@ -29,7 +29,8 @@ jobs:
 
       - name: Upload to the Space
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          # The CLI reads HF_TOKEN; the secret is named for what it is allowed to do.
+          HF_TOKEN: ${{ secrets.HF_SPACE_PUSH_TOKEN }}
           HF_REPO_ID: lerobot/visualize_dataset
           SOURCE_REPO: ${{ github.repository }}
           SOURCE_SHA: ${{ github.sha }}
