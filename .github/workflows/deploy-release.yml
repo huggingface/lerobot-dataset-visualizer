@@ -21,11 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          fetch-depth: 0
           lfs: true
           ref: main
-
-      - name: Install the Hugging Face CLI
-        run: python3 -m pip install --upgrade "huggingface_hub>=1.0,<2"
 
       # The Hub answers a push it will not allow with a 403 that reads like a token
       # problem but is usually an org-role one, and `hf auth whoami` only prints org
@@ -61,18 +59,11 @@ jobs:
               )
           PY
 
-      - name: Upload to the Space
-        env:
-          # The CLI reads HF_TOKEN; the secret is named for what it is allowed to do.
-          HF_TOKEN: ${{ secrets.HF_SPACE_PUSH_TOKEN }}
-          HF_REPO_ID: lerobot/visualize_dataset
-          SOURCE_REPO: ${{ github.repository }}
-          SOURCE_SHA: ${{ github.sha }}
-        run: |
-          # `hf` globs '*' across '/', so '.git*' covers .git/, .gitignore,
-          # .gitattributes and .github/, and '*/.git*' covers nested copies.
-          hf upload "$HF_REPO_ID" . . \
-            --repo-type space \
-            --exclude ".git*" \
-            --exclude "*/.git*" \
-            --commit-message "Sync $SOURCE_REPO@${SOURCE_SHA:0:7}"
+      - name: Sync to HF Space
+        uses: huggingface/hub-sync@fdffea8e04104d0bd4e3181c5feb3025f0433ff5 # v0.3.0
+        with:
+          github_repo_id: huggingface/lerobot-dataset-visualizer
+          huggingface_repo_id: lerobot/visualize_dataset
+          repo_type: space
+          space_sdk: docker
+          hf_token: ${{ secrets.HF_SPACE_PUSH_TOKEN }}
