@@ -193,11 +193,13 @@ describe("extractLanguageAtoms", () => {
 
 import { buildVersionedUrl } from "@/utils/versionUtils";
 import { formatStringWithVars } from "@/utils/parquetUtils";
-import {
-  buildV3DataPath,
-  buildV3VideoPath,
-  buildV3EpisodesMetadataPath,
-} from "@/utils/stringFormatting";
+import { buildV3EpisodesMetadataPath } from "@/utils/stringFormatting";
+import { formatPathTemplate } from "@huggingface/lerobot";
+
+const V3_DATA_TEMPLATE =
+  "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet";
+const V3_VIDEO_TEMPLATE =
+  "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4";
 import { PADDING } from "@/utils/constants";
 
 const DATASET_BASE = "https://huggingface.co/datasets";
@@ -318,7 +320,10 @@ describe("v3.0 path construction (lerobot-data-collection/level12_rac_2_2026-02-
   });
 
   test("data path from episode metadata (chunk 0, file 2)", () => {
-    const path = buildV3DataPath(0, 2);
+    const path = formatPathTemplate(V3_DATA_TEMPLATE, {
+      chunk_index: 0,
+      file_index: 2,
+    });
     const url = buildVersionedUrl(repoId, version, path);
     expect(url).toBe(
       `${DATASET_BASE}/${repoId}/resolve/main/data/chunk-000/file-002.parquet`,
@@ -326,7 +331,11 @@ describe("v3.0 path construction (lerobot-data-collection/level12_rac_2_2026-02-
   });
 
   test("video path for top camera (chunk 0, file 0)", () => {
-    const path = buildV3VideoPath("observation.images.top", 0, 0);
+    const path = formatPathTemplate(V3_VIDEO_TEMPLATE, {
+      video_key: "observation.images.top",
+      chunk_index: 0,
+      file_index: 0,
+    });
     const url = buildVersionedUrl(repoId, version, path);
     expect(url).toBe(
       `${DATASET_BASE}/${repoId}/resolve/main/videos/observation.images.top/chunk-000/file-000.mp4`,
@@ -335,13 +344,20 @@ describe("v3.0 path construction (lerobot-data-collection/level12_rac_2_2026-02-
 
   test("video path for wrist camera with non-zero file index (per-camera metadata)", () => {
     // v3.0 supports per-camera video segmentation — each camera can have different file indices
-    const path = buildV3VideoPath("observation.images.wrist", 0, 3);
+    const path = formatPathTemplate(V3_VIDEO_TEMPLATE, {
+      video_key: "observation.images.wrist",
+      chunk_index: 0,
+      file_index: 3,
+    });
     expect(path).toBe("videos/observation.images.wrist/chunk-000/file-003.mp4");
   });
 
   test("data path for large dataset spanning multiple chunks", () => {
     // Episode in chunk 1, file 5 based on episode metadata
-    const path = buildV3DataPath(1, 5);
+    const path = formatPathTemplate(V3_DATA_TEMPLATE, {
+      chunk_index: 1,
+      file_index: 5,
+    });
     expect(path).toBe("data/chunk-001/file-005.parquet");
   });
 });

@@ -57,33 +57,6 @@ export function formatChunkIndex(chunkIndex: number): string {
 }
 
 /**
- * Build video path for v3 datasets
- *
- * @param videoKey - Video key/name (e.g., "observation.image")
- * @param chunkIndex - Data chunk index
- * @param fileIndex - File index within chunk
- * @returns Formatted video path (e.g., "videos/observation.image/chunk-001/file-000.mp4")
- */
-export function buildV3VideoPath(
-  videoKey: string,
-  chunkIndex: number,
-  fileIndex: number,
-): string {
-  return `videos/${videoKey}/chunk-${formatChunkIndex(chunkIndex)}/file-${formatFileIndex(fileIndex)}.mp4`;
-}
-
-/**
- * Build data path for v3 datasets
- *
- * @param chunkIndex - Data chunk index
- * @param fileIndex - File index within chunk
- * @returns Formatted data path (e.g., "data/chunk-001/file-000.parquet")
- */
-export function buildV3DataPath(chunkIndex: number, fileIndex: number): string {
-  return `data/chunk-${formatChunkIndex(chunkIndex)}/file-${formatFileIndex(fileIndex)}.parquet`;
-}
-
-/**
  * Build episodes metadata path for v3 datasets
  *
  * @param chunkIndex - Episode chunk index
