@@ -31,7 +31,7 @@ jobs:
       # fails with a readable message. Only the role is printed, not the identity.
       - name: Check write access to the Space
         env:
-          HF_TOKEN: ${{ secrets.HF_SPACE_PUSH_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_REPO_ID: lerobot/visualize_dataset
         run: |
           python3 - <<'PY'
@@ -66,4 +66,4 @@ jobs:
           huggingface_repo_id: lerobot/visualize_dataset
           repo_type: space
           space_sdk: docker
-          hf_token: ${{ secrets.HF_SPACE_PUSH_TOKEN }}
+          hf_token: ${{ secrets.HF_TOKEN }}
