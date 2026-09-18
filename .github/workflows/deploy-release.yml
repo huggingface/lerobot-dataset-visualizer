@@ -27,6 +27,40 @@ jobs:
       - name: Install the Hugging Face CLI
         run: python3 -m pip install --upgrade "huggingface_hub>=1.0,<2"
 
+      # The Hub answers a push it will not allow with a 403 that reads like a token
+      # problem but is usually an org-role one, and `hf auth whoami` only prints org
+      # names, never roles. This checks the role that actually governs the push and
+      # fails with a readable message. Only the role is printed, not the identity.
+      - name: Check write access to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_SPACE_PUSH_TOKEN }}
+          HF_REPO_ID: lerobot/visualize_dataset
+        run: |
+          python3 - <<'PY'
+          import json, os, sys, urllib.request
+
+          org = os.environ["HF_REPO_ID"].split("/")[0]
+          req = urllib.request.Request(
+              "https://huggingface.co/api/whoami-v2",
+              headers={"Authorization": "Bearer " + os.environ["HF_TOKEN"]},
+          )
+          who = json.load(urllib.request.urlopen(req))
+          token_role = (who.get("auth") or {}).get("accessToken", {}).get("role")
+          org_role = next(
+              (o.get("roleInOrg") for o in who.get("orgs", []) if o.get("name") == org),
+              None,
+          )
+          print(f"token role: {token_role} | role in {org}: {org_role}")
+
+          if org_role not in ("write", "admin"):
+              sys.exit(
+                  f"::error::This token's account has role '{org_role}' in {org}. "
+                  f"Pushing to the Space needs 'write' or 'admin'; 'contributor' may only open pull "
+                  f"requests, which the Hub reports as a 403 asking for create_pr=1. An org admin has "
+                  f"to change the role, or use a token from an account that already has write."
+              )
+          PY
+
       - name: Upload to the Space
         env:
           # The CLI reads HF_TOKEN; the secret is named for what it is allowed to do.
