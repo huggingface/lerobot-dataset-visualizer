@@ -193,7 +193,6 @@ describe("extractLanguageAtoms", () => {
 
 import { buildVersionedUrl } from "@/utils/versionUtils";
 import { formatStringWithVars } from "@/utils/parquetUtils";
-import { buildV3EpisodesMetadataPath } from "@/utils/stringFormatting";
 import { formatPathTemplate } from "@huggingface/lerobot";
 
 const V3_DATA_TEMPLATE =
@@ -310,14 +309,6 @@ describe("v2.1 path construction (youliangtan/so101-table-cleanup style)", () =>
 describe("v3.0 path construction (lerobot-data-collection/level12_rac_2_2026-02-07 style)", () => {
   const repoId = "lerobot-data-collection/level12_rac_2_2026-02-07";
   const version = "v3.0";
-
-  test("episode metadata path for first file", () => {
-    const path = buildV3EpisodesMetadataPath(0, 0);
-    const url = buildVersionedUrl(repoId, version, path);
-    expect(url).toBe(
-      `${DATASET_BASE}/${repoId}/resolve/main/meta/episodes/chunk-000/file-000.parquet`,
-    );
-  });
 
   test("data path from episode metadata (chunk 0, file 2)", () => {
     const path = formatPathTemplate(V3_DATA_TEMPLATE, {

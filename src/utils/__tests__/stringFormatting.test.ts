@@ -5,7 +5,6 @@ import {
   formatEpisodeIndex,
   formatFileIndex,
   formatChunkIndex,
-  buildV3EpisodesMetadataPath,
 } from "@/utils/stringFormatting";
 
 // These utilities are the foundation of v3.0 path construction.
@@ -75,15 +74,3 @@ describe("formatChunkIndex — 3-digit padding (v3.0 chunk_index)", () => {
 });
 
 // v3.0 specific path builders
-describe("buildV3EpisodesMetadataPath", () => {
-  test("chunk 0, file 0 (default for most datasets)", () => {
-    expect(buildV3EpisodesMetadataPath(0, 0)).toBe(
-      "meta/episodes/chunk-000/file-000.parquet",
-    );
-  });
-  test("chunk 0, file 2 (multiple metadata files)", () => {
-    expect(buildV3EpisodesMetadataPath(0, 2)).toBe(
-      "meta/episodes/chunk-000/file-002.parquet",
-    );
-  });
-});
