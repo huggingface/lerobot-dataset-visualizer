@@ -55,17 +55,3 @@ export function formatFileIndex(fileIndex: number): string {
 export function formatChunkIndex(chunkIndex: number): string {
   return padNumber(chunkIndex, PADDING.CHUNK_INDEX);
 }
-
-/**
- * Build episodes metadata path for v3 datasets
- *
- * @param chunkIndex - Episode chunk index
- * @param fileIndex - File index within chunk
- * @returns Formatted episodes metadata path (e.g., "meta/episodes/chunk-001/file-000.parquet")
- */
-export function buildV3EpisodesMetadataPath(
-  chunkIndex: number,
-  fileIndex: number,
-): string {
-  return `meta/episodes/chunk-${formatChunkIndex(chunkIndex)}/file-${formatFileIndex(fileIndex)}.parquet`;
-}
