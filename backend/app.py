@@ -52,6 +52,81 @@ from pydantic import BaseModel
 logger = logging.getLogger("lerobot-annotate")
 logging.basicConfig(level=logging.INFO)
 
+
+_env_mtimes: dict[str, float] = {}
+_tracked_env_keys: set[str] = set()
+
+
+def _load_env_files(force: bool = False) -> None:
+    global _env_mtimes, _tracked_env_keys
+    backend_dir = Path(__file__).resolve().parent
+    repo_root = backend_dir.parent
+    candidate_paths = [
+        repo_root / ".env.local",
+        repo_root / ".env",
+        backend_dir / ".env",
+    ]
+
+    current_mtimes: dict[str, float] = {}
+    changed = False
+    for p in candidate_paths:
+        if p.is_file():
+            try:
+                mtime = p.stat().st_mtime
+                current_mtimes[str(p)] = mtime
+                if _env_mtimes.get(str(p)) != mtime:
+                    changed = True
+            except OSError:
+                pass
+        elif str(p) in _env_mtimes:
+            changed = True
+
+    if not changed and not force and _env_mtimes:
+        return
+
+    _env_mtimes = current_mtimes
+    new_values: dict[str, str] = {}
+
+    for p in reversed(candidate_paths):
+        if not p.is_file():
+            continue
+        try:
+            from dotenv import dotenv_values
+
+            vals = dotenv_values(p)
+            for k, v in vals.items():
+                if k is not None and v is not None:
+                    new_values[k] = v
+        except Exception:
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        if line.startswith("export "):
+                            line = line[len("export ") :].strip()
+                        if "=" in line:
+                            k, v = line.split("=", 1)
+                            k = k.strip()
+                            v = v.strip().strip("\"'")
+                            if k:
+                                new_values[k] = v
+            except Exception as e:
+                logger.debug("Failed reading %s: %s", p, e)
+
+    # Remove previously tracked keys that were removed or emptied
+    for k in _tracked_env_keys - set(new_values.keys()):
+        os.environ.pop(k, None)
+
+    for k, v in new_values.items():
+        os.environ[k] = v
+
+    _tracked_env_keys = set(new_values.keys())
+
+
+_load_env_files(force=True)
+
 CACHE_ROOT = Path(os.environ.get("LEROBOT_ANNOTATE_CACHE", "/tmp/lerobot_visualizer_annotate_cache"))
 EXPORT_ROOT = Path(os.environ.get("LEROBOT_ANNOTATE_EXPORT", "/tmp/lerobot_visualizer_annotate_exports"))
 
@@ -755,6 +830,7 @@ app.add_middleware(
 
 @app.get("/api/health")
 def health() -> JSONResponse:
+    _load_env_files()
     env_token = _sanitize_token(os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
     has_token = bool(env_token)
     token_preview = ""
@@ -885,6 +961,7 @@ def push_to_hub(req: PushToHubRequest) -> JSONResponse:
             detail="Target repository ID is required (e.g. 'username/dataset-name').",
         )
 
+    _load_env_files()
     hf_token = _sanitize_token(req.hf_token)
     token_source = "frontend request" if hf_token else "server environment"
     if not hf_token:
