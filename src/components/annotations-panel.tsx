@@ -17,7 +17,7 @@ import "./annotations-skin.css";
  * interjection / speech / count / attribute / spatial.
  */
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useTime } from "../context/time-context";
 import { useAnnotations } from "../context/annotations-context";
 import {
@@ -31,7 +31,13 @@ import {
 import {
   exportDataset as apiExport,
   isAnnotateBackendEnabled,
+  pushToHub,
 } from "../utils/annotationsClient";
+import {
+  DEFAULT_HUB_PUSH_SETTINGS,
+  readPersistedHubSettings,
+  writePersistedHubSettings,
+} from "../utils/hubPushSettings";
 
 interface Props {
   cameraKeys: string[];
@@ -460,7 +466,19 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
   const [qaKind, setQaKind] = useState<QuickAddKind>("subtask");
   const [qaValues, setQaValues] = useState<Record<string, string>>({});
   const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [pushModalOpen, setPushModalOpen] = useState(false);
+  const [pushSettings, setPushSettings] = useState(DEFAULT_HUB_PUSH_SETTINGS);
+  const [pushInProgress, setPushInProgress] = useState(false);
+  const [pushResult, setPushResult] = useState<string | null>(null);
   const qaDef = QUICK_ADD_DEFS_BY_KIND[qaKind];
+
+  useEffect(() => {
+    setPushSettings(readPersistedHubSettings());
+  }, []);
+
+  useEffect(() => {
+    writePersistedHubSettings(pushSettings);
+  }, [pushSettings]);
 
   // Initialize active camera once cameras arrive.
   React.useEffect(() => {
@@ -550,6 +568,48 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
     }
   };
 
+  const handlePushToHub = async () => {
+    if (!isAnnotateBackendEnabled()) {
+      setPushResult(
+        "Backend not configured. Set NEXT_PUBLIC_ANNOTATE_BACKEND_URL and run backend/app.py.",
+      );
+      return;
+    }
+
+    if (!pushSettings.hfToken.trim()) {
+      setPushResult("HF token is required to push to the Hub.");
+      return;
+    }
+
+    if (!pushSettings.commitMessage.trim()) {
+      setPushResult("Commit name is required.");
+      return;
+    }
+
+    setPushInProgress(true);
+    setPushResult(null);
+    try {
+      const result = await pushToHub(
+        ident,
+        pushSettings.hfToken,
+        true,
+        null,
+        pushSettings.privateRepo,
+        pushSettings.commitMessage,
+      );
+      setPushResult(
+        `Pushed dataset to ${result.repo_id}. ${result.url ? `Open: ${result.url}` : ""}`,
+      );
+      setPushModalOpen(false);
+    } catch (e) {
+      setPushResult(
+        `Push failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    } finally {
+      setPushInProgress(false);
+    }
+  };
+
   const selectedAtom =
     selectedIdx != null && selectedIdx >= 0 && selectedIdx < atoms.length
       ? atoms[selectedIdx]
@@ -589,10 +649,112 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
           >
             Save dataset
           </button>
+          <button
+            disabled={!backendEnabled}
+            onClick={() => setPushModalOpen(true)}
+            className="text-xs h-7 px-3 rounded border border-violet-500/40 bg-violet-500/10 text-violet-200 hover:bg-violet-500/20 disabled:opacity-40"
+          >
+            Push dataset to hub
+          </button>
         </div>
       </div>
 
       {exportStatus && <div className="save-status">{exportStatus}</div>}
+      {pushResult && <div className="save-status">{pushResult}</div>}
+
+      {pushModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
+          <div className="annotations-skin w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-2xl">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400">
+                  Push dataset
+                </div>
+                <h4 className="mt-1 text-lg font-semibold text-slate-100">
+                  {ident.repoId ?? "Local dataset"}
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPushModalOpen(false)}
+                className="h-7 w-7 rounded border border-slate-600 text-slate-300 hover:border-slate-400 hover:text-white"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-400">
+                HF token
+                <input
+                  type="password"
+                  value={pushSettings.hfToken}
+                  onChange={(e) =>
+                    setPushSettings((prev) => ({
+                      ...prev,
+                      hfToken: e.target.value,
+                    }))
+                  }
+                  placeholder="hf_xxx..."
+                  className="mt-1 w-full"
+                />
+              </label>
+
+              <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-400">
+                Commit name
+                <input
+                  type="text"
+                  value={pushSettings.commitMessage}
+                  onChange={(e) =>
+                    setPushSettings((prev) => ({
+                      ...prev,
+                      commitMessage: e.target.value,
+                    }))
+                  }
+                  placeholder="Add language annotations"
+                  className="mt-1 w-full"
+                />
+              </label>
+
+              <label className="flex items-center gap-2 text-sm text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={pushSettings.privateRepo}
+                  onChange={(e) =>
+                    setPushSettings((prev) => ({
+                      ...prev,
+                      privateRepo: e.target.checked,
+                    }))
+                  }
+                />
+                Private repo
+              </label>
+
+              <div className="rounded border border-slate-700 bg-slate-950/60 p-2 text-xs text-slate-300">
+                Repo ID: <span className="font-mono text-slate-100">{ident.repoId ?? "n/a"}</span>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPushModalOpen(false)}
+                  className="h-8 rounded border border-slate-600 px-3 text-xs text-slate-200 hover:border-slate-400"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePushToHub}
+                  disabled={pushInProgress}
+                  className="h-8 rounded border border-violet-500/40 bg-violet-500/10 px-3 text-xs text-violet-100 hover:bg-violet-500/20 disabled:opacity-50"
+                >
+                  {pushInProgress ? "Pushing…" : "Push to hub"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section className="annotation-composer">
         <div className="composer-copy">
