@@ -34,6 +34,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -126,11 +127,45 @@ class ExportRequest(DatasetRef):
 
 
 class PushToHubRequest(DatasetRef):
-    hf_token: str
+    hf_token: str | None = None
     push_in_place: bool = True
     new_repo_id: str | None = None
     private: bool = False
     commit_message: str = "Add language annotations"
+    commit_description: str | None = None
+    branch: str | None = "main"
+    create_pr: bool = False
+
+
+def _sanitize_token(token: str | None) -> str:
+    if not token:
+        return ""
+    t = str(token).strip()
+    # Remove BOM, zero-width spaces, and non-breaking spaces
+    t = re.sub(r"[\u200b-\u200d\ufeff\u00a0]", "", t)
+    # Strip env assignment prefixes: export HF_TOKEN=, HF_TOKEN=, etc.
+    t = re.sub(
+        r"^(?:export\s+)?(?:HF_TOKEN|HUGGING_FACE_HUB_TOKEN)\s*=\s*",
+        "",
+        t,
+        flags=re.IGNORECASE,
+    )
+    # Strip Bearer prefix if copied from HTTP Authorization header
+    t = re.sub(r"^Bearer\s+", "", t, flags=re.IGNORECASE)
+    # Strip wrapping single, double quotes or backticks
+    t = t.strip("\"'`")
+    # Strip internal/trailing whitespace
+    t = re.sub(r"\s+", "", t)
+    # Strip trailing punctuation, semicolons, quotes
+    t = t.rstrip(";\"'`")
+    if t in ("$HF_TOKEN", "${HF_TOKEN}"):
+        env_val = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN") or ""
+        return _sanitize_token(env_val)
+    # If a standard Hugging Face token pattern is contained within, extract it cleanly
+    m = re.search(r"(hf_[A-Za-z0-9_]+)", t)
+    if m:
+        return m.group(1)
+    return t
 
 
 @dataclass
@@ -720,12 +755,26 @@ app.add_middleware(
 
 @app.get("/api/health")
 def health() -> JSONResponse:
+    env_token = _sanitize_token(os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
+    has_token = bool(env_token)
+    token_preview = ""
+    hf_user = os.environ.get("HF_USER", "").strip()
+    if has_token:
+        token_preview = f"{env_token[:4]}...{env_token[-4:]}" if len(env_token) > 8 else "hf_***"
+        try:
+            who = HfApi(token=env_token).whoami()
+            hf_user = who.get("name") or hf_user
+        except Exception:
+            pass
     return JSONResponse(
         {
             "ok": True,
             "service": "lerobot-visualizer-annotate",
             "persistent_styles": sorted(PERSISTENT_STYLES),
             "event_styles": sorted(EVENT_ONLY_STYLES),
+            "has_hf_token": has_token,
+            "hf_user": hf_user,
+            "hf_token_preview": token_preview,
         }
     )
 
@@ -828,44 +877,101 @@ def export_dataset(req: ExportRequest) -> JSONResponse:
 @app.post("/api/push_to_hub")
 def push_to_hub(req: PushToHubRequest) -> JSONResponse:
     state = _ensure_state(req)
-    if not state.repo_id and not req.new_repo_id:
-        raise HTTPException(status_code=400, detail="repo_id or new_repo_id required")
 
-    # Ensure data + videos are present locally before exporting.
-    if state.repo_id:
-        snapshot_download(
-            state.repo_id,
-            repo_type="dataset",
-            revision=state.revision,
-            local_dir=state.root,
-            allow_patterns=["data/**/*.parquet", "videos/**/*.mp4"],
-        )
-    export_result = _do_export(state, output_dir=None, copy_videos=True)
-    export_dir = Path(export_result["output_dir"])
-
-    target_repo = state.repo_id if req.push_in_place else req.new_repo_id
+    target_repo = state.repo_id if (req.push_in_place and state.repo_id) else (req.new_repo_id or state.repo_id)
     if not target_repo:
-        raise HTTPException(status_code=400, detail="No target repo")
-
-    api = HfApi(token=req.hf_token)
-    if not req.push_in_place:
-        api.create_repo(
-            repo_id=target_repo,
-            repo_type="dataset",
-            private=req.private,
-            exist_ok=True,
+        raise HTTPException(
+            status_code=400,
+            detail="Target repository ID is required (e.g. 'username/dataset-name').",
         )
-    api.upload_folder(
-        folder_path=str(export_dir),
-        repo_id=target_repo,
-        repo_type="dataset",
-        commit_message=req.commit_message,
-    )
-    return JSONResponse(
-        {
-            "ok": True,
+
+    hf_token = _sanitize_token(req.hf_token)
+    token_source = "frontend request" if hf_token else "server environment"
+    if not hf_token:
+        hf_token = _sanitize_token(os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
+    if not hf_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Hugging Face write token is required to push to the Hub. Please provide a token.",
+        )
+
+    masked_tok = f"{hf_token[:4]}...{hf_token[-4:]} (len={len(hf_token)})" if len(hf_token) >= 8 else "(short)"
+    logger.info("Validating Hugging Face token from %s: %s", token_source, masked_tok)
+
+    # Validate token authentication early before performing heavy dataset download and export
+    api = HfApi(token=hf_token)
+    try:
+        who = api.whoami()
+        logger.info("Authenticated to Hugging Face as: %s (source: %s)", who.get("name"), token_source)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=401,
+            detail=f"Hugging Face token validation failed ({token_source}): {exc}. Please verify the token is valid, has Write permissions, and contains no wrapping quotes or whitespace.",
+        )
+
+    try:
+        # Ensure repository exists on the Hub so commit won't fail
+        try:
+            api.create_repo(
+                repo_id=target_repo,
+                repo_type="dataset",
+                private=req.private,
+                exist_ok=True,
+            )
+        except Exception as exc:
+            logger.warning("create_repo notice: %s", exc)
+
+        # Ensure data + videos are present locally before exporting.
+        if state.repo_id:
+            snapshot_download(
+                state.repo_id,
+                repo_type="dataset",
+                revision=state.revision,
+                token=hf_token,
+                local_dir=state.root,
+                allow_patterns=["data/**/*.parquet", "videos/**/*.mp4"],
+            )
+        export_result = _do_export(state, output_dir=None, copy_videos=True)
+        export_dir = Path(export_result["output_dir"])
+
+        upload_kwargs: dict[str, Any] = {
+            "folder_path": str(export_dir),
             "repo_id": target_repo,
-            "url": f"https://huggingface.co/datasets/{target_repo}",
-            "message": f"Pushed annotated dataset to {target_repo}",
+            "repo_type": "dataset",
+            "token": hf_token,
+            "commit_message": req.commit_message or "Add language annotations",
         }
-    )
+        if req.commit_description and req.commit_description.strip():
+            upload_kwargs["commit_description"] = req.commit_description.strip()
+        if req.branch and req.branch.strip():
+            upload_kwargs["revision"] = req.branch.strip()
+        if req.create_pr:
+            upload_kwargs["create_pr"] = True
+
+        commit_info = api.upload_folder(**upload_kwargs)
+
+        commit_url = getattr(commit_info, "commit_url", None)
+        pr_url = getattr(commit_info, "pr_url", None)
+        oid = getattr(commit_info, "oid", None)
+        target_url = pr_url or commit_url or f"https://huggingface.co/datasets/{target_repo}"
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "repo_id": target_repo,
+                "url": target_url,
+                "commit_url": commit_url,
+                "pr_url": pr_url,
+                "commit_oid": oid,
+                "message": f"Successfully pushed dataset to {target_repo}",
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        if not isinstance(status_code, int) or status_code < 400 or status_code >= 600:
+            status_code = getattr(exc, "status_code", 400)
+            if not isinstance(status_code, int) or status_code < 400 or status_code >= 600:
+                status_code = 400
+        raise HTTPException(status_code=status_code, detail=str(exc))

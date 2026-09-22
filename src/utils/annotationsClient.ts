@@ -40,14 +40,28 @@ function buildUrl(path: string, ident: DatasetIdent): string {
   return url.toString();
 }
 
-export async function pingBackend(): Promise<boolean> {
-  if (!ENV_URL) return false;
+export interface BackendHealth {
+  ok: boolean;
+  service: string;
+  has_hf_token?: boolean;
+  hf_user?: string;
+  hf_token_preview?: string;
+}
+
+export async function fetchHealth(): Promise<BackendHealth | null> {
+  if (!ENV_URL) return null;
   try {
     const res = await fetch(new URL("/api/health", ENV_URL).toString());
-    return res.ok;
+    if (!res.ok) return null;
+    return await res.json();
   } catch {
-    return false;
+    return null;
   }
+}
+
+export async function pingBackend(): Promise<boolean> {
+  const health = await fetchHealth();
+  return !!health?.ok;
 }
 
 export async function loadDataset(
@@ -152,18 +166,53 @@ export interface PushToHubResult {
   ok: boolean;
   repo_id: string;
   url: string;
+  commit_url?: string | null;
+  pr_url?: string | null;
+  commit_oid?: string | null;
   message: string;
 }
 
+export interface PushToHubParams {
+  ident: DatasetIdent;
+  hfToken?: string;
+  pushInPlace?: boolean;
+  newRepoId?: string | null;
+  privateRepo?: boolean;
+  commitMessage?: string;
+  commitDescription?: string;
+  branch?: string;
+  createPr?: boolean;
+}
+
 export async function pushToHub(
-  ident: DatasetIdent,
-  hfToken: string,
-  pushInPlace: boolean,
-  newRepoId: string | null,
-  privateRepo: boolean,
-  commitMessage: string,
+  paramsOrIdent: PushToHubParams | DatasetIdent,
+  legacyHfToken?: string,
+  legacyPushInPlace?: boolean,
+  legacyNewRepoId?: string | null,
+  legacyPrivateRepo?: boolean,
+  legacyCommitMessage?: string,
 ): Promise<PushToHubResult> {
   if (!ENV_URL) throw new Error("Annotate backend not configured");
+
+  const isParamsObject = "ident" in paramsOrIdent;
+  const ident = isParamsObject ? paramsOrIdent.ident : paramsOrIdent;
+  const hfToken = isParamsObject ? paramsOrIdent.hfToken : legacyHfToken;
+  const pushInPlace = isParamsObject
+    ? (paramsOrIdent.pushInPlace ?? true)
+    : (legacyPushInPlace ?? true);
+  const newRepoId = isParamsObject ? paramsOrIdent.newRepoId : legacyNewRepoId;
+  const privateRepo = isParamsObject
+    ? !!paramsOrIdent.privateRepo
+    : !!legacyPrivateRepo;
+  const commitMessage = isParamsObject
+    ? (paramsOrIdent.commitMessage ?? "Add language annotations")
+    : (legacyCommitMessage ?? "Add language annotations");
+  const commitDescription = isParamsObject
+    ? paramsOrIdent.commitDescription
+    : undefined;
+  const branch = isParamsObject ? paramsOrIdent.branch : undefined;
+  const createPr = isParamsObject ? !!paramsOrIdent.createPr : false;
+
   const res = await fetch(new URL("/api/push_to_hub", ENV_URL).toString(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -171,16 +220,29 @@ export async function pushToHub(
       repo_id: ident.repoId || null,
       revision: ident.revision || null,
       local_path: ident.localPath || null,
-      hf_token: hfToken,
+      hf_token: hfToken || null,
       push_in_place: pushInPlace,
       new_repo_id: newRepoId || null,
       private: privateRepo,
       commit_message: commitMessage,
+      commit_description: commitDescription || null,
+      branch: branch || null,
+      create_pr: createPr,
     }),
   });
+
   if (!res.ok) {
-    const text = await res.text().catch(() => `${res.status}`);
-    throw new Error(text || `push: ${res.status}`);
+    let errorDetail: string;
+    try {
+      const data = await res.json();
+      errorDetail =
+        typeof data === "object" && data !== null
+          ? data.detail || data.message || JSON.stringify(data)
+          : String(data);
+    } catch {
+      errorDetail = await res.text().catch(() => `HTTP ${res.status}`);
+    }
+    throw new Error(errorDetail || `push: ${res.status}`);
   }
   return res.json();
 }
