@@ -14,8 +14,12 @@ on:
       - "*.json"
       - ".github/workflows/test.yml"
 
+permissions: {}
+
 jobs:
   test:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
