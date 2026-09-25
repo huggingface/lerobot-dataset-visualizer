@@ -18,7 +18,7 @@ import "./annotations-skin.css";
  */
 
 import React, { useMemo, useState } from "react";
-import { useTime } from "../context/time-context";
+import { useTime, useTimeControls } from "../context/time-context";
 import { useAnnotations } from "../context/annotations-context";
 import {
   buildSpeechAtom,
@@ -426,7 +426,7 @@ const RAIL_GROUPS: RailGroupDef[] = [
 ];
 
 function useJump(): (ts: number) => void {
-  const { seek, setIsPlaying } = useTime();
+  const { seek, setIsPlaying } = useTimeControls();
   return React.useCallback(
     (ts: number) => {
       seek(ts, "external");

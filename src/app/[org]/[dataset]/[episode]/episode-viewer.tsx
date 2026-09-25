@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { postParentMessageWithParams } from "@/utils/postParentMessage";
 import { SimpleVideosPlayer } from "@/components/simple-videos-player";
 import PlaybackBar from "@/components/playback-bar";
-import { TimeProvider, useTime } from "@/context/time-context";
+import { TimeProvider, useTime, useTimeControls } from "@/context/time-context";
 import { FlaggedEpisodesProvider } from "@/context/flagged-episodes-context";
 import {
   AnnotationsProvider,
@@ -449,12 +449,10 @@ function EpisodeViewerInner({
     }
   };
 
-  // `currentTime` is intentionally NOT read here. Subscribing to it would
-  // re-render this 700-line component every ~80ms during playback. The
-  // <UrlTimeSync /> child handles its only consumer (the ?t= URL writer).
-  // `seek` and `setIsPlaying` are stable references from useCallback /
-  // useState — they don't drive renders.
-  const { seek, setIsPlaying } = useTime();
+  // Not `useTime()`: any consumer of it re-renders on every playback tick,
+  // which would redraw this whole component ~12×/s. <UrlTimeSync /> handles
+  // the one thing here that needs `currentTime` (the ?t= URL writer).
+  const { seek, setIsPlaying } = useTimeControls();
 
   // URDFViewer episode changer and play toggle — populated by URDFViewer on mount
   const urdfChangerRef = useRef<((ep: number) => void) | undefined>(undefined);

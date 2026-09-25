@@ -6,8 +6,9 @@ import React, {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
-import { useTime } from "../context/time-context";
+import { useTime, useTimeControls } from "../context/time-context";
 import {
   LineChart,
   Line,
@@ -16,7 +17,6 @@ import {
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
-  ReferenceLine,
 } from "recharts";
 
 type ChartRow = Record<string, number | Record<string, number>>;
@@ -43,6 +43,67 @@ const CHART_COLORS = [
   "#84cc16",
 ];
 
+/// Plot-area geometry, shared by the chart and the playback cursor drawn over it.
+const CHART_MARGIN = { top: 12, right: 12, left: -8, bottom: 8 };
+const Y_AXIS_WIDTH = 55;
+const X_AXIS_HEIGHT = 30;
+
+/**
+ * The time under the pointer, shared by every chart's legend. A store rather than state, so moving
+ * the pointer re-renders the legends only, not every chart.
+ */
+type HoverStore = {
+  get: () => number | null;
+  set: (t: number | null) => void;
+  subscribe: (cb: () => void) => () => void;
+};
+
+function createHoverStore(): HoverStore {
+  let time: number | null = null;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => time,
+    set: (t) => {
+      if (t === time) return;
+      time = t;
+      listeners.forEach((cb) => cb());
+    },
+    subscribe: (cb) => {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+  };
+}
+
+/** Index of the first point at or after `time`, or the last point. */
+function closestDataIndex(chartData: Record<string, number>[], time: number) {
+  if (!chartData.length) return 0;
+  const idx = chartData.findIndex((point) => point.timestamp >= time);
+  return idx !== -1 ? idx : chartData.length - 1;
+}
+
+/**
+ * Drawn over the chart instead of as a Recharts ReferenceLine: a ReferenceLine
+ * makes the whole chart re-render on every playback tick.
+ */
+function PlaybackCursor({ start, end }: { start: number; end: number }) {
+  const { currentTime } = useTime();
+  if (end <= start) return null;
+  const fraction = (currentTime - start) / (end - start);
+  if (fraction < 0 || fraction > 1) return null;
+  const left = CHART_MARGIN.left + Y_AXIS_WIDTH;
+  return (
+    <div
+      className="pointer-events-none absolute w-[1.5px] bg-orange-500/70"
+      style={{
+        top: CHART_MARGIN.top,
+        bottom: CHART_MARGIN.bottom + X_AXIS_HEIGHT,
+        left: `calc(${left}px + (100% - ${left + CHART_MARGIN.right}px) * ${fraction})`,
+      }}
+    />
+  );
+}
+
 function mergeGroups(data: ChartRow[][]): ChartRow[] {
   if (data.length <= 1) return data[0] ?? [];
   const maxLen = Math.max(...data.map((g) => g.length));
@@ -67,7 +128,7 @@ function mergeGroups(data: ChartRow[][]): ChartRow[] {
 
 export const DataRecharts = React.memo(
   ({ data, onChartsReady }: DataGraphProps) => {
-    const [hoveredTime, setHoveredTime] = useState<number | null>(null);
+    const [hoverStore] = useState(createHoverStore);
     const [expanded, setExpanded] = useState(false);
 
     useEffect(() => {
@@ -126,21 +187,11 @@ export const DataRecharts = React.memo(
         )}
 
         {expanded ? (
-          <SingleDataGraph
-            data={combinedData}
-            hoveredTime={hoveredTime}
-            setHoveredTime={setHoveredTime}
-            tall
-          />
+          <SingleDataGraph data={combinedData} hoverStore={hoverStore} tall />
         ) : (
           <div className="grid md:grid-cols-2 grid-cols-1 gap-4">
             {data.map((group, idx) => (
-              <SingleDataGraph
-                key={idx}
-                data={group}
-                hoveredTime={hoveredTime}
-                setHoveredTime={setHoveredTime}
-              />
+              <SingleDataGraph key={idx} data={group} hoverStore={hoverStore} />
             ))}
           </div>
         )}
@@ -149,19 +200,159 @@ export const DataRecharts = React.memo(
   },
 );
 
+/** Series toggles with each series' value at the hovered time, or the playback time. */
+function ChartLegend({
+  chartData,
+  groups,
+  singles,
+  groupColorMap,
+  visibleKeys,
+  setVisibleKeys,
+  hoverStore,
+}: {
+  chartData: Record<string, number>[];
+  groups: Record<string, string[]>;
+  singles: string[];
+  groupColorMap: Record<string, string>;
+  visibleKeys: string[];
+  setVisibleKeys: React.Dispatch<React.SetStateAction<string[]>>;
+  hoverStore: HoverStore;
+}) {
+  const { currentTime } = useTime();
+  const hoveredTime = useSyncExternalStore(
+    hoverStore.subscribe,
+    hoverStore.get,
+    hoverStore.get,
+  );
+  const closestIndex = closestDataIndex(
+    chartData,
+    hoveredTime != null ? hoveredTime : currentTime,
+  );
+  const currentData = chartData[closestIndex] || {};
+
+  const isGroupChecked = (group: string) =>
+    groups[group].every((k) => visibleKeys.includes(k));
+  const isGroupIndeterminate = (group: string) =>
+    groups[group].some((k) => visibleKeys.includes(k)) &&
+    !isGroupChecked(group);
+
+  const handleGroupCheckboxChange = (group: string) => {
+    if (isGroupChecked(group)) {
+      // Uncheck all children
+      setVisibleKeys((prev) => prev.filter((k) => !groups[group].includes(k)));
+    } else {
+      // Check all children
+      setVisibleKeys((prev) =>
+        Array.from(new Set([...prev, ...groups[group]])),
+      );
+    }
+  };
+
+  const handleCheckboxChange = (key: string) => {
+    setVisibleKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+  };
+
+  return (
+    <div className="flex flex-wrap gap-x-5 gap-y-2 px-1 pt-2">
+      {Object.entries(groups).map(([group, children]) => {
+        const color = groupColorMap[group];
+        return (
+          <div key={group}>
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isGroupChecked(group)}
+                ref={(el) => {
+                  if (el) el.indeterminate = isGroupIndeterminate(group);
+                }}
+                onChange={() => handleGroupCheckboxChange(group)}
+                className="size-3"
+                style={{ accentColor: color }}
+              />
+              <span className="text-xs font-semibold text-slate-200">
+                {group}
+              </span>
+            </label>
+            <div className="pl-5 flex flex-col gap-0.5 mt-0.5">
+              {children.map((key) => {
+                const label = key.split(SERIES_NAME_DELIMITER).pop() ?? key;
+                return (
+                  <label
+                    key={key}
+                    className="flex items-center gap-1.5 cursor-pointer select-none"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={visibleKeys.includes(key)}
+                      onChange={() => handleCheckboxChange(key)}
+                      className="size-2.5"
+                      style={{ accentColor: color }}
+                    />
+                    <span
+                      className={`text-xs ${visibleKeys.includes(key) ? "text-slate-300" : "text-slate-500"}`}
+                    >
+                      {label}
+                    </span>
+                    <span
+                      className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-cyan-200/80" : "text-slate-600"}`}
+                    >
+                      {typeof currentData[key] === "number"
+                        ? currentData[key].toFixed(2)
+                        : "–"}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+      {singles.map((key) => {
+        const color = groupColorMap[key];
+        return (
+          <label
+            key={key}
+            className="flex items-center gap-1.5 cursor-pointer select-none"
+          >
+            <input
+              type="checkbox"
+              checked={visibleKeys.includes(key)}
+              onChange={() => handleCheckboxChange(key)}
+              className="size-3"
+              style={{ accentColor: color }}
+            />
+            <span
+              className={`text-xs ${visibleKeys.includes(key) ? "text-slate-200" : "text-slate-500"}`}
+            >
+              {key}
+            </span>
+            <span
+              className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-cyan-200/80" : "text-slate-600"}`}
+            >
+              {typeof currentData[key] === "number"
+                ? currentData[key].toFixed(2)
+                : "–"}
+            </span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
 const SingleDataGraph = React.memo(
   ({
     data,
-    hoveredTime,
-    setHoveredTime,
+    hoverStore,
     tall,
   }: {
     data: ChartRow[];
-    hoveredTime: number | null;
-    setHoveredTime: (t: number | null) => void;
+    hoverStore: HoverStore;
     tall?: boolean;
   }) => {
-    const { currentTime, seek } = useTime();
+    const { seek } = useTimeControls();
     const flattenRow = useCallback(
       (row: Record<string, number | Record<string, number>>, prefix = "") => {
         const result: Record<string, number> = {};
@@ -245,19 +436,7 @@ const SingleDataGraph = React.memo(
       return { groups: grouped, singles: singleList, groupColorMap: colorMap };
     }, [dataKeys]);
 
-    // Find the closest data point to the current time for highlighting
-    const findClosestDataIndex = (time: number) => {
-      if (!chartData.length) return 0;
-      // Find the index of the first data point whose timestamp is >= time (ceiling)
-      const idx = chartData.findIndex((point) => point.timestamp >= time);
-      if (idx !== -1) return idx;
-      // If all timestamps are less than time, return the last index
-      return chartData.length - 1;
-    };
-
-    const handleMouseLeave = () => {
-      setHoveredTime(null);
-    };
+    const handleMouseLeave = () => hoverStore.set(null);
 
     const handleClick = (
       data: { activePayload?: { payload: { timestamp: number } }[] } | null,
@@ -265,127 +444,6 @@ const SingleDataGraph = React.memo(
       if (data?.activePayload?.length) {
         seek(data.activePayload[0].payload.timestamp);
       }
-    };
-
-    // Custom legend to show current value next to each series
-    const CustomLegend = () => {
-      const closestIndex = findClosestDataIndex(
-        hoveredTime != null ? hoveredTime : currentTime,
-      );
-      const currentData = chartData[closestIndex] || {};
-
-      const isGroupChecked = (group: string) =>
-        groups[group].every((k) => visibleKeys.includes(k));
-      const isGroupIndeterminate = (group: string) =>
-        groups[group].some((k) => visibleKeys.includes(k)) &&
-        !isGroupChecked(group);
-
-      const handleGroupCheckboxChange = (group: string) => {
-        if (isGroupChecked(group)) {
-          // Uncheck all children
-          setVisibleKeys((prev) =>
-            prev.filter((k) => !groups[group].includes(k)),
-          );
-        } else {
-          // Check all children
-          setVisibleKeys((prev) =>
-            Array.from(new Set([...prev, ...groups[group]])),
-          );
-        }
-      };
-
-      const handleCheckboxChange = (key: string) => {
-        setVisibleKeys((prev) =>
-          prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
-        );
-      };
-
-      return (
-        <div className="flex flex-wrap gap-x-5 gap-y-2 px-1 pt-2">
-          {Object.entries(groups).map(([group, children]) => {
-            const color = groupColorMap[group];
-            return (
-              <div key={group}>
-                <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={isGroupChecked(group)}
-                    ref={(el) => {
-                      if (el) el.indeterminate = isGroupIndeterminate(group);
-                    }}
-                    onChange={() => handleGroupCheckboxChange(group)}
-                    className="size-3"
-                    style={{ accentColor: color }}
-                  />
-                  <span className="text-xs font-semibold text-slate-200">
-                    {group}
-                  </span>
-                </label>
-                <div className="pl-5 flex flex-col gap-0.5 mt-0.5">
-                  {children.map((key) => {
-                    const label = key.split(SERIES_NAME_DELIMITER).pop() ?? key;
-                    return (
-                      <label
-                        key={key}
-                        className="flex items-center gap-1.5 cursor-pointer select-none"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={visibleKeys.includes(key)}
-                          onChange={() => handleCheckboxChange(key)}
-                          className="size-2.5"
-                          style={{ accentColor: color }}
-                        />
-                        <span
-                          className={`text-xs ${visibleKeys.includes(key) ? "text-slate-300" : "text-slate-500"}`}
-                        >
-                          {label}
-                        </span>
-                        <span
-                          className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-cyan-200/80" : "text-slate-600"}`}
-                        >
-                          {typeof currentData[key] === "number"
-                            ? currentData[key].toFixed(2)
-                            : "–"}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-          {singles.map((key) => {
-            const color = groupColorMap[key];
-            return (
-              <label
-                key={key}
-                className="flex items-center gap-1.5 cursor-pointer select-none"
-              >
-                <input
-                  type="checkbox"
-                  checked={visibleKeys.includes(key)}
-                  onChange={() => handleCheckboxChange(key)}
-                  className="size-3"
-                  style={{ accentColor: color }}
-                />
-                <span
-                  className={`text-xs ${visibleKeys.includes(key) ? "text-slate-200" : "text-slate-500"}`}
-                >
-                  {key}
-                </span>
-                <span
-                  className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-cyan-200/80" : "text-slate-600"}`}
-                >
-                  {typeof currentData[key] === "number"
-                    ? currentData[key].toFixed(2)
-                    : "–"}
-                </span>
-              </label>
-            );
-          })}
-        </div>
-      );
     };
 
     // Derive chart title from the grouped feature names
@@ -412,20 +470,20 @@ const SingleDataGraph = React.memo(
           </p>
         )}
         <div
-          className={`w-full ${tall ? "h-[500px]" : "h-72"}`}
+          className={`relative w-full ${tall ? "h-[500px]" : "h-72"}`}
           onMouseLeave={handleMouseLeave}
         >
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={chartData}
               syncId="episode-sync"
-              margin={{ top: 12, right: 12, left: -8, bottom: 8 }}
+              margin={CHART_MARGIN}
               onClick={handleClick}
               onMouseMove={(state) => {
                 const payload = state?.activePayload?.[0]?.payload as
                   | { timestamp?: number }
                   | undefined;
-                setHoveredTime(payload?.timestamp ?? null);
+                hoverStore.set(payload?.timestamp ?? null);
               }}
               onMouseLeave={handleMouseLeave}
             >
@@ -444,13 +502,14 @@ const SingleDataGraph = React.memo(
                 stroke="#64748b"
                 tick={{ fontSize: 12, fill: "#94a3b8" }}
                 minTickGap={30}
+                height={X_AXIS_HEIGHT}
                 allowDataOverflow={true}
               />
               <YAxis
                 domain={["auto", "auto"]}
                 stroke="#64748b"
                 tick={{ fontSize: 12, fill: "#94a3b8" }}
-                width={55}
+                width={Y_AXIS_WIDTH}
                 allowDataOverflow={true}
                 tickFormatter={(v: number) => {
                   if (v === 0) return "0";
@@ -460,21 +519,7 @@ const SingleDataGraph = React.memo(
                 }}
               />
 
-              <Tooltip
-                content={() => null}
-                active={true}
-                isAnimationActive={false}
-                defaultIndex={
-                  !hoveredTime ? findClosestDataIndex(currentTime) : undefined
-                }
-              />
-
-              <ReferenceLine
-                x={currentTime}
-                stroke="#f97316"
-                strokeWidth={1.5}
-                strokeOpacity={0.7}
-              />
+              <Tooltip content={() => null} isAnimationActive={false} />
 
               {dataKeys.map((key) => {
                 const group = key.includes(SERIES_NAME_DELIMITER)
@@ -505,8 +550,20 @@ const SingleDataGraph = React.memo(
               })}
             </LineChart>
           </ResponsiveContainer>
+          <PlaybackCursor
+            start={chartData.at(0)?.timestamp ?? 0}
+            end={chartData.at(-1)?.timestamp ?? 0}
+          />
         </div>
-        <CustomLegend />
+        <ChartLegend
+          chartData={chartData}
+          groups={groups}
+          singles={singles}
+          groupColorMap={groupColorMap}
+          visibleKeys={visibleKeys}
+          setVisibleKeys={setVisibleKeys}
+          hoverStore={hoverStore}
+        />
       </div>
     );
   },
