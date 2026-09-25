@@ -145,3 +145,7 @@ CSS tokens in `src/app/globals.css` (Tailwind v4 `@theme inline`):
 - Accent: `--accent #38bdf8` (cyan) — primary interactive color across UI
 - Helpers: `.panel`, `.panel-raised`, `.tabular` (tabular-nums)
 - **Color semantics**: cyan = primary/active, orange (`orange-400/500`) is reserved for **flagged-episode** UI only — don't reuse it for generic accents.
+- **Playhead**: the playback position (chart cursor, annotation timeline) uses `--playhead`, a neutral near-white, so it never reads as a series, a role or a flag.
+- **Buttons**: `.btn` (secondary), plus `.btn-active` for a selected toggle, `.btn-flagged` for flag filters/actions and `.btn-primary` for the main action. They live in `@layer components`, so a utility on the element (size, width) overrides them.
+- **Analysis tabs** (Statistics, Filtering, Frames, Action Insights) build on `src/components/ui.tsx`: `PageHeader`, `StatCard`, `InlineLoading` / `Spinner`, `Switch`; `EpisodeHeader` heads every tab that plays an episode. Tab roots are `w-full max-w-5xl mx-auto py-6 space-y-6` (`w-full` matters: `mx-auto` in the flex-column content area otherwise sizes the column to its content). Section cards are `bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10` with an `h3` of `text-sm font-semibold text-slate-200`.
+- **Annotations** keeps its own skin (`annotations-skin.css`) for role colours (subtask yellow, plan blue, …); generic UI in it (focus, selection, primary button) uses the app `--accent`.

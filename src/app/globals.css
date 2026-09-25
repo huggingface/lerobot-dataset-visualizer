@@ -17,7 +17,7 @@
   --text-muted: #9aa3b5;
   --text-faint: #5b6274;
 
-  /* single accent (cyan). Orange is reserved for destructive. */
+  /* single accent (cyan). Orange is reserved for flagged episodes. */
   --accent: #38bdf8;
   --accent-soft: rgba(56, 189, 248, 0.18);
   --accent-ring: rgba(56, 189, 248, 0.55);
