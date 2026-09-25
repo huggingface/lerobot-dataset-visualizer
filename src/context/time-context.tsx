@@ -58,8 +58,6 @@ export const useTimeControls = () => {
   return ctx;
 };
 
-const TIME_RENDER_THROTTLE_MS = 80;
-
 export const TimeProvider: React.FC<{
   children: React.ReactNode;
   duration: number;
@@ -74,7 +72,6 @@ export const TimeProvider: React.FC<{
   // always see the latest value without waiting for a React render cycle.
   const timeRef = useRef(0);
   const rafId = useRef<number | null>(null);
-  const lastRenderTime = useRef(0);
 
   const updateTime = useCallback(
     (t: number, source: TimeUpdateSource = "external") => {
@@ -82,23 +79,20 @@ export const TimeProvider: React.FC<{
       listeners.current.forEach((fn) => fn(t));
 
       if (source === "external") {
-        lastRenderTime.current = performance.now();
         setCurrentTimeState(t);
         setExternalSeekVersion((v) => v + 1);
         return;
       }
 
-      // Throttle React state updates — during playback, timeupdate fires ~4×/sec
-      // per video. Coalescing into rAF + a minimum interval avoids cascading
-      // re-renders across PlaybackBar, charts, etc.
+      // The primary video reports every painted frame (requestVideoFrameCallback),
+      // so coalesce into one React update per animation frame. Only leaf
+      // components read currentTime (see useTimeControls), which keeps this
+      // cheap. There used to be an 80ms floor on top, which also dropped the
+      // last update outright when it landed inside the window.
       if (rafId.current === null) {
         rafId.current = requestAnimationFrame(() => {
           rafId.current = null;
-          const now = performance.now();
-          if (now - lastRenderTime.current >= TIME_RENDER_THROTTLE_MS) {
-            lastRenderTime.current = now;
-            setCurrentTimeState(timeRef.current);
-          }
+          setCurrentTimeState(timeRef.current);
         });
       }
     },

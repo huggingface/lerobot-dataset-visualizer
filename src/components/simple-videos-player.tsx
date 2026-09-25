@@ -15,6 +15,11 @@ const THRESHOLDS = {
 
 const VIDEO_READY_TIMEOUT_MS = 10_000;
 
+/** Same feature check three.js's VideoTexture uses. */
+const SUPPORTS_RVFC =
+  typeof HTMLVideoElement !== "undefined" &&
+  "requestVideoFrameCallback" in HTMLVideoElement.prototype;
+
 type VideoPlayerProps = {
   videosInfo: VideoInfo[];
   onVideosReady?: () => void;
@@ -174,7 +179,10 @@ export const SimpleVideosPlayer = ({
             return;
           }
         }
-        if (index === firstVisibleIdxRef.current) {
+        // Where requestVideoFrameCallback exists, the effect below reports the
+        // primary's time on every painted frame instead; timeupdate (~4×/s)
+        // only covers browsers without it (Firefox < 132).
+        if (index === firstVisibleIdxRef.current && !SUPPORTS_RVFC) {
           let globalTime = video.currentTime;
           if (info.isSegmented) {
             globalTime = video.currentTime - (info.segmentStart ?? 0);
@@ -268,6 +276,37 @@ export const SimpleVideosPlayer = ({
     // onVideosReady intentionally omitted — read via onVideosReadyRef so
     // an inline parent prop doesn't tear this effect down on every render.
   }, [videosInfo, setIsPlaying, seek]);
+
+  // Report the primary camera's time on every painted frame, from the frame's
+  // own mediaTime, so the playback bar, chart cursors and legends advance a
+  // frame at a time instead of ~8 frames per timeupdate. Looping and camera
+  // sync stay on timeupdate, which keeps firing in background tabs where no
+  // frames are painted.
+  useEffect(() => {
+    if (!videosReady || !SUPPORTS_RVFC) return;
+    const video = videoRefs.current[firstVisibleIdx];
+    const info = videosInfo[firstVisibleIdx];
+    if (!video || !info) return;
+    let handle = 0;
+    const onFrame: VideoFrameRequestCallback = (_now, metadata) => {
+      // Frames painted while a seek is in flight are from before it; reporting
+      // them would snap the seek bar back.
+      if (!video.seeking) {
+        const start = info.isSegmented ? (info.segmentStart ?? 0) : 0;
+        const end = info.isSegmented
+          ? (info.segmentEnd ?? video.duration)
+          : video.duration;
+        const clamped = Math.max(metadata.mediaTime, start);
+        seek(
+          (Number.isFinite(end) ? Math.min(clamped, end) : clamped) - start,
+          "video",
+        );
+      }
+      handle = video.requestVideoFrameCallback(onFrame);
+    };
+    handle = video.requestVideoFrameCallback(onFrame);
+    return () => video.cancelVideoFrameCallback(handle);
+  }, [videosReady, firstVisibleIdx, videosInfo, seek]);
 
   // Handle play/pause — skip hidden videos
   useEffect(() => {
