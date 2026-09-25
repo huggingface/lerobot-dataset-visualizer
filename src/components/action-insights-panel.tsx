@@ -145,7 +145,7 @@ function FlagBtn({ id }: { id: number }) {
     <button
       onClick={() => toggle(id)}
       title={flagged ? "Unflag episode" : "Flag for review"}
-      className={`p-0.5 rounded transition-colors ${flagged ? "text-cyan-300" : "text-slate-600 hover:text-slate-400"}`}
+      className={`p-0.5 rounded transition-colors ${flagged ? "text-orange-400 hover:text-orange-300" : "text-slate-600 hover:text-slate-400"}`}
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -170,7 +170,7 @@ function FlagAllBtn({ ids, label }: { ids: number[]; label?: string }) {
   return (
     <button
       onClick={() => addMany(ids)}
-      className="text-xs text-slate-500 hover:text-cyan-300 transition-colors flex items-center gap-1"
+      className="text-xs text-slate-500 hover:text-orange-300 transition-colors flex items-center gap-1"
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"

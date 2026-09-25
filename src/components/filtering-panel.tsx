@@ -22,7 +22,7 @@ function FlagBtn({ id }: { id: number }) {
     <button
       onClick={() => toggle(id)}
       title={flagged ? "Unflag episode" : "Flag for review"}
-      className={`p-0.5 rounded transition-colors ${flagged ? "text-cyan-300" : "text-slate-600 hover:text-slate-400"}`}
+      className={`p-0.5 rounded transition-colors ${flagged ? "text-orange-400 hover:text-orange-300" : "text-slate-600 hover:text-slate-400"}`}
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -47,7 +47,7 @@ function FlagAllBtn({ ids, label }: { ids: number[]; label?: string }) {
   return (
     <button
       onClick={() => addMany(ids)}
-      className="text-xs text-slate-500 hover:text-cyan-300 transition-colors flex items-center gap-1"
+      className="text-xs text-slate-500 hover:text-orange-300 transition-colors flex items-center gap-1"
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -210,7 +210,7 @@ function EpisodeLengthFilter({ episodes }: { episodes: EpisodeLengthInfo[] }) {
           {outsideIds.length > 0 && (
             <button
               onClick={() => addMany(outsideIds)}
-              className="text-xs bg-cyan-400/15 text-cyan-300 border border-cyan-400/40 rounded px-2 py-1 hover:bg-cyan-400/20 transition-colors"
+              className="text-xs bg-orange-500/15 text-orange-300 border border-orange-500/30 rounded px-2 py-1 hover:bg-orange-500/20 transition-colors"
             >
               Flag {outsideIds.length} outside range
             </button>
@@ -254,9 +254,9 @@ function FlaggedIdsCopyBar({
   if (count === 0) return null;
 
   return (
-    <div className="bg-[var(--surface-1)]/60 rounded-lg p-4 border border-cyan-400/30 space-y-3">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-4 border border-orange-500/30 space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-cyan-300">
+        <h3 className="text-sm font-semibold text-orange-300">
           Flagged Episodes
           <span className="text-xs text-slate-500 ml-2 font-normal">
             ({count})
