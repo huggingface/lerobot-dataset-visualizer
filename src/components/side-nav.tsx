@@ -56,32 +56,32 @@ const Sidebar: React.FC<SidebarProps> = ({
     <div className="flex z-10 shrink-0">
       <nav
         ref={navRef}
-        className={`shrink-0 overflow-y-auto bg-[var(--surface-0)] border-r border-white/5 p-4 break-words w-60 ${
+        className={`shrink-0 overflow-y-auto bg-[var(--surface-0)] border-r border-line-subtle p-4 break-words w-60 ${
           mobileVisible ? "block" : "hidden"
         } md:block`}
         aria-label="Sidebar navigation"
       >
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-slate-400 tabular">
-          <dt className="uppercase tracking-wide text-[10px] text-slate-500">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-fg-muted tabular">
+          <dt className="uppercase tracking-wide text-[10px] text-fg-faint">
             Frames
           </dt>
-          <dd className="text-slate-200">
+          <dd className="text-fg">
             {datasetInfo.total_frames.toLocaleString()}
           </dd>
-          <dt className="uppercase tracking-wide text-[10px] text-slate-500">
+          <dt className="uppercase tracking-wide text-[10px] text-fg-faint">
             Episodes
           </dt>
-          <dd className="text-slate-200">
+          <dd className="text-fg">
             {datasetInfo.total_episodes.toLocaleString()}
           </dd>
-          <dt className="uppercase tracking-wide text-[10px] text-slate-500">
+          <dt className="uppercase tracking-wide text-[10px] text-fg-faint">
             FPS
           </dt>
-          <dd className="text-slate-200">{datasetInfo.fps}</dd>
+          <dd className="text-fg">{datasetInfo.fps}</dd>
         </dl>
 
         <div className="mt-5 flex items-center justify-between">
-          <p className="text-[10px] uppercase tracking-wide text-slate-500">
+          <p className="text-[10px] uppercase tracking-wide text-fg-faint">
             Episodes
           </p>
           {count > 0 && (
@@ -101,8 +101,8 @@ const Sidebar: React.FC<SidebarProps> = ({
             const active = episode === episodeId;
             const itemClass = `group flex items-center justify-between gap-2 px-2 py-1 rounded-md text-xs tabular transition-colors ${
               active
-                ? "bg-cyan-400/10 text-cyan-300"
-                : "text-slate-300 hover:bg-white/5"
+                ? "bg-cyan-400/10 text-accent-fg"
+                : "text-fg-soft hover:bg-fill"
             }`;
             return (
               <li key={episode} ref={active ? activeItemRef : undefined}>
@@ -118,8 +118,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                       onClick={() => toggle(episode)}
                       className={`text-xs leading-none transition-colors ${
                         flagged.has(episode)
-                          ? "text-orange-400 hover:text-orange-300"
-                          : "text-slate-600 hover:text-slate-400 opacity-0 group-hover:opacity-100"
+                          ? "text-orange-400 hover:text-flag-fg"
+                          : "text-fg-faint hover:text-fg-muted opacity-0 group-hover:opacity-100"
                       }`}
                       title={flagged.has(episode) ? "Unflag" : "Flag"}
                     >
@@ -138,8 +138,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                       onClick={() => toggle(episode)}
                       className={`text-xs leading-none transition-colors ${
                         flagged.has(episode)
-                          ? "text-orange-400 hover:text-orange-300"
-                          : "text-slate-600 hover:text-slate-400 opacity-0 group-hover:opacity-100"
+                          ? "text-orange-400 hover:text-flag-fg"
+                          : "text-fg-faint hover:text-fg-muted opacity-0 group-hover:opacity-100"
                       }`}
                       title={flagged.has(episode) ? "Unflag" : "Flag"}
                     >
@@ -161,7 +161,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             >
               ‹ Prev
             </button>
-            <span className="tabular text-xs text-slate-500">
+            <span className="tabular text-xs text-fg-faint">
               {currentPage} / {totalPages}
             </span>
             <button
@@ -180,7 +180,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         onClick={() => setMobileVisible((prev) => !prev)}
         title="Toggle sidebar"
       >
-        <div className="h-10 w-1 rounded-full bg-white/20" />
+        <div className="h-10 w-1 rounded-full bg-fill-strong" />
       </button>
     </div>
   );

@@ -322,20 +322,20 @@ export const SimpleVideosPlayer = ({
       {hiddenVideos.length > 0 && (
         <div className="relative mb-4">
           <button
-            className="inline-flex items-center gap-2 h-8 rounded-md panel px-3 text-xs text-slate-300 hover:text-slate-100 hover:bg-white/5 transition-colors"
+            className="inline-flex items-center gap-2 h-8 rounded-md panel px-3 text-xs text-fg-soft hover:text-fg hover:bg-fill transition-colors"
             onClick={() => setShowHiddenMenu(!showHiddenMenu)}
           >
             <FaEye size={11} /> Show hidden · {hiddenVideos.length}
           </button>
           {showHiddenMenu && (
             <div className="absolute left-0 mt-1.5 w-max panel-raised bg-[var(--surface-1)] shadow-xl p-1.5 z-50">
-              <div className="mb-1 px-2 text-[10px] uppercase tracking-wide text-slate-500">
+              <div className="mb-1 px-2 text-[10px] uppercase tracking-wide text-fg-faint">
                 Restore hidden videos
               </div>
               {hiddenVideos.map((filename) => (
                 <button
                   key={filename}
-                  className="block w-full text-left px-2 py-1 rounded-md text-xs text-slate-300 hover:text-slate-100 hover:bg-white/5 transition-colors"
+                  className="block w-full text-left px-2 py-1 rounded-md text-xs text-fg-soft hover:text-fg hover:bg-fill transition-colors"
                   onClick={() =>
                     setHiddenVideos((prev) =>
                       prev.filter((v) => v !== filename),
@@ -382,12 +382,12 @@ export const SimpleVideosPlayer = ({
             >
               {/* Shrink-wraps the enlarged video so the title bar matches its width. */}
               <div className={isEnlarged ? "w-fit" : undefined}>
-                <p className="truncate w-full rounded-t-md bg-[var(--surface-1)] border border-b-0 border-white/5 px-2.5 py-1 text-[11px] text-slate-400 flex items-center justify-between gap-2">
+                <p className="truncate w-full rounded-t-md bg-[var(--surface-1)] border border-b-0 border-line-subtle px-2.5 py-1 text-[11px] text-fg-muted flex items-center justify-between gap-2">
                   <span className="truncate">{info.filename}</span>
                   <span className="flex gap-0.5 shrink-0">
                     <button
                       title={isEnlarged ? "Minimize (Esc)" : "Enlarge"}
-                      className="p-1 rounded text-slate-500 hover:text-slate-200 hover:bg-white/5 transition-colors"
+                      className="p-1 rounded text-fg-faint hover:text-fg hover:bg-fill transition-colors"
                       onClick={() =>
                         setEnlargedVideo(isEnlarged ? null : info.filename)
                       }
@@ -400,7 +400,7 @@ export const SimpleVideosPlayer = ({
                     </button>
                     <button
                       title="Hide Video"
-                      className="p-1 rounded text-slate-500 hover:text-slate-200 hover:bg-white/5 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                      className="p-1 rounded text-fg-faint hover:text-fg hover:bg-fill transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
                       onClick={() => {
                         setHiddenVideos((prev) => [...prev, info.filename]);
                         // If the user hid the camera that was enlarged, clear

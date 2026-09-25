@@ -69,7 +69,7 @@ function EpisodeLengthHistogram({
                 y={y}
                 width={barWidth}
                 height={barH}
-                className="fill-cyan-400/70 hover:fill-cyan-300 transition-colors"
+                className="fill-cyan-400/70 hover:fill-accent-fg transition-colors"
                 rx={Math.min(2, barWidth / 4)}
               />
               {bin.count > 0 && barWidth >= 8 && (
@@ -77,7 +77,7 @@ function EpisodeLengthHistogram({
                   x={x + barWidth / 2}
                   y={y - 3}
                   textAnchor="middle"
-                  className="fill-slate-400"
+                  className="fill-fg-muted"
                   fontSize={Math.min(10, barWidth - 1)}
                 >
                   {bin.count}
@@ -97,7 +97,7 @@ function EpisodeLengthHistogram({
               x={idx * (barWidth + gap) + barWidth / 2}
               y={topPad + chartHeight + 14}
               textAnchor="middle"
-              className="fill-slate-400"
+              className="fill-fg-muted"
               fontSize={9}
             >
               {label}s
@@ -154,8 +154,8 @@ function StatsPanel({
 
       {/* Camera resolutions */}
       {datasetInfo.cameras.length > 0 && (
-        <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10">
-          <h3 className="text-sm font-semibold text-slate-200 mb-3">
+        <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line">
+          <h3 className="text-sm font-semibold text-fg mb-3">
             Camera Resolutions
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -175,8 +175,8 @@ function StatsPanel({
       {/* Episode length section */}
       {els && (
         <>
-          <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10">
-            <h3 className="text-sm font-semibold text-slate-200 mb-4">
+          <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line">
+            <h3 className="text-sm font-semibold text-fg mb-4">
               Episode Lengths
             </h3>
             <div className="grid grid-cols-3 md:grid-cols-5 gap-4 mb-4">
@@ -205,10 +205,10 @@ function StatsPanel({
           </div>
 
           {els.episodeLengthHistogram.length > 0 && (
-            <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10">
-              <h3 className="text-sm font-semibold text-slate-200 mb-4">
+            <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line">
+              <h3 className="text-sm font-semibold text-fg mb-4">
                 Episode Length Distribution
-                <span className="text-xs text-slate-500 ml-2 font-normal">
+                <span className="text-xs text-fg-faint ml-2 font-normal">
                   {els.episodeLengthHistogram.length} bin
                   {els.episodeLengthHistogram.length !== 1 ? "s" : ""}
                 </span>

@@ -64,7 +64,7 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
       <button
         onClick={signIn}
         title="Sign in to access your private datasets"
-        className="cursor-pointer inline-flex items-center h-7 gap-1.5 text-sm tracking-wide text-cyan-300/85 hover:text-cyan-200 transition-colors rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
+        className="cursor-pointer inline-flex items-center h-7 gap-1.5 text-sm tracking-wide text-accent-fg/85 hover:text-accent-fg transition-colors rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
       >
         <span aria-hidden>🤗</span>
         <span>Sign in for private datasets</span>
@@ -80,7 +80,7 @@ export default function HfAuthButton({ variant = "badge" }: HfAuthButtonProps) {
       <button
         onClick={signIn}
         title="Sign in to access your private datasets"
-        className="cursor-pointer inline-flex items-center h-10 gap-1.5 px-5 text-[11px] font-medium tracking-wide uppercase text-slate-400 hover:text-cyan-300 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
+        className="cursor-pointer inline-flex items-center h-10 gap-1.5 px-5 text-[11px] font-medium tracking-wide uppercase text-fg-muted hover:text-accent-fg transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
       >
         <span aria-hidden>🤗</span>
         <span>Sign in</span>
@@ -147,7 +147,7 @@ function SignedInMenu({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className={`cursor-pointer inline-flex items-center ${SLOT_HEIGHT[variant]} gap-2 panel-raised bg-[var(--surface-0)]/85 backdrop-blur px-2 text-xs text-slate-300 hover:bg-white/[0.04] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60`}
+        className={`cursor-pointer inline-flex items-center ${SLOT_HEIGHT[variant]} gap-2 panel-raised bg-[var(--surface-0)]/85 backdrop-blur px-2 text-xs text-fg-soft hover:bg-fill transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60`}
         title={`Signed in as ${name}`}
       >
         {avatar && (
@@ -157,7 +157,7 @@ function SignedInMenu({
             alt=""
             width={22}
             height={22}
-            className="rounded-full ring-1 ring-white/10"
+            className="rounded-full ring-1 ring-line"
           />
         )}
         <span className="tabular max-w-[10rem] truncate">{name}</span>
@@ -166,7 +166,7 @@ function SignedInMenu({
           width="9"
           height="9"
           viewBox="0 0 8 8"
-          className={`text-slate-500 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`text-fg-faint transition-transform ${open ? "rotate-180" : ""}`}
         >
           <path d="M1 2.5l3 3 3-3" stroke="currentColor" fill="none" />
         </svg>
@@ -183,7 +183,7 @@ function SignedInMenu({
               setOpen(false);
               onSignOut();
             }}
-            className="cursor-pointer w-full text-left px-2 py-1.5 rounded text-slate-300 hover:bg-white/5 hover:text-slate-100 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
+            className="cursor-pointer w-full text-left px-2 py-1.5 rounded text-fg-soft hover:bg-fill hover:text-fg transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400/60"
           >
             Sign out
           </button>

@@ -31,7 +31,7 @@ function InfoToggle({ children }: { children: React.ReactNode }) {
     <>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="p-0.5 rounded-full text-slate-500 hover:text-slate-300 transition-colors shrink-0"
+        className="p-0.5 rounded-full text-fg-faint hover:text-fg-soft transition-colors shrink-0"
         title="Toggle description"
       >
         <svg
@@ -71,7 +71,7 @@ function FullscreenWrapper({ children }: { children: React.ReactNode }) {
     <div className="relative">
       <button
         onClick={() => setFs((v) => !v)}
-        className="absolute top-3 right-3 z-10 p-1.5 rounded bg-white/5 hover:bg-white/10 text-slate-400 hover:text-slate-200 transition-colors backdrop-blur-sm"
+        className="absolute top-3 right-3 z-10 p-1.5 rounded bg-fill hover:bg-fill-strong text-fg-muted hover:text-fg transition-colors backdrop-blur-sm"
         title={fs ? "Exit fullscreen" : "Fullscreen"}
       >
         <svg
@@ -106,7 +106,7 @@ function FullscreenWrapper({ children }: { children: React.ReactNode }) {
         <div className="fixed inset-0 z-50 bg-[var(--bg)]/95 overflow-auto p-6">
           <button
             onClick={() => setFs(false)}
-            className="fixed top-4 right-4 z-50 p-2 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
+            className="fixed top-4 right-4 z-50 p-2 rounded bg-fill hover:bg-fill-strong text-fg-soft hover:text-fg transition-colors"
             title="Exit fullscreen (Esc)"
           >
             <svg
@@ -146,7 +146,7 @@ function FlagBtn({ id }: { id: number }) {
     <button
       onClick={() => toggle(id)}
       title={flagged ? "Unflag episode" : "Flag for review"}
-      className={`p-0.5 rounded transition-colors ${flagged ? "text-orange-400 hover:text-orange-300" : "text-slate-600 hover:text-slate-400"}`}
+      className={`p-0.5 rounded transition-colors ${flagged ? "text-orange-400 hover:text-flag-fg" : "text-fg-faint hover:text-fg-muted"}`}
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -171,7 +171,7 @@ function FlagAllBtn({ ids, label }: { ids: number[]; label?: string }) {
   return (
     <button
       onClick={() => addMany(ids)}
-      className="text-xs text-slate-500 hover:text-orange-300 transition-colors flex items-center gap-1"
+      className="text-xs text-fg-faint hover:text-flag-fg transition-colors flex items-center gap-1"
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -327,37 +327,37 @@ function AutocorrelationSection({
   }, [chartData, shortKeys]);
 
   if (shortKeys.length === 0)
-    return <p className="text-slate-500 italic">No action columns found.</p>;
+    return <p className="text-fg-faint italic">No action columns found.</p>;
 
   return (
-    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10 space-y-4">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line space-y-4">
       <div>
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-slate-200">
+          <h3 className="text-sm font-semibold text-fg">
             Action Autocorrelation
-            <span className="text-xs text-slate-500 ml-2 font-normal">
+            <span className="text-xs text-fg-faint ml-2 font-normal">
               {numEpisodesLabel}
             </span>
           </h3>
           <InfoToggle>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-fg-muted">
               Shows how correlated each action dimension is with itself over
               increasing time lags. Where autocorrelation drops below 0.5
               suggests a{" "}
-              <span className="text-cyan-300 font-medium">
+              <span className="text-accent-fg font-medium">
                 natural action chunk boundary
               </span>{" "}
               — actions beyond this lag are essentially independent, so
               executing them open-loop offers diminishing returns.
               <br />
-              <span className="text-slate-500">
+              <span className="text-fg-faint">
                 Grounded in the theoretical result that chunk length should
                 scale logarithmically with system stability constants (
                 <a
                   href="https://arxiv.org/abs/2507.09061"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline hover:text-slate-300"
+                  className="underline hover:text-fg-soft"
                 >
                   Zhang et al., 2025
                 </a>
@@ -370,15 +370,15 @@ function AutocorrelationSection({
 
       {suggestedChunk && (
         <div className="flex items-center gap-3 bg-cyan-400/10 border border-cyan-400/30 rounded-md px-4 py-2.5">
-          <span className="text-cyan-300 font-bold text-lg tabular-nums">
+          <span className="text-accent-fg font-bold text-lg tabular-nums">
             {suggestedChunk}
           </span>
           <div>
-            <p className="text-sm text-cyan-200 font-medium">
+            <p className="text-sm text-accent-fg font-medium">
               Suggested chunk length: {suggestedChunk} steps (
               {(suggestedChunk / fps).toFixed(2)}s)
             </p>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-fg-muted">
               Median lag where autocorrelation drops below 0.5 across action
               dimensions
             </p>
@@ -453,7 +453,7 @@ function AutocorrelationSection({
               className="w-3 h-[3px] rounded-full shrink-0"
               style={{ background: COLORS[i % COLORS.length] }}
             />
-            <span className="text-xs text-slate-400">{name}</span>
+            <span className="text-xs text-fg-muted">{name}</span>
           </div>
         ))}
       </div>
@@ -634,25 +634,25 @@ function ActionVelocitySection({
 
   if (stats.length === 0)
     return (
-      <p className="text-slate-500 italic">
+      <p className="text-fg-faint italic">
         No action data for velocity analysis.
       </p>
     );
 
   return (
-    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10 space-y-4">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line space-y-4">
       <div>
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-slate-200">
+          <h3 className="text-sm font-semibold text-fg">
             Action Velocity (Δa) — Smoothness Proxy
-            <span className="text-xs text-slate-500 ml-2 font-normal">
+            <span className="text-xs text-fg-faint ml-2 font-normal">
               {isAgg
                 ? `(${numEpisodes} episodes sampled)`
                 : "(current episode)"}
             </span>
           </h3>
           <InfoToggle>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-fg-muted">
               Shows the distribution of frame-to-frame action changes (Δa = a
               <sub>t+1</sub> − a<sub>t</sub>) for each dimension. A{" "}
               <span className="text-green-400">
@@ -664,14 +664,14 @@ function ActionVelocitySection({
               indicate jerky demonstrations, suggesting shorter chunks and
               potentially beneficial noise injection.
               <br />
-              <span className="text-slate-500">
+              <span className="text-fg-faint">
                 Relates to the Lipschitz constant L<sub>π</sub> and smoothness C
                 <sub>π</sub> in{" "}
                 <a
                   href="https://arxiv.org/abs/2507.09061"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline hover:text-slate-300"
+                  className="underline hover:text-fg-soft"
                 >
                   Zhang et al. (2025)
                 </a>
@@ -704,18 +704,18 @@ function ActionVelocitySection({
               className={`rounded-md px-2.5 py-2 space-y-1 ${dimmed ? "bg-[var(--surface-0)]/30 opacity-50" : "bg-[var(--surface-0)]/50"}`}
             >
               <p
-                className={`text-xs font-medium truncate ${dimmed ? "text-slate-500" : "text-slate-200"}`}
+                className={`text-xs font-medium truncate ${dimmed ? "text-fg-faint" : "text-fg"}`}
                 title={s.name}
               >
                 {s.name}
                 {tag && (
-                  <span className="text-slate-600 ml-1 font-normal">
+                  <span className="text-fg-faint ml-1 font-normal">
                     ({tag})
                   </span>
                 )}
               </p>
               <div
-                className={`flex gap-2 text-xs tabular-nums ${dimmed ? "text-slate-600" : "text-slate-400"}`}
+                className={`flex gap-2 text-xs tabular-nums ${dimmed ? "text-fg-faint" : "text-fg-muted"}`}
               >
                 <span>σ={s.std.toFixed(4)}</span>
                 <span>
@@ -744,7 +744,7 @@ function ActionVelocitySection({
                   );
                 })}
               </svg>
-              <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+              <div className="h-1 w-full bg-fill rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full"
                   style={{
@@ -765,19 +765,19 @@ function ActionVelocitySection({
       </div>
 
       {insight && (
-        <div className="bg-[var(--surface-0)]/60 rounded-md px-4 py-3 border border-white/10 space-y-1.5">
-          <p className="text-sm font-medium text-slate-200">
+        <div className="bg-[var(--surface-0)]/60 rounded-md px-4 py-3 border border-line space-y-1.5">
+          <p className="text-sm font-medium text-fg">
             Overall:{" "}
             <span className={insight.verdict.color}>
               {insight.verdict.label}
             </span>
           </p>
-          <ul className="text-xs text-slate-400 space-y-0.5 list-disc list-inside">
+          <ul className="text-xs text-fg-muted space-y-0.5 list-disc list-inside">
             {insight.lines.map((l, i) => (
               <li key={i}>{l}</li>
             ))}
           </ul>
-          <p className="text-xs text-slate-500 pt-1">{insight.tip}</p>
+          <p className="text-xs text-fg-faint pt-1">{insight.tip}</p>
         </div>
       )}
 
@@ -793,11 +793,11 @@ function JerkyEpisodesList({ episodes }: { episodes: JerkyEpisode[] }) {
   const display = showAll ? episodes : episodes.slice(0, 15);
 
   return (
-    <div className="bg-[var(--surface-0)]/60 rounded-md px-4 py-3 border border-white/10 space-y-2">
+    <div className="bg-[var(--surface-0)]/60 rounded-md px-4 py-3 border border-line space-y-2">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-slate-200">
+        <p className="text-sm font-medium text-fg">
           Most Jerky Episodes{" "}
-          <span className="text-xs text-slate-500 font-normal">
+          <span className="text-xs text-fg-faint font-normal">
             sorted by mean |Δa|
           </span>
         </p>
@@ -806,7 +806,7 @@ function JerkyEpisodesList({ episodes }: { episodes: JerkyEpisode[] }) {
           {episodes.length > 15 && (
             <button
               onClick={() => setShowAll((v) => !v)}
-              className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
+              className="text-xs text-fg-muted hover:text-fg transition-colors"
             >
               {showAll ? "Show top 15" : `Show all ${episodes.length}`}
             </button>
@@ -816,7 +816,7 @@ function JerkyEpisodesList({ episodes }: { episodes: JerkyEpisode[] }) {
       <div className="max-h-48 overflow-y-auto">
         <table className="w-full text-xs">
           <thead>
-            <tr className="text-slate-500 border-b border-white/10">
+            <tr className="text-fg-faint border-b border-line">
               <th className="w-5 py-1" />
               <th className="text-left py-1 pr-3">Episode</th>
               <th className="text-right py-1">Mean |Δa|</th>
@@ -826,7 +826,7 @@ function JerkyEpisodesList({ episodes }: { episodes: JerkyEpisode[] }) {
             {display.map((e) => (
               <tr
                 key={e.episodeIndex}
-                className="border-b border-white/5 text-slate-300"
+                className="border-b border-line-subtle text-fg-soft"
               >
                 <td className="py-1">
                   <FlagBtn id={e.episodeIndex} />
@@ -857,8 +857,8 @@ function VarianceHeatmap({
 
   if (loading) {
     return (
-      <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10">
-        <h3 className="text-sm font-semibold text-slate-200 mb-2">
+      <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line">
+        <h3 className="text-sm font-semibold text-fg mb-2">
           Cross-Episode Action Variance
         </h3>
         <InlineLoading label="Loading cross-episode data…" />
@@ -868,11 +868,11 @@ function VarianceHeatmap({
 
   if (!data) {
     return (
-      <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10">
-        <h3 className="text-sm font-semibold text-slate-200 mb-2">
+      <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line">
+        <h3 className="text-sm font-semibold text-fg mb-2">
           Cross-Episode Action Variance
         </h3>
-        <p className="text-slate-500 italic text-sm">
+        <p className="text-fg-faint italic text-sm">
           Not enough episodes or no action data to compute variance.
         </p>
       </div>
@@ -908,33 +908,36 @@ function VarianceHeatmap({
   }
 
   return (
-    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10 space-y-4">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line space-y-4">
       <div>
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-slate-200">
+          <h3 className="text-sm font-semibold text-fg">
             Cross-Episode Action Variance
-            <span className="text-xs text-slate-500 ml-2 font-normal">
+            <span className="text-xs text-fg-faint ml-2 font-normal">
               ({numEpisodes} episodes sampled)
             </span>
           </h3>
           <InfoToggle>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-fg-muted">
               Shows how much each action dimension varies across episodes at
               each point in time (normalized 0–100%).
-              <span className="text-cyan-300"> High-variance regions</span>{" "}
+              <span className="text-accent-fg">
+                {" "}
+                High-variance regions
+              </span>{" "}
               indicate multi-modal or inconsistent demonstrations — generative
               policies (diffusion, flow-matching) and action chunking help here
               by modeling multiple modes.
               <span className="text-blue-400"> Low-variance regions</span>{" "}
               indicate consistent behavior across demonstrations.
               <br />
-              <span className="text-slate-500">
+              <span className="text-fg-faint">
                 Relates to the &quot;coverage&quot; discussion in{" "}
                 <a
                   href="https://arxiv.org/abs/2507.09061"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline hover:text-slate-300"
+                  className="underline hover:text-fg-soft"
                 >
                   Zhang et al. (2025)
                 </a>{" "}
@@ -974,7 +977,7 @@ function VarianceHeatmap({
               y={di * cellH + cellH / 2}
               textAnchor="end"
               dominantBaseline="central"
-              className="fill-slate-400"
+              className="fill-fg-muted"
               fontSize={Math.min(11, cellH - 4)}
             >
               {shortName(name)}
@@ -990,7 +993,7 @@ function VarianceHeatmap({
                 x={labelW + binIdx * cellW + cellW / 2}
                 y={numDims * cellH + 14}
                 textAnchor="middle"
-                className="fill-slate-400"
+                className="fill-fg-muted"
                 fontSize={9}
               >
                 {(frac * 100).toFixed(0)}%
@@ -1001,7 +1004,7 @@ function VarianceHeatmap({
             x={labelW + (numBins * cellW) / 2}
             y={numDims * cellH + 30}
             textAnchor="middle"
-            className="fill-slate-500"
+            className="fill-fg-faint"
             fontSize={10}
           >
             Episode progress
@@ -1026,7 +1029,7 @@ function VarianceHeatmap({
           <text
             x={labelW + numBins * cellW + 34}
             y={10}
-            className="fill-slate-500"
+            className="fill-fg-faint"
             fontSize={8}
             dominantBaseline="central"
           >
@@ -1035,7 +1038,7 @@ function VarianceHeatmap({
           <text
             x={labelW + numBins * cellW + 34}
             y={numDims * cellH - 4}
-            className="fill-slate-500"
+            className="fill-fg-faint"
             fontSize={8}
             dominantBaseline="central"
           >
@@ -1116,26 +1119,27 @@ function SpeedVarianceSection({
   const barW = Math.max(8, Math.floor((isFs ? 900 : 500) / bins.length));
 
   return (
-    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10 space-y-4">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line space-y-4">
       <div>
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-slate-200">
+          <h3 className="text-sm font-semibold text-fg">
             Demonstrator Speed Variance
-            <span className="text-xs text-slate-500 ml-2 font-normal">
+            <span className="text-xs text-fg-faint ml-2 font-normal">
               ({numEpisodes} episodes)
             </span>
           </h3>
           <InfoToggle>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-fg-muted">
               Distribution of average execution speed (mean ‖Δa<sub>t</sub>‖ per
               frame) across all episodes. Different human demonstrators often
-              execute at <span className="text-cyan-300">different speeds</span>
+              execute at{" "}
+              <span className="text-accent-fg">different speeds</span>
               , creating artificial multimodality in the action distribution
               that confuses the policy. A coefficient of variation (CV) above
               0.3 strongly suggests normalizing trajectory speed before
               training.
               <br />
-              <span className="text-slate-500">
+              <span className="text-fg-faint">
                 Based on &quot;Is Diversity All You Need&quot; (AGI-Bot, 2025)
                 which shows velocity normalization dramatically improves
                 fine-tuning success rate.
@@ -1178,7 +1182,7 @@ function SpeedVarianceSection({
                   x={idx * barW + barW / 2}
                   y={barH + 14}
                   textAnchor="middle"
-                  className="fill-slate-400"
+                  className="fill-fg-muted"
                   fontSize={9}
                 >
                   {(lo + idx * binW).toFixed(2)}
@@ -1189,25 +1193,21 @@ function SpeedVarianceSection({
         </div>
         <div className="flex flex-col gap-2 text-xs shrink-0 min-w-[120px]">
           <div>
-            <span className="text-slate-500">Mean</span>{" "}
-            <span className="text-slate-200 tabular-nums ml-1">
-              {mean.toFixed(4)}
-            </span>
+            <span className="text-fg-faint">Mean</span>{" "}
+            <span className="text-fg tabular-nums ml-1">{mean.toFixed(4)}</span>
           </div>
           <div>
-            <span className="text-slate-500">Median</span>{" "}
-            <span className="text-slate-200 tabular-nums ml-1">
+            <span className="text-fg-faint">Median</span>{" "}
+            <span className="text-fg tabular-nums ml-1">
               {median.toFixed(4)}
             </span>
           </div>
           <div>
-            <span className="text-slate-500">Std</span>{" "}
-            <span className="text-slate-200 tabular-nums ml-1">
-              {std.toFixed(4)}
-            </span>
+            <span className="text-fg-faint">Std</span>{" "}
+            <span className="text-fg tabular-nums ml-1">{std.toFixed(4)}</span>
           </div>
           <div>
-            <span className="text-slate-500">CV</span>
+            <span className="text-fg-faint">CV</span>
             <span className={`tabular-nums ml-1 font-bold ${verdict.color}`}>
               {cv.toFixed(3)}
             </span>
@@ -1215,11 +1215,11 @@ function SpeedVarianceSection({
         </div>
       </div>
 
-      <div className="bg-[var(--surface-0)]/60 rounded-md px-4 py-3 border border-white/10 space-y-1.5">
-        <p className="text-sm font-medium text-slate-200">
+      <div className="bg-[var(--surface-0)]/60 rounded-md px-4 py-3 border border-line space-y-1.5">
+        <p className="text-sm font-medium text-fg">
           Verdict: <span className={verdict.color}>{verdict.label}</span>
         </p>
-        <p className="text-xs text-slate-400">{verdict.tip}</p>
+        <p className="text-xs text-fg-muted">{verdict.tip}</p>
       </div>
     </div>
   );
@@ -1383,34 +1383,34 @@ function StateActionAlignmentSection({
     : "current episode";
 
   return (
-    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10 space-y-4">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line space-y-4">
       <div>
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-slate-200">
+          <h3 className="text-sm font-semibold text-fg">
             State–Action Temporal Alignment
-            <span className="text-xs text-slate-500 ml-2 font-normal">
+            <span className="text-xs text-fg-faint ml-2 font-normal">
               ({scopeLabel}, {numPairs} matched pair{numPairs !== 1 ? "s" : ""})
             </span>
           </h3>
           <InfoToggle>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-fg-muted">
               Per-dimension cross-correlation between Δaction<sub>d</sub>(t) and
               Δstate<sub>d</sub>(t+lag), aggregated as
-              <span className="text-cyan-300"> max</span>,{" "}
-              <span className="text-slate-200">mean</span>, and
+              <span className="text-accent-fg"> max</span>,{" "}
+              <span className="text-fg">mean</span>, and
               <span className="text-blue-400"> min</span> across all matched
               action–state pairs. The{" "}
-              <span className="text-cyan-300">peak lag</span> reveals the
+              <span className="text-accent-fg">peak lag</span> reveals the
               effective control delay — the time between when an action is
               commanded and when the corresponding state changes.
               <br />
-              <span className="text-slate-500">
+              <span className="text-fg-faint">
                 Central to ACT (
                 <a
                   href="https://arxiv.org/abs/2304.13705"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline hover:text-slate-300"
+                  className="underline hover:text-fg-soft"
                 >
                   Zhao et al., 2023
                 </a>{" "}
@@ -1420,7 +1420,7 @@ function StateActionAlignmentSection({
                   href="https://arxiv.org/abs/2506.07339"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline hover:text-slate-300"
+                  className="underline hover:text-fg-soft"
                 >
                   Black et al., 2025
                 </a>
@@ -1429,7 +1429,7 @@ function StateActionAlignmentSection({
                   href="https://arxiv.org/abs/2512.05964"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline hover:text-slate-300"
+                  className="underline hover:text-fg-soft"
                 >
                   Black et al., 2025
                 </a>
@@ -1443,16 +1443,16 @@ function StateActionAlignmentSection({
 
       {meanPeakLag !== 0 && (
         <div className="flex items-center gap-3 bg-cyan-400/10 border border-cyan-400/30 rounded-md px-4 py-2.5">
-          <span className="text-cyan-300 font-bold text-lg tabular-nums">
+          <span className="text-accent-fg font-bold text-lg tabular-nums">
             {meanPeakLag}
           </span>
           <div>
-            <p className="text-sm text-cyan-200 font-medium">
+            <p className="text-sm text-accent-fg font-medium">
               Mean control delay: {meanPeakLag} step
               {Math.abs(meanPeakLag) !== 1 ? "s" : ""} (
               {(meanPeakLag / fps).toFixed(3)}s)
             </p>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-fg-muted">
               {meanPeakLag > 0
                 ? `State changes lag behind actions by ~${meanPeakLag} frames on average. Consider aligning action[t] with state[t+${meanPeakLag}].`
                 : `Actions lag behind state changes by ~${-meanPeakLag} frames on average (predictive actions).`}
@@ -1537,19 +1537,19 @@ function StateActionAlignmentSection({
       <div className="flex flex-wrap gap-x-4 gap-y-1 px-1">
         <div className="flex items-center gap-1.5">
           <span className="w-3 h-[3px] rounded-full shrink-0 bg-cyan-500" />
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-fg-muted">
             max (peak: lag {maxPeakLag}, r={maxPeakCorr.toFixed(3)})
           </span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-3 h-[3px] rounded-full shrink-0 bg-slate-400" />
-          <span className="text-xs text-slate-400">
+          <span className="w-3 h-[3px] rounded-full shrink-0 bg-fg-muted" />
+          <span className="text-xs text-fg-muted">
             mean (peak: lag {meanPeakLag}, r={meanPeakCorr.toFixed(3)})
           </span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="w-3 h-[3px] rounded-full shrink-0 bg-blue-500" />
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-fg-muted">
             min (peak: lag {minPeakLag}, r={minPeakCorr.toFixed(3)})
           </span>
         </div>

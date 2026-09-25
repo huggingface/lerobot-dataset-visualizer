@@ -80,14 +80,14 @@ function FrameThumbnail({
             className="w-full h-full object-cover"
           />
         ) : (
-          <div className="w-full h-full animate-pulse bg-white/5" />
+          <div className="w-full h-full animate-pulse bg-fill" />
         )}
         <button
           onClick={() => toggle(info.episodeIndex)}
           className={`absolute top-1 right-1 p-1 rounded transition-opacity ${
             isFlagged
-              ? "opacity-100 text-orange-400 hover:text-orange-300"
-              : "opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-200"
+              ? "opacity-100 text-orange-400 hover:text-flag-fg"
+              : "opacity-0 group-hover:opacity-100 text-fg-muted hover:text-fg"
           }`}
           title={isFlagged ? "Unflag episode" : "Flag episode"}
         >
@@ -108,7 +108,7 @@ function FrameThumbnail({
         </button>
       </div>
       <p
-        className={`text-xs mt-1 tabular-nums ${isFlagged ? "text-orange-300" : "text-slate-400"}`}
+        className={`text-xs mt-1 tabular-nums ${isFlagged ? "text-flag-fg" : "text-fg-muted"}`}
       >
         ep {info.episodeIndex}
         {isFlagged ? " ⚑" : ""}
@@ -164,7 +164,7 @@ export default function OverviewPanel({
   if (frames.length === 0) {
     return (
       <div className="text-center py-8 space-y-2">
-        <p className="text-slate-500 italic">
+        <p className="text-fg-faint italic">
           {flaggedOnly
             ? "No flagged episodes to show."
             : "No episode frames available."}
@@ -172,7 +172,7 @@ export default function OverviewPanel({
         {flaggedOnly && onFlaggedOnlyChange && (
           <button
             onClick={() => onFlaggedOnlyChange(false)}
-            className="text-xs text-cyan-300 hover:text-cyan-200 underline"
+            className="text-xs text-accent-fg hover:text-accent-fg underline"
           >
             Show all episodes
           </button>
@@ -203,7 +203,7 @@ export default function OverviewPanel({
             <select
               value={selectedCamera}
               onChange={handleCameraChange}
-              className="bg-[var(--surface-1)] text-slate-200 text-sm rounded px-3 py-1.5 border border-white/10 focus:outline-none focus:border-cyan-400"
+              className="bg-[var(--surface-1)] text-fg text-sm rounded px-3 py-1.5 border border-line focus:outline-none focus:border-cyan-400"
             >
               {data.cameras.map((cam) => (
                 <option key={cam} value={cam}>
@@ -260,7 +260,7 @@ export default function OverviewPanel({
             >
               ‹ Prev
             </button>
-            <span className="tabular text-xs text-slate-500">
+            <span className="tabular text-xs text-fg-faint">
               {page + 1} / {totalPages}
             </span>
             <button

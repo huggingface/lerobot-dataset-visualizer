@@ -1018,13 +1018,13 @@ const VqaEditorFields: React.FC<{
         onChange={(e) => onChange({ content: e.target.value })}
       />
       {parsed && kind === "bbox" && (
-        <p className="text-[11px] text-slate-400 mt-1">
+        <p className="text-[11px] text-fg-muted mt-1">
           Tip: bbox values are 0..1 image-relative (xyxy). Edit on the video
           itself by deleting this and re-drawing.
         </p>
       )}
       {parsed && kind === "keypoint" && (
-        <p className="text-[11px] text-slate-400 mt-1">
+        <p className="text-[11px] text-fg-muted mt-1">
           Tip: point values are 0..1 image-relative (xy).
         </p>
       )}

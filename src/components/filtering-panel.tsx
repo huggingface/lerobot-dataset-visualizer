@@ -23,7 +23,7 @@ function FlagBtn({ id }: { id: number }) {
     <button
       onClick={() => toggle(id)}
       title={flagged ? "Unflag episode" : "Flag for review"}
-      className={`p-0.5 rounded transition-colors ${flagged ? "text-orange-400 hover:text-orange-300" : "text-slate-600 hover:text-slate-400"}`}
+      className={`p-0.5 rounded transition-colors ${flagged ? "text-orange-400 hover:text-flag-fg" : "text-fg-faint hover:text-fg-muted"}`}
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -48,7 +48,7 @@ function FlagAllBtn({ ids, label }: { ids: number[]; label?: string }) {
   return (
     <button
       onClick={() => addMany(ids)}
-      className="text-xs text-slate-500 hover:text-orange-300 transition-colors flex items-center gap-1"
+      className="text-xs text-fg-faint hover:text-flag-fg transition-colors flex items-center gap-1"
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -76,14 +76,14 @@ function LowMovementSection({ episodes }: { episodes: LowMovementEpisode[] }) {
   const maxMovement = Math.max(...episodes.map((e) => e.totalMovement), 1e-10);
 
   return (
-    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10 space-y-3">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-200">
+        <h3 className="text-sm font-semibold text-fg">
           Lowest-Movement Episodes
         </h3>
         <FlagAllBtn ids={episodes.map((e) => e.episodeIndex)} />
       </div>
-      <p className="text-xs text-slate-400">
+      <p className="text-xs text-fg-muted">
         Episodes with the lowest average action change per frame. Very low
         values may indicate the robot was standing still or the episode was
         recorded incorrectly.
@@ -99,11 +99,11 @@ function LowMovementSection({ episodes }: { episodes: LowMovementEpisode[] }) {
           >
             <FlagBtn id={ep.episodeIndex} />
             {/* Fixed width so every bar starts at the same x, whatever the index's digit count. */}
-            <span className="w-14 text-xs text-slate-300 font-medium tabular-nums shrink-0">
+            <span className="w-14 text-xs text-fg-soft font-medium tabular-nums shrink-0">
               ep {ep.episodeIndex}
             </span>
             <div className="flex-1 min-w-0">
-              <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+              <div className="h-1.5 bg-fill rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full"
                   style={{
@@ -118,7 +118,7 @@ function LowMovementSection({ episodes }: { episodes: LowMovementEpisode[] }) {
                 />
               </div>
             </div>
-            <span className="text-xs text-slate-500 tabular-nums shrink-0">
+            <span className="text-xs text-fg-faint tabular-nums shrink-0">
               {ep.totalMovement.toFixed(2)}
             </span>
           </div>
@@ -159,18 +159,16 @@ function EpisodeLengthFilter({ episodes }: { episodes: EpisodeLengthInfo[] }) {
     0.01;
 
   return (
-    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10 space-y-4">
-      <h3 className="text-sm font-semibold text-slate-200">
-        Episode Length Filter
-      </h3>
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line space-y-4">
+      <h3 className="text-sm font-semibold text-fg">Episode Length Filter</h3>
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs text-slate-400">
+        <div className="flex items-center justify-between text-xs text-fg-muted">
           <span className="tabular-nums">{rangeMin.toFixed(1)}s</span>
           <span className="tabular-nums">{rangeMax.toFixed(1)}s</span>
         </div>
         <div className="relative h-5">
-          <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1 rounded bg-white/5" />
+          <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1 rounded bg-fill" />
           <div
             className="absolute top-1/2 -translate-y-1/2 h-1 rounded bg-cyan-500"
             style={{
@@ -205,7 +203,7 @@ function EpisodeLengthFilter({ episodes }: { episodes: EpisodeLengthInfo[] }) {
 
       {rangeChanged && (
         <div className="flex items-center justify-between">
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-fg-muted">
             {outsideIds.length} episode{outsideIds.length !== 1 ? "s" : ""}{" "}
             outside range
           </span>
@@ -258,16 +256,16 @@ function FlaggedIdsCopyBar({
   return (
     <div className="bg-[var(--surface-1)]/60 rounded-lg p-4 border border-orange-500/30 space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-orange-300">
+        <h3 className="text-sm font-semibold text-flag-fg">
           Flagged Episodes
-          <span className="text-xs text-slate-500 ml-2 font-normal">
+          <span className="text-xs text-fg-faint ml-2 font-normal">
             ({count})
           </span>
         </h3>
         <div className="flex items-center gap-2">
           <button
             onClick={handleCopy}
-            className="text-xs text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1"
+            className="text-xs text-fg-muted hover:text-fg transition-colors flex items-center gap-1"
             title="Copy IDs"
           >
             {copied ? (
@@ -301,13 +299,13 @@ function FlaggedIdsCopyBar({
           </button>
           <button
             onClick={clear}
-            className="text-xs text-slate-500 hover:text-red-400 transition-colors"
+            className="text-xs text-fg-faint hover:text-red-400 transition-colors"
           >
             Clear
           </button>
         </div>
       </div>
-      <p className="text-xs text-slate-300 tabular-nums leading-relaxed max-h-20 overflow-y-auto">
+      <p className="text-xs text-fg-soft tabular-nums leading-relaxed max-h-20 overflow-y-auto">
         {idStr}
       </p>
       {onViewEpisodes && (
@@ -329,20 +327,20 @@ function FlaggedIdsCopyBar({
           View flagged episodes
         </button>
       )}
-      <div className="bg-[var(--surface-0)]/60 rounded-md px-3 py-2 border border-white/10 space-y-2.5">
-        <p className="text-xs text-slate-400">
+      <div className="bg-[var(--surface-0)]/60 rounded-md px-3 py-2 border border-line space-y-2.5">
+        <p className="text-xs text-fg-muted">
           <a
             href="https://github.com/huggingface/lerobot"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-cyan-300 underline"
+            className="text-accent-fg underline"
           >
             LeRobot CLI
           </a>{" "}
           — delete flagged episodes:
         </p>
-        <pre className="text-xs text-slate-300 bg-[var(--bg)]/50 rounded px-2 py-1.5 overflow-x-auto select-all">{`# Delete episodes (modifies original dataset)\nlerobot-edit-dataset \\\n    --repo_id ${repoId} \\\n    --operation.type delete_episodes \\\n    --operation.episode_indices "[${ids.join(", ")}]"`}</pre>
-        <pre className="text-xs text-slate-300 bg-[var(--bg)]/50 rounded px-2 py-1.5 overflow-x-auto select-all">{`# Delete episodes and save to a new dataset (preserves original)\nlerobot-edit-dataset \\\n    --repo_id ${repoId} \\\n    --new_repo_id ${repoId}_filtered \\\n    --operation.type delete_episodes \\\n    --operation.episode_indices "[${ids.join(", ")}]"`}</pre>
+        <pre className="text-xs text-fg-soft bg-[var(--bg)]/50 rounded px-2 py-1.5 overflow-x-auto select-all">{`# Delete episodes (modifies original dataset)\nlerobot-edit-dataset \\\n    --repo_id ${repoId} \\\n    --operation.type delete_episodes \\\n    --operation.episode_indices "[${ids.join(", ")}]"`}</pre>
+        <pre className="text-xs text-fg-soft bg-[var(--bg)]/50 rounded px-2 py-1.5 overflow-x-auto select-all">{`# Delete episodes and save to a new dataset (preserves original)\nlerobot-edit-dataset \\\n    --repo_id ${repoId} \\\n    --new_repo_id ${repoId}_filtered \\\n    --operation.type delete_episodes \\\n    --operation.episode_indices "[${ids.join(", ")}]"`}</pre>
       </div>
     </div>
   );
@@ -373,7 +371,7 @@ function FilteringPanel({
       )}
 
       {crossEpisodeLoading && (
-        <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10">
+        <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line">
           <InlineLoading label="Loading cross-episode data…" />
         </div>
       )}

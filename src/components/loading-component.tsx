@@ -3,13 +3,13 @@
 export default function Loading() {
   return (
     <div
-      className="absolute inset-0 flex flex-col items-center justify-center bg-[var(--bg)]/80 backdrop-blur-sm z-10 text-slate-200"
+      className="absolute inset-0 flex flex-col items-center justify-center bg-[var(--bg)]/80 backdrop-blur-sm z-10 text-fg"
       tabIndex={-1}
       aria-modal="true"
       role="dialog"
     >
       <svg
-        className="animate-spin mb-5 text-cyan-300"
+        className="animate-spin mb-5 text-accent-fg"
         width="42"
         height="42"
         viewBox="0 0 24 24"
@@ -30,10 +30,10 @@ export default function Loading() {
           d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
         />
       </svg>
-      <h1 className="text-sm font-medium tracking-wide uppercase text-slate-300">
+      <h1 className="text-sm font-medium tracking-wide uppercase text-fg-soft">
         Loading
       </h1>
-      <p className="text-xs text-slate-500 mt-1">preparing data &amp; videos</p>
+      <p className="text-xs text-fg-faint mt-1">preparing data &amp; videos</p>
     </div>
   );
 }

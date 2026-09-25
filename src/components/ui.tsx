@@ -20,9 +20,9 @@ export function PageHeader({
   return (
     <div className="flex items-start justify-between flex-wrap gap-4">
       <div className="min-w-0">
-        <h2 className="text-xl font-semibold text-slate-100">{title}</h2>
+        <h2 className="text-xl font-semibold text-fg">{title}</h2>
         {description && (
-          <p className="text-sm text-slate-400 mt-1">{description}</p>
+          <p className="text-sm text-fg-muted mt-1">{description}</p>
         )}
       </div>
       {children && <div className="shrink-0">{children}</div>}
@@ -39,14 +39,14 @@ export function StatCard({
   value: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-white/10 bg-[var(--surface-1)]/60 px-4 py-3 min-w-0">
+    <div className="rounded-lg border border-line bg-[var(--surface-1)]/60 px-4 py-3 min-w-0">
       <p
-        className="text-[10px] uppercase tracking-wide text-slate-500 truncate"
+        className="text-[10px] uppercase tracking-wide text-fg-faint truncate"
         title={label}
       >
         {label}
       </p>
-      <p className="text-lg font-semibold text-slate-100 tabular mt-1 truncate">
+      <p className="text-lg font-semibold text-fg tabular mt-1 truncate">
         {value}
       </p>
     </div>
@@ -82,7 +82,7 @@ export function Spinner({ className = "h-4 w-4" }: { className?: string }) {
 export function InlineLoading({ label }: { label: string }) {
   return (
     <div
-      className="flex items-center justify-center gap-2 py-8 text-sm text-slate-400"
+      className="flex items-center justify-center gap-2 py-8 text-sm text-fg-muted"
       role="status"
     >
       <Spinner />
@@ -106,7 +106,7 @@ export function Switch({
   ariaLabel: string;
 }) {
   const labelClass = (active: boolean) =>
-    `text-sm ${active ? "text-slate-100 font-medium" : "text-slate-500"}`;
+    `text-sm ${active ? "text-fg font-medium" : "text-fg-faint"}`;
   return (
     <div className="flex items-center gap-3">
       <span className={labelClass(!checked)}>{offLabel}</span>
@@ -116,7 +116,7 @@ export function Switch({
         aria-checked={checked}
         aria-label={ariaLabel}
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors shrink-0 ${checked ? "bg-cyan-500" : "bg-white/10"}`}
+        className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors shrink-0 ${checked ? "bg-cyan-500" : "bg-fill-strong"}`}
       >
         <span
           className={`inline-block w-3.5 h-3.5 bg-white rounded-full transition-transform ${checked ? "translate-x-[18px]" : "translate-x-[3px]"}`}
@@ -155,11 +155,11 @@ export function EpisodeHeader({
           href={`https://huggingface.co/datasets/${repoId}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-slate-200 hover:text-cyan-300 transition-colors"
+          className="text-fg hover:text-accent-fg transition-colors"
         >
           <p className="text-base font-medium truncate">{repoId}</p>
         </a>
-        <p className="text-[10px] uppercase tracking-wide text-slate-500 mt-0.5 tabular">
+        <p className="text-[10px] uppercase tracking-wide text-fg-faint mt-0.5 tabular">
           Episode · {episodeId}
         </p>
       </div>
