@@ -483,7 +483,7 @@ const SingleDataGraph = React.memo(
             >
               <CartesianGrid
                 strokeDasharray="3 3"
-                stroke="#334155"
+                stroke="var(--chart-grid)"
                 strokeOpacity={0.6}
               />
               <XAxis
@@ -493,16 +493,16 @@ const SingleDataGraph = React.memo(
                   chartData.at(-1)?.timestamp ?? 0,
                 ]}
                 tickFormatter={(v: number) => `${v.toFixed(1)}s`}
-                stroke="#64748b"
-                tick={{ fontSize: 12, fill: "#94a3b8" }}
+                stroke="var(--chart-axis)"
+                tick={{ fontSize: 12, fill: "var(--fg-muted)" }}
                 minTickGap={30}
                 height={X_AXIS_HEIGHT}
                 allowDataOverflow={true}
               />
               <YAxis
                 domain={["auto", "auto"]}
-                stroke="#64748b"
-                tick={{ fontSize: 12, fill: "#94a3b8" }}
+                stroke="var(--chart-axis)"
+                tick={{ fontSize: 12, fill: "var(--fg-muted)" }}
                 width={Y_AXIS_WIDTH}
                 allowDataOverflow={true}
                 tickFormatter={(v: number) => {

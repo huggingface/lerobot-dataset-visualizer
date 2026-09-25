@@ -393,27 +393,27 @@ function AutocorrelationSection({
             data={chartData}
             margin={{ top: 8, right: 16, left: 0, bottom: 16 }}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
             <XAxis
               dataKey="lag"
-              stroke="#94a3b8"
+              stroke="var(--fg-muted)"
               label={{
                 value: "Lag (steps)",
                 position: "insideBottom",
                 offset: -8,
-                fill: "#94a3b8",
+                fill: "var(--fg-muted)",
                 fontSize: 13,
               }}
             />
             <YAxis
-              stroke="#94a3b8"
+              stroke="var(--fg-muted)"
               domain={yDomain}
               tickFormatter={(v) => Number(v.toFixed(2)).toString()}
             />
             <Tooltip
               contentStyle={{
-                background: "#1e293b",
-                border: "1px solid #475569",
+                background: "var(--surface-2)",
+                border: "1px solid var(--line-strong)",
                 borderRadius: 6,
               }}
               labelFormatter={(v) =>
@@ -423,7 +423,7 @@ function AutocorrelationSection({
             />
             <Line
               dataKey={() => 0.5}
-              stroke="#64748b"
+              stroke="var(--chart-axis)"
               strokeDasharray="6 4"
               dot={false}
               name="0.5 threshold"
@@ -738,7 +738,11 @@ function ActionVelocitySection({
                       y={barH - h}
                       width={0.85}
                       height={h}
-                      fill={dimmed ? "#475569" : COLORS[si % COLORS.length]}
+                      fill={
+                        dimmed
+                          ? "var(--line-strong)"
+                          : COLORS[si % COLORS.length]
+                      }
                       opacity={dimmed ? 0.4 : 0.7}
                     />
                   );
@@ -750,7 +754,7 @@ function ActionVelocitySection({
                   style={{
                     width: `${Math.min(100, (s.std / maxStd) * 100)}%`,
                     background: dimmed
-                      ? "#475569"
+                      ? "var(--line-strong)"
                       : s.std / maxStd < 0.4
                         ? "#22c55e"
                         : s.std / maxStd < 0.7
@@ -961,7 +965,7 @@ function VarianceHeatmap({
                 width={cellW}
                 height={cellH}
                 fill={varColor(v)}
-                stroke="#1e293b"
+                stroke="var(--bg)"
                 strokeWidth={0.5}
               >
                 <title>{`${shortName(actionNames[di])} @ ${(timeBins[bi] * 100).toFixed(0)}%: var=${v.toFixed(5)}`}</title>
@@ -1469,27 +1473,27 @@ function StateActionAlignmentSection({
             data={ccData}
             margin={{ top: 8, right: 16, left: 0, bottom: 16 }}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
             <XAxis
               dataKey="lag"
-              stroke="#94a3b8"
+              stroke="var(--fg-muted)"
               label={{
                 value: "Lag (steps)",
                 position: "insideBottom",
                 offset: -8,
-                fill: "#94a3b8",
+                fill: "var(--fg-muted)",
                 fontSize: 13,
               }}
             />
             <YAxis
-              stroke="#94a3b8"
+              stroke="var(--fg-muted)"
               domain={[-0.5, 1]}
               tickFormatter={(v) => Number(v.toFixed(2)).toString()}
             />
             <Tooltip
               contentStyle={{
-                background: "#1e293b",
-                border: "1px solid #475569",
+                background: "var(--surface-2)",
+                border: "1px solid var(--line-strong)",
                 borderRadius: 6,
               }}
               labelFormatter={(v) =>
@@ -1507,7 +1511,7 @@ function StateActionAlignmentSection({
             />
             <Line
               dataKey="mean"
-              stroke="#94a3b8"
+              stroke="var(--fg-muted)"
               dot={false}
               strokeWidth={2}
               isAnimationActive={false}
@@ -1523,7 +1527,7 @@ function StateActionAlignmentSection({
             />
             <Line
               dataKey={() => 0}
-              stroke="#64748b"
+              stroke="var(--chart-axis)"
               strokeDasharray="6 4"
               dot={false}
               name="zero"
