@@ -25,7 +25,7 @@ export type {
 } from "./episode.types";
 
 // Video types
-export type { VideoInfo, AdjacentEpisodeVideos } from "./video.types";
+export type { VideoInfo } from "./video.types";
 
 // Chart types
 export type {

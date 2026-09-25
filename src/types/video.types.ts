@@ -17,9 +17,3 @@ export interface VideoInfo {
   // feature's q10/q90 in meta/stats.json. Undefined → span the full 0..1.
   colormapRange?: [number, number];
 }
-
-// Adjacent episode video info for preloading
-export interface AdjacentEpisodeVideos {
-  episodeId: number;
-  videosInfo: VideoInfo[];
-}

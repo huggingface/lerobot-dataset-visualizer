@@ -21,10 +21,10 @@ import {
   depthColormapRange,
   depthEncodingFromFeature,
 } from "@/utils/colormaps";
-import type { VideoInfo, AdjacentEpisodeVideos } from "@/types";
+import type { VideoInfo } from "@/types";
 import { LeRobotDataset, parseInfo } from "@huggingface/lerobot";
 import type { LeRobotEpisode, LeRobotFrames } from "@huggingface/lerobot";
-import { authHeaders } from "@/utils/auth";
+import { authHeaders, getAuthToken } from "@/utils/auth";
 
 const SERIES_NAME_DELIMITER = CHART_CONFIG.SERIES_NAME_DELIMITER;
 
@@ -33,11 +33,24 @@ const HUB_ENDPOINT = (
   process.env.DATASET_URL || "https://huggingface.co/datasets"
 ).replace(/\/datasets\/?$/, "");
 
+const leRobotDatasets = new Map<string, LeRobotDataset>();
+
+/**
+ * One instance per repo and token: the package memoizes `info()` per instance, so building a new one
+ * for every lookup refetched `meta/info.json` each time. Keyed on the token too, because the headers
+ * are fixed at construction and signing in must take effect.
+ */
 function leRobotDataset(repoId: string): LeRobotDataset {
-  return new LeRobotDataset(repoId, {
-    endpoint: HUB_ENDPOINT,
-    additionalFetchHeaders: authHeaders(),
-  });
+  const key = `${repoId}\n${getAuthToken() ?? ""}`;
+  let dataset = leRobotDatasets.get(key);
+  if (!dataset) {
+    dataset = new LeRobotDataset(repoId, {
+      endpoint: HUB_ENDPOINT,
+      additionalFetchHeaders: authHeaders(),
+    });
+    leRobotDatasets.set(key, dataset);
+  }
+  return dataset;
 }
 
 /**
@@ -471,46 +484,6 @@ export async function getEpisodeData(
   } catch (err) {
     console.error("Error loading episode data:", err);
     throw err;
-  }
-}
-
-export async function getAdjacentEpisodesVideoInfo(
-  org: string,
-  dataset: string,
-  currentEpisodeId: number,
-  radius: number = 2,
-): Promise<AdjacentEpisodeVideos[]> {
-  const repoId = `${org}/${dataset}`;
-  try {
-    const { version, info: rawInfo } = await getDatasetVersionAndInfo(repoId);
-    const info = rawInfo as unknown as DatasetMetadata;
-
-    const totalEpisodes = info.total_episodes;
-    const adjacentVideos: AdjacentEpisodeVideos[] = [];
-
-    // Calculate adjacent episode IDs
-    for (let offset = -radius; offset <= radius; offset++) {
-      if (offset === 0) continue; // Skip current episode
-
-      const episodeId = currentEpisodeId + offset;
-      if (episodeId >= 0 && episodeId < totalEpisodes) {
-        try {
-          const episode = await loadLeRobotEpisode(repoId, episodeId);
-          const videosInfo = info.video_path
-            ? toVideosInfo(episode, info, version === "v3.0")
-            : [];
-
-          adjacentVideos.push({ episodeId, videosInfo });
-        } catch {
-          // Skip failed episodes silently
-        }
-      }
-    }
-
-    return adjacentVideos;
-  } catch {
-    // Return empty array on error
-    return [];
   }
 }
 

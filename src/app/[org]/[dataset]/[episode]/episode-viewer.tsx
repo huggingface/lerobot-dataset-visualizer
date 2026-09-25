@@ -20,7 +20,6 @@ import Loading from "@/components/loading-component";
 import HfAuthButton from "@/components/hf-auth-button";
 import { hasURDFSupport } from "@/lib/so101-robot";
 import {
-  getAdjacentEpisodesVideoInfo,
   computeColumnMinMax,
   getEpisodeDataSafe,
   loadAllEpisodeLengthsV3,
@@ -468,31 +467,6 @@ function EpisodeViewerInner({
     (currentPage - 1) * pageSize,
     currentPage * pageSize,
   );
-
-  // Preload adjacent episodes' videos via <link rel="preload"> tags
-  useEffect(() => {
-    if (!org || !dataset) return;
-    const links: HTMLLinkElement[] = [];
-
-    getAdjacentEpisodesVideoInfo(org, dataset, episodeId, 2)
-      .then((adjacentVideos) => {
-        for (const ep of adjacentVideos) {
-          for (const v of ep.videosInfo) {
-            const link = document.createElement("link");
-            link.rel = "preload";
-            link.as = "video";
-            link.href = v.url;
-            document.head.appendChild(link);
-            links.push(link);
-          }
-        }
-      })
-      .catch(() => {});
-
-    return () => {
-      links.forEach((l) => l.remove());
-    };
-  }, [org, dataset, episodeId]);
 
   // Initialize based on URL time parameter
   useEffect(() => {
