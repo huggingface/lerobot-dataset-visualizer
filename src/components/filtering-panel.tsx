@@ -97,7 +97,8 @@ function LowMovementSection({ episodes }: { episodes: LowMovementEpisode[] }) {
             className="bg-[var(--surface-0)]/50 rounded-md px-3 py-2 flex items-center gap-3"
           >
             <FlagBtn id={ep.episodeIndex} />
-            <span className="text-xs text-slate-300 font-medium shrink-0">
+            {/* Fixed width so every bar starts at the same x, whatever the index's digit count. */}
+            <span className="w-14 text-xs text-slate-300 font-medium tabular-nums shrink-0">
               ep {ep.episodeIndex}
             </span>
             <div className="flex-1 min-w-0">
