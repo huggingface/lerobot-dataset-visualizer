@@ -18,7 +18,8 @@ import StatsPanel from "@/components/stats-panel";
 import OverviewPanel from "@/components/overview-panel";
 import Loading from "@/components/loading-component";
 import HfAuthButton from "@/components/hf-auth-button";
-import { EpisodeHeader } from "@/components/ui";
+import { EpisodeHeader, ThemeToggle } from "@/components/ui";
+import { useTheme } from "@/utils/theme";
 import { hasURDFSupport } from "@/lib/so101-robot";
 import {
   computeColumnMinMax,
@@ -313,10 +314,10 @@ export default function EpisodeViewer({
 
   if (error) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[var(--bg)] text-red-300">
+      <div className="flex h-screen items-center justify-center bg-[var(--bg)] text-red-600 dark:text-red-300">
         <div className="panel-raised max-w-xl p-6 border-red-500/40">
           <h2 className="text-xl font-medium mb-3">Something went wrong</h2>
-          <p className="text-sm font-mono whitespace-pre-wrap text-red-200/90">
+          <p className="text-sm font-mono whitespace-pre-wrap text-red-700/90 dark:text-red-200/90">
             {error}
           </p>
         </div>
@@ -576,6 +577,8 @@ function EpisodeViewerInner({
   // which would redraw this whole component ~12×/s. <UrlTimeSync /> handles
   // the one thing here that needs `currentTime` (the ?t= URL writer).
   const { seek, setIsPlaying } = useTimeControls();
+  /// Passed to the embedded lerobot-doctor Space, which follows `__theme` like any HF Space.
+  const theme = useTheme();
 
   // URDFViewer episode changer and play toggle — populated by URDFViewer on mount
   const urdfChangerRef = useRef<((ep: number) => void) | undefined>(undefined);
@@ -713,7 +716,8 @@ function EpisodeViewerInner({
         {renderTab("episodes", "Episodes")}
         {urdfSupported && renderTab("urdf", "3D Replay")}
         <AdvancedTabsMenu activeTab={activeTab} onSelect={handleTabChange} />
-        <div className="ml-auto shrink-0 pl-2">
+        <div className="ml-auto flex shrink-0 items-center gap-1 pl-2">
+          <ThemeToggle />
           <HfAuthButton variant="tab" />
         </div>
       </div>
@@ -902,7 +906,7 @@ function EpisodeViewerInner({
                 </a>
               </div>
               <iframe
-                src={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${org}/${dataset}`}
+                src={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${org}/${dataset}&__theme=${theme}`}
                 title="lerobot-doctor"
                 className="flex-1 w-full rounded-lg border border-line bg-[var(--surface-0)]"
                 sandbox="allow-scripts allow-same-origin allow-popups allow-forms"

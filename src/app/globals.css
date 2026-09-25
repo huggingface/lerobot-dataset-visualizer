@@ -1,14 +1,59 @@
 @import "tailwindcss";
 
 /* ── Design tokens ────────────────────────────────────────────────
-   Consolidated palette + surface scale. Use via Tailwind arbitrary
-   values (bg-[var(--surface-1)]) or via the semantic helpers below. */
+   Surfaces, text and lines follow the Hub (moon-landing): Tailwind's gray
+   scale, white pages in light mode and gray-950 / gray-925 / gray-850 in
+   dark. <html class="dark"> selects the dark set; see utils/theme.ts. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  /* Surfaces, text and lines follow the Hub (moon-landing): its gray scale,
-     with gray-950 / gray-925 / gray-850 as the dark page, card and border. */
+  color-scheme: light;
+
+  --bg: #ffffff;
+  --surface-0: #ffffff; /* chrome: tab bar, sidebar, inset boxes */
+  --surface-1: #f9fafb; /* gray-50: cards */
+  --surface-2: #f3f4f6; /* gray-100 */
+
+  --fg: #111827; /* gray-900 */
+  --fg-soft: #374151; /* gray-700 */
+  --fg-muted: #6b7280; /* gray-500 */
+  --fg-faint: #9ca3af; /* gray-400 */
+
+  --line: #e5e7eb; /* gray-200 */
+  --line-subtle: #f3f4f6; /* gray-100 */
+  --line-strong: #d1d5db; /* gray-300 */
+
+  /* Hover / control fills that sit on top of any surface. */
+  --fill: rgba(17, 24, 39, 0.04);
+  --fill-strong: rgba(17, 24, 39, 0.08);
+
+  /* single accent (cyan). Orange is reserved for flagged episodes. */
+  --accent: #38bdf8;
+  --accent-soft: rgba(56, 189, 248, 0.18);
+  --accent-ring: rgba(56, 189, 248, 0.55);
+  --accent-fg: #0e7490; /* accent as text: cyan-700 */
+  --flag-fg: #c2410c; /* flagged-episode text: orange-700 */
+
+  --radius: 6px;
+
+  /* Playback position, wherever it is drawn (chart cursor, annotation
+     timeline). Neutral, so it never reads as a series, a role or a flag. */
+  --playhead: #111827;
+  --playhead-glow: rgba(17, 24, 39, 0.3);
+
+  --chart-grid: #e5e7eb;
+  --chart-axis: #9ca3af;
+
+  --scrollbar: rgba(17, 24, 39, 0.14);
+  --scrollbar-hover: rgba(17, 24, 39, 0.24);
+}
+
+:root.dark {
+  color-scheme: dark;
+
   --bg: #0b0f19; /* gray-950 */
-  --surface-0: #0b0f19; /* chrome: tab bar, sidebar, inset boxes */
-  --surface-1: #101623; /* gray-925: cards */
+  --surface-0: #0b0f19;
+  --surface-1: #101623; /* gray-925 */
   --surface-2: #141c2e; /* gray-850 */
 
   --fg: #e5e7eb; /* gray-200 */
@@ -20,23 +65,20 @@
   --line-subtle: #141c2e; /* gray-850 */
   --line-strong: #374151; /* gray-700 */
 
-  /* Hover / control fills that sit on top of any surface. */
   --fill: rgba(255, 255, 255, 0.05);
   --fill-strong: rgba(255, 255, 255, 0.1);
 
-  /* single accent (cyan). Orange is reserved for flagged episodes. */
-  --accent: #38bdf8;
-  --accent-soft: rgba(56, 189, 248, 0.18);
-  --accent-ring: rgba(56, 189, 248, 0.55);
-  --accent-fg: #67e8f9; /* accent as text */
-  --flag-fg: #fdba74; /* flagged-episode text */
+  --accent-fg: #67e8f9; /* cyan-300 */
+  --flag-fg: #fdba74; /* orange-300 */
 
-  --radius: 6px;
-
-  /* Playback position, wherever it is drawn (chart cursor, annotation
-     timeline). Neutral, so it never reads as a series, a role or a flag. */
   --playhead: #f1f5f9;
   --playhead-glow: rgba(241, 245, 249, 0.45);
+
+  --chart-grid: #1f2937;
+  --chart-axis: #4b5563;
+
+  --scrollbar: rgba(255, 255, 255, 0.06);
+  --scrollbar-hover: rgba(255, 255, 255, 0.12);
 }
 
 @theme inline {
@@ -120,13 +162,13 @@ body {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--scrollbar);
   border-radius: 10px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.12);
+  background-color: var(--scrollbar-hover);
   background-clip: padding-box;
 }
 

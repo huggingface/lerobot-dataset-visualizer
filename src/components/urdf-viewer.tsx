@@ -29,6 +29,7 @@ import UrdfPlaybackBar from "@/components/urdf-playback-bar";
 import { CHART_CONFIG } from "@/utils/constants";
 import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
 import type { DatasetMetadata } from "@/utils/parquetUtils";
+import { useTheme } from "@/utils/theme";
 
 const SERIES_DELIM = CHART_CONFIG.SERIES_NAME_DELIMITER;
 const DEG2RAD = Math.PI / 180;
@@ -755,6 +756,8 @@ export default function URDFViewer({
 }) {
   const { datasetInfo } = data;
   const fps = datasetInfo.fps || 30;
+  /// Three.js needs real colours, so the scene reads the theme instead of CSS variables.
+  const dark = useTheme() === "dark";
   const robotConfig = useMemo(
     () => getRobotConfig(datasetInfo.robot_type),
     [datasetInfo.robot_type],
@@ -1013,7 +1016,7 @@ export default function URDFViewer({
             toneMappingExposure: 0.9,
           }}
         >
-          <color attach="background" args={["#1a2433"]} />
+          <color attach="background" args={[dark ? "#141c2e" : "#f3f4f6"]} />
           {/* IBL: procedural studio softboxes give mesh highlights somewhere to
               bounce. Not preset="studio": drei downloads that 1.6 MB HDR from
               raw.githack.com and suspends the canvas until it arrives. */}
@@ -1095,10 +1098,10 @@ export default function URDFViewer({
             args={[10, 10]}
             cellSize={isG1 ? 0.5 : 0.2}
             cellThickness={0.5}
-            cellColor="#334155"
+            cellColor={dark ? "#334155" : "#d1d5db"}
             sectionSize={isG1 ? 2 : 1}
             sectionThickness={1}
-            sectionColor="#475569"
+            sectionColor={dark ? "#475569" : "#9ca3af"}
             fadeDistance={isG1 ? 20 : 10}
             position={[0, 0, 0]}
           />

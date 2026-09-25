@@ -1042,3 +1042,48 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   line-height: 14px;
 }
+
+/* ----- Light theme -----
+   The skin was written for dark surfaces. In light mode, swap its scale to
+   dark-on-light and deepen the role colours, which also serve as text (pills,
+   segment labels, section markers). */
+:root:not(.dark) .annotations-skin {
+  --hf-yellow: #b45309;
+  --hf-orange: #c2410c;
+  --hf-blue: #2563eb;
+  --hf-cyan: #0284c7;
+  --hf-red: #dc2626;
+  --hf-green: #059669;
+  --hf-purple: #7c3aed;
+
+  --surface-0: rgba(17, 24, 39, 0.02);
+  --surface-1: rgba(17, 24, 39, 0.05);
+  --surface-2: rgba(17, 24, 39, 0.08);
+  --border-1: rgba(17, 24, 39, 0.12);
+  --border-2: rgba(17, 24, 39, 0.2);
+  --fg-1: #111827;
+  --fg-2: #374151;
+  --fg-3: #6b7280;
+}
+:root:not(.dark) .annotations-skin .dirty-pill {
+  color: var(--flag-fg);
+}
+:root:not(.dark) .annotations-skin .tl-seg.task_aug,
+:root:not(.dark) .annotations-skin .tl-seg.plan,
+:root:not(.dark) .annotations-skin .tl-seg.memory,
+:root:not(.dark) .annotations-skin .tl-seg.task_aug .aug-count {
+  color: var(--fg-1);
+}
+:root:not(.dark) .annotations-skin .quick-popup,
+:root:not(.dark) .annotations-skin .list-head,
+:root:not(.dark) .annotations-skin .tl-tooltip {
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.12);
+}
+:root:not(.dark) .annotations-skin .quick-popup .popup-btn.primary,
+:root:not(.dark) .annotations-skin .quick-add .add-btn {
+  color: var(--accent-fg);
+}
+:root:not(.dark) .annotations-skin .tl-seg .resize:hover {
+  background: rgba(17, 24, 39, 0.12);
+}
