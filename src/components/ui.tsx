@@ -126,3 +126,43 @@ export function Switch({
     </div>
   );
 }
+
+/** Repo and episode above the videos, on every tab that plays an episode. */
+export function EpisodeHeader({
+  repoId,
+  episodeId,
+}: {
+  repoId: string;
+  episodeId: number;
+}) {
+  return (
+    <div className="flex items-center gap-4">
+      <a
+        href="https://github.com/huggingface/lerobot"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block shrink-0 opacity-90 hover:opacity-100 transition-opacity"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="https://github.com/huggingface/lerobot/raw/main/media/readme/lerobot-logo-thumbnail.png"
+          alt="LeRobot Logo"
+          className="w-24"
+        />
+      </a>
+      <div className="min-w-0">
+        <a
+          href={`https://huggingface.co/datasets/${repoId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-slate-200 hover:text-cyan-300 transition-colors"
+        >
+          <p className="text-base font-medium truncate">{repoId}</p>
+        </a>
+        <p className="text-[10px] uppercase tracking-wide text-slate-500 mt-0.5 tabular">
+          Episode · {episodeId}
+        </p>
+      </div>
+    </div>
+  );
+}
