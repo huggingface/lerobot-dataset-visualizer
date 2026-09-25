@@ -10,7 +10,7 @@ import {
   buildVersionedUrl,
   getDatasetStats,
 } from "@/utils/versionUtils";
-import { PADDING, CHART_CONFIG, EXCLUDED_COLUMNS } from "@/utils/constants";
+import { CHART_CONFIG, EXCLUDED_COLUMNS } from "@/utils/constants";
 import {
   processChartDataGroups,
   groupRowBySuffix,
@@ -23,7 +23,7 @@ import {
 } from "@/utils/colormaps";
 import type { VideoInfo, AdjacentEpisodeVideos } from "@/types";
 import { LeRobotDataset, parseInfo } from "@huggingface/lerobot";
-import type { LeRobotEpisode, LeRobotEpisodeData } from "@huggingface/lerobot";
+import type { LeRobotEpisode, LeRobotFrames } from "@huggingface/lerobot";
 import { authHeaders } from "@/utils/auth";
 
 const SERIES_NAME_DELIMITER = CHART_CONFIG.SERIES_NAME_DELIMITER;
@@ -195,11 +195,6 @@ type EpisodeMetadataV3 = {
   length: number;
   tasks?: string[];
   [key: string]: string | number | string[] | undefined;
-};
-
-type ColumnDef = {
-  key: string;
-  value: string[];
 };
 
 function parsePositiveIntEnv(
@@ -526,9 +521,6 @@ async function getEpisodeDataV2(
   info: DatasetMetadata,
   episodeId: number,
 ): Promise<EpisodeData> {
-  const chunkSize = Math.max(1, info.chunks_size || 1000);
-  const episode_chunk = Math.floor(episodeId / chunkSize);
-
   const datasetInfo: DatasetDisplayInfo = {
     repoId,
     total_frames: info.total_frames,
@@ -553,96 +545,19 @@ async function getEpisodeDataV2(
           .map((x) => parseInt(x.trim(), 10))
           .filter((x) => !isNaN(x));
 
-  // Videos information
+  const leRobotEpisode = await loadLeRobotEpisode(repoId, episodeId);
   const videosInfo =
-    info.video_path !== null
-      ? toVideosInfo(await loadLeRobotEpisode(repoId, episodeId), info, false)
-      : [];
+    info.video_path !== null ? toVideosInfo(leRobotEpisode, info, false) : [];
 
-  // Column data
-  const columnNames = Object.entries(info.features)
-    .filter(
-      ([, value]) =>
-        ["float32", "int32"].includes(value.dtype) && value.shape.length === 1,
-    )
-    .map(([key, { shape }]) => ({ key, length: shape[0] }));
-
-  // Exclude specific columns
-  const excludedColumns = EXCLUDED_COLUMNS.V2 as readonly string[];
-  const filteredColumns = columnNames.filter(
-    (column) => !excludedColumns.includes(column.key),
-  );
-  const columns: ColumnDef[] = filteredColumns.map(({ key }) => {
-    let column_names: unknown = info.features[key].names;
-    while (typeof column_names === "object" && column_names !== null) {
-      if (Array.isArray(column_names)) break;
-      column_names = Object.values(column_names)[0];
-    }
-    return {
-      key,
-      value: Array.isArray(column_names)
-        ? column_names.map(
-            (name: string) => `${key}${SERIES_NAME_DELIMITER}${name}`,
-          )
-        : Array.from(
-            { length: columnNames.find((c) => c.key === key)?.length ?? 1 },
-            (_, i) => `${key}${CHART_CONFIG.SERIES_NAME_DELIMITER}${i}`,
-          ),
-    };
-  });
-
-  const parquetUrl = buildVersionedUrl(
-    repoId,
-    version,
-    formatStringWithVars(info.data_path, {
-      episode_chunk: episode_chunk
-        .toString()
-        .padStart(PADDING.CHUNK_INDEX, "0"),
-      episode_index: episodeId.toString().padStart(PADDING.EPISODE_INDEX, "0"),
-    }),
-  );
-
-  const arrayBuffer = await fetchParquetFile(parquetUrl);
-  const parquetColumns = Array.from(
-    new Set([
-      "timestamp",
-      "task",
-      "task_index",
-      "language_instruction",
-      // v3.1 language schema (lerobot#3467) — list<struct{...}> columns the
-      // annotations panel renders / edits. lerobot can write these onto v2.x
-      // datasets too (the codebase_version stays 2.x), so a v2 episode may
-      // carry annotations. Requesting columns absent from the parquet schema
-      // is a no-op in hyparquet, so this is safe for un-annotated datasets.
-      "language_persistent",
-      "language_events",
-      ...filteredColumns.map((c) => c.key),
-    ]),
-  );
-  const allData = await readParquetAsObjects(arrayBuffer, parquetColumns);
-
-  // Frame timestamps (sorted, seconds) let the annotations editor snap atoms
-  // to exact frames. v3.1 language atoms are broadcast in `language_persistent`
-  // and fired per-row in `language_events`; extract them so annotations written
-  // onto v2.x datasets render in the panel/timeline just like on v3.0.
-  const frameTimestamps = allData
-    .map((r) => {
-      const t = r.timestamp;
-      return typeof t === "number"
-        ? t
-        : typeof t === "bigint"
-          ? Number(t)
-          : Number.NaN;
-    })
-    .filter((t) => Number.isFinite(t))
-    .sort((a, b) => a - b);
-  const languageAtoms = extractLanguageAtoms(allData);
+  const { frames, textRows } = await loadEpisodeFrames(repoId, leRobotEpisode);
+  const frameTimestamps = sortedTimestamps(frames);
+  const languageAtoms = extractLanguageAtoms(textRows);
 
   // Extract task from language_instruction fields, task field, or tasks.jsonl
   let task: string | undefined;
 
-  if (allData.length > 0) {
-    const firstRow = allData[0];
+  if (textRows.length > 0) {
+    const firstRow = textRows[0];
     const languageInstructions: string[] = [];
 
     if (typeof firstRow.language_instruction === "string") {
@@ -664,11 +579,11 @@ async function getEpisodeDataV2(
     }
   }
 
-  if (!task && allData.length > 0 && typeof allData[0].task === "string") {
-    task = allData[0].task;
+  if (!task && textRows.length > 0 && typeof textRows[0].task === "string") {
+    task = textRows[0].task;
   }
 
-  if (!task && allData.length > 0) {
+  if (!task && textRows.length > 0) {
     try {
       const tasksUrl = buildVersionedUrl(repoId, version, "meta/tasks.jsonl");
       const tasksResponse = await fetch(tasksUrl, { cache: "no-store" });
@@ -681,7 +596,7 @@ async function getEpisodeDataV2(
           .map((line) => JSON.parse(line));
 
         if (tasksData && tasksData.length > 0) {
-          const taskIndex = allData[0].task_index;
+          const taskIndex = textRows[0].task_index;
           const taskIndexNum =
             typeof taskIndex === "bigint" ? Number(taskIndex) : taskIndex;
           const taskData = tasksData.find(
@@ -697,28 +612,14 @@ async function getEpisodeDataV2(
     }
   }
 
-  // Build chart data from already-parsed allData (no second parquet parse)
-  const seriesNames = [
-    "timestamp",
-    ...columns.map(({ value }) => value).flat(),
-  ];
-
-  const chartData = allData.map((row) => {
-    const obj: Record<string, number> = {};
-    obj["timestamp"] = Number(row.timestamp);
-    for (const col of columns) {
-      const rawVal = row[col.key];
-      if (Array.isArray(rawVal)) {
-        rawVal.forEach((v: unknown, i: number) => {
-          if (i < col.value.length) obj[col.value[i]] = Number(v);
-        });
-      } else if (rawVal !== undefined) {
-        obj[col.value[0]] = Number(rawVal);
-      }
-    }
-    return obj;
-  });
-  const sampledChartData = evenlySampleArray(chartData, MAX_EPISODE_POINTS);
+  const { chartDataGroups, flatChartData } = frames
+    ? chartDataFromFrames(
+        frames,
+        info,
+        EXCLUDED_COLUMNS.V2,
+        (frameIndex) => frames.timestamps[frameIndex],
+      )
+    : { chartDataGroups: [], flatChartData: [] };
 
   // List of columns that are ignored (e.g., 2D or 3D data)
   const ignoredColumns = Object.entries(info.features)
@@ -728,32 +629,17 @@ async function getEpisodeDataV2(
     )
     .map(([key]) => key);
 
-  // Process chart data into organized groups using utility function
-  const chartGroups = processChartDataGroups(seriesNames, sampledChartData);
-
   const duration =
-    sampledChartData.length > 0
-      ? sampledChartData[sampledChartData.length - 1].timestamp
+    flatChartData.length > 0
+      ? flatChartData[flatChartData.length - 1].timestamp
       : 0;
-
-  const chartDataGroups = chartGroups.map((group) =>
-    sampledChartData.map((row) => {
-      const grouped = groupRowBySuffix(pick(row, [...group, "timestamp"]));
-      // Ensure timestamp is always a number at the top level
-      return {
-        ...grouped,
-        timestamp:
-          typeof grouped.timestamp === "number" ? grouped.timestamp : 0,
-      };
-    }),
-  );
 
   return {
     datasetInfo,
     episodeId,
     videosInfo,
     chartDataGroups,
-    flatChartData: sampledChartData,
+    flatChartData,
     episodes,
     ignoredColumns,
     duration,
@@ -801,7 +687,7 @@ async function getEpisodeDataV3(
     version,
     info,
     episodeMetadata,
-    leRobotEpisode.data,
+    leRobotEpisode,
   );
 
   const duration = episodeMetadata.length
@@ -829,7 +715,7 @@ async function loadEpisodeDataV3(
   version: string,
   info: DatasetMetadata,
   episodeMetadata: EpisodeMetadataV3,
-  data: LeRobotEpisodeData | undefined,
+  episode: LeRobotEpisode,
 ): Promise<{
   chartDataGroups: ChartRow[][];
   flatChartData: Record<string, number>[];
@@ -839,78 +725,44 @@ async function loadEpisodeDataV3(
   frameTimestamps?: number[];
 }> {
   try {
-    if (!data) throw new Error("Episode has no data rows");
-    const parquetFile = await fetchParquetFile(data.url);
-    const v3DataColumns = Array.from(
-      new Set([
-        "index",
-        "timestamp",
-        "task_index",
-        "language_instruction",
-        "language_instruction_2",
-        "language_instruction_3",
-        // v3.1 language schema (lerobot#3467) — list<struct{...}> columns
-        // that the annotations panel renders / edits.
-        "language_persistent",
-        "language_events",
-        ...Object.entries(info.features)
-          .filter(([, feature]) => {
-            const dtype = feature.dtype.toLowerCase();
-            const isNumericOrBool = [
-              "float32",
-              "float64",
-              "int8",
-              "int16",
-              "int32",
-              "int64",
-              "uint8",
-              "uint16",
-              "uint32",
-              "uint64",
-              "bool",
-              "boolean",
-            ].includes(dtype);
-            return isNumericOrBool && feature.shape.length <= 1;
-          })
-          .map(([key]) => key),
-      ]),
-    );
-    // `fromRow`/`toRow` are offsets inside `data.url`, not dataset-wide frame indexes.
-    const episodeRows = await readParquetAsObjects(parquetFile, v3DataColumns, {
-      rowStart: data.fromRow,
-      rowEnd: data.toRow,
-    });
+    const { frames, textRows } = await loadEpisodeFrames(repoId, episode);
+    const frameTimestamps = sortedTimestamps(frames);
 
-    // Extract frame timestamps from the *full* (non-sampled) row set so the
-    // annotations editor can snap to the exact frame the user is on.
-    const frameTimestamps = episodeRows
-      .map((r) => {
-        const t = r.timestamp;
-        return typeof t === "number"
-          ? t
-          : typeof t === "bigint"
-            ? Number(t)
-            : Number.NaN;
-      })
-      .filter((t) => Number.isFinite(t))
-      .sort((a, b) => a - b);
-
-    const episodeData = evenlySampleArray(episodeRows, MAX_EPISODE_POINTS);
-
-    if (episodeData.length === 0) {
+    if (!frames) {
       return {
         chartDataGroups: [],
         flatChartData: [],
         ignoredColumns: [],
         task: undefined,
-        languageAtoms: extractLanguageAtoms(episodeRows),
+        languageAtoms: extractLanguageAtoms(textRows),
         frameTimestamps,
       };
     }
 
-    // Convert to the same format as v2.x for compatibility with existing chart code
-    const { chartDataGroups, flatChartData, ignoredColumns } =
-      processEpisodeDataForCharts(episodeData, info, episodeMetadata);
+    /// Stretched over the video segment rather than read from `timestamp`, so the chart cursor
+    /// stays in step with the player.
+    const videoDuration =
+      (episodeMetadata.video_to_timestamp || 30) -
+      (episodeMetadata.video_from_timestamp || 0);
+    const { chartDataGroups, flatChartData } = chartDataFromFrames(
+      frames,
+      info,
+      EXCLUDED_COLUMNS.V3,
+      (_, position, count) =>
+        (position / Math.max(count - 1, 1)) * videoDuration,
+    );
+
+    // List of columns that are ignored (now we handle 2D data by flattening)
+    const ignoredColumns = [
+      ...Object.entries(info.features)
+        .filter(
+          ([, value]) =>
+            ["float32", "int32"].includes(value.dtype) &&
+            value.shape.length > 2, // Only ignore 3D+ data
+        )
+        .map(([key]) => key),
+      ...EXCLUDED_COLUMNS.V3,
+    ];
 
     // Prefer the authoritative `tasks` list on the episode's own metadata
     // (v3.0 stores it as list[str] — see lerobot dataset_metadata.save_episode).
@@ -920,7 +772,7 @@ async function loadEpisodeDataV3(
     }
 
     // Fall back to per-frame language_instruction fields
-    if (!task && episodeData.length > 0) {
+    if (!task && textRows.length > 0) {
       const languageInstructions: string[] = [];
 
       const extractInstructions = (row: Record<string, unknown>) => {
@@ -936,15 +788,15 @@ async function loadEpisodeDataV3(
         }
       };
 
-      extractInstructions(episodeData[0]);
+      extractInstructions(textRows[0]);
 
       // If no instructions in first row, check middle and last rows
-      if (languageInstructions.length === 0 && episodeData.length > 1) {
+      if (languageInstructions.length === 0 && textRows.length > 1) {
         for (const idx of [
-          Math.floor(episodeData.length / 2),
-          episodeData.length - 1,
+          Math.floor(textRows.length / 2),
+          textRows.length - 1,
         ]) {
-          extractInstructions(episodeData[idx]);
+          extractInstructions(textRows[idx]);
           if (languageInstructions.length > 0) break;
         }
       }
@@ -955,7 +807,7 @@ async function loadEpisodeDataV3(
     }
 
     // Fall back to tasks metadata parquet
-    if (!task && episodeData.length > 0) {
+    if (!task && textRows.length > 0) {
       try {
         const tasksUrl = buildVersionedUrl(
           repoId,
@@ -966,7 +818,7 @@ async function loadEpisodeDataV3(
         const tasksData = await readParquetAsObjects(tasksArrayBuffer, []);
 
         if (tasksData.length > 0) {
-          const taskIndexNum = bigIntToNumber(episodeData[0].task_index, -1);
+          const taskIndexNum = bigIntToNumber(textRows[0].task_index, -1);
 
           if (taskIndexNum >= 0) {
             // lerobot writes tasks.parquet from a DataFrame with the task
@@ -992,7 +844,7 @@ async function loadEpisodeDataV3(
       flatChartData,
       ignoredColumns,
       task,
-      languageAtoms: extractLanguageAtoms(episodeRows),
+      languageAtoms: extractLanguageAtoms(textRows),
       frameTimestamps,
     };
   } catch {
@@ -1086,191 +938,93 @@ export function extractLanguageAtoms(
   return atoms;
 }
 
-// Process episode data for charts (v3.0 compatible)
-function processEpisodeDataForCharts(
-  episodeData: Record<string, unknown>[],
+/**
+ * Columns `frames()` leaves out that the episode view still needs: the task, and the v3.1 language
+ * atoms (lerobot#3467), which lerobot can also write onto v2.x datasets. hyparquet skips requested
+ * columns that are not in the file, so un-annotated datasets cost nothing extra.
+ */
+const TEXT_COLUMNS = [
+  "timestamp",
+  "task",
+  "task_index",
+  "language_instruction",
+  "language_instruction_2",
+  "language_instruction_3",
+  "language_persistent",
+  "language_events",
+];
+
+/** The episode's numeric series from `@huggingface/lerobot`, plus its text columns read alongside. */
+async function loadEpisodeFrames(
+  repoId: string,
+  episode: LeRobotEpisode,
+): Promise<{
+  frames: LeRobotFrames | undefined;
+  textRows: Record<string, unknown>[];
+}> {
+  const data = episode.data;
+  if (!data) return { frames: undefined, textRows: [] };
+  const [frames, textRows] = await Promise.all([
+    leRobotDataset(repoId).frames(episode),
+    fetchParquetFile(data.url).then((file) =>
+      readParquetAsObjects(file, TEXT_COLUMNS, {
+        rowStart: data.fromRow,
+        rowEnd: data.toRow,
+      }),
+    ),
+  ]);
+  return { frames, textRows };
+}
+
+/** Source-frame timestamps, sorted, for the annotations editor to snap to. */
+function sortedTimestamps(frames: LeRobotFrames | undefined): number[] {
+  return (frames?.timestamps ?? [])
+    .filter((t) => Number.isFinite(t))
+    .sort((a, b) => a - b);
+}
+
+/**
+ * Chart rows for an episode, sampled down to MAX_EPISODE_POINTS. An array feature gets one series
+ * per component, named from `info.json` when it lists one name per component and by index otherwise;
+ * a single unnamed component (a reward, a success flag) keeps its bare feature key.
+ */
+function chartDataFromFrames(
+  frames: LeRobotFrames,
   info: DatasetMetadata,
-  episodeMetadata?: EpisodeMetadataV3,
-): {
-  chartDataGroups: ChartRow[][];
-  flatChartData: Record<string, number>[];
-  ignoredColumns: string[];
-} {
-  // Convert parquet data to chart format
-  let seriesNames: string[] = [];
-
-  // Dynamically create a mapping from numeric indices to feature names based on actual dataset features
-  const v3IndexToFeatureMap: Record<string, string> = {};
-
-  // Build mapping based on what features actually exist in the dataset
-  const featureKeys = Object.keys(info.features);
-
-  // Common feature order for v3.0 datasets (but only include if they exist)
-  const expectedFeatureOrder = [
-    "observation.state",
-    "action",
-    "timestamp",
-    "episode_index",
-    "frame_index",
-    "next.reward",
-    "next.done",
-    "index",
-    "task_index",
-  ];
-
-  // Map indices to features that actually exist
-  let currentIndex = 0;
-  expectedFeatureOrder.forEach((feature) => {
-    if (featureKeys.includes(feature)) {
-      v3IndexToFeatureMap[currentIndex.toString()] = feature;
-      currentIndex++;
-    }
-  });
-
-  // Columns to exclude from charts (note: 'task' is intentionally not excluded as we want to access it)
-  const excludedColumns = EXCLUDED_COLUMNS.V3 as readonly string[];
-
-  // Create columns structure similar to V2.1 for proper hierarchical naming
-  const columns: ColumnDef[] = Object.entries(info.features)
-    .filter(
-      ([key, value]) =>
-        ["float32", "int32"].includes(value.dtype) &&
-        value.shape.length === 1 &&
-        !excludedColumns.includes(key),
-    )
-    .map(([key, feature]) => {
-      let column_names: unknown = feature.names;
-      while (typeof column_names === "object" && column_names !== null) {
-        if (Array.isArray(column_names)) break;
-        column_names = Object.values(column_names)[0];
-      }
-      return {
-        key,
-        value: Array.isArray(column_names)
-          ? column_names.map(
-              (name: string) => `${key}${SERIES_NAME_DELIMITER}${name}`,
-            )
-          : Array.from(
-              { length: feature.shape[0] || 1 },
-              (_, i) => `${key}${CHART_CONFIG.SERIES_NAME_DELIMITER}${i}`,
-            ),
-      };
+  excludedColumns: readonly string[],
+  timestampAt: (frameIndex: number, position: number, count: number) => number,
+): { chartDataGroups: ChartRow[][]; flatChartData: Record<string, number>[] } {
+  const series: [string, number[]][] = [];
+  for (const [key, components] of Object.entries(frames.series)) {
+    if (!info.features[key] || excludedColumns.includes(key)) continue;
+    const names =
+      frames.names[key]?.length === components.length
+        ? frames.names[key]
+        : undefined;
+    components.forEach((values, i) => {
+      const suffix = names?.[i] ?? (components.length > 1 ? i : undefined);
+      series.push([
+        suffix === undefined ? key : `${key}${SERIES_NAME_DELIMITER}${suffix}`,
+        values,
+      ]);
     });
-
-  // First, extract all series from the first data row to understand the structure
-  if (episodeData.length > 0) {
-    const firstRow = episodeData[0];
-    const allKeys: string[] = [];
-
-    Object.entries(firstRow || {}).forEach(([key, value]) => {
-      if (key === "timestamp") return; // Skip timestamp, we'll add it separately
-
-      // Map numeric key to feature name if available
-      const featureName = v3IndexToFeatureMap[key] || key;
-
-      // Skip if feature doesn't exist in dataset
-      if (!info.features[featureName]) return;
-
-      // Skip excluded columns
-      if (excludedColumns.includes(featureName)) return;
-
-      // Find the matching column definition to get proper names
-      const columnDef = columns.find((col) => col.key === featureName);
-      if (columnDef && Array.isArray(value) && value.length > 0) {
-        // Use the proper hierarchical naming from column definition
-        columnDef.value.forEach((seriesName, idx) => {
-          if (idx < value.length) {
-            allKeys.push(seriesName);
-          }
-        });
-      } else if (typeof value === "number" && !isNaN(value)) {
-        // For scalar numeric values
-        allKeys.push(featureName);
-      } else if (typeof value === "bigint") {
-        // For BigInt values
-        allKeys.push(featureName);
-      }
-    });
-
-    seriesNames = ["timestamp", ...allKeys];
-  } else {
-    // Fallback to column-based approach like V2.1
-    seriesNames = ["timestamp", ...columns.map(({ value }) => value).flat()];
   }
 
-  const chartData = episodeData.map((row, index) => {
-    const obj: Record<string, number> = {};
-
-    // Add timestamp aligned with video timing
-    // For v3.0, we need to map the episode data index to the actual video duration
-    let videoDuration = episodeData.length; // Fallback to data length
-    if (episodeMetadata) {
-      // Use actual video segment duration if available
-      videoDuration =
-        (episodeMetadata.video_to_timestamp || 30) -
-        (episodeMetadata.video_from_timestamp || 0);
-    }
-    obj["timestamp"] =
-      (index / Math.max(episodeData.length - 1, 1)) * videoDuration;
-
-    // Add all data columns using hierarchical naming
-    if (row && typeof row === "object") {
-      Object.entries(row).forEach(([key, value]) => {
-        if (key === "timestamp") {
-          // Timestamp is already handled above
-          return;
-        }
-
-        // Map numeric key to feature name if available
-        const featureName = v3IndexToFeatureMap[key] || key;
-
-        // Skip if feature doesn't exist in dataset
-        if (!info.features[featureName]) return;
-
-        // Skip excluded columns
-        if (excludedColumns.includes(featureName)) return;
-
-        // Find the matching column definition to get proper series names
-        const columnDef = columns.find((col) => col.key === featureName);
-
-        if (Array.isArray(value) && columnDef) {
-          // For array values like observation.state and action, use proper hierarchical naming
-          value.forEach((val, idx) => {
-            if (idx < columnDef.value.length) {
-              const seriesName = columnDef.value[idx];
-              obj[seriesName] = typeof val === "number" ? val : Number(val);
-            }
-          });
-        } else if (typeof value === "number" && !isNaN(value)) {
-          obj[featureName] = value;
-        } else if (typeof value === "bigint") {
-          obj[featureName] = Number(value);
-        } else if (typeof value === "boolean") {
-          // Convert boolean to number for charts
-          obj[featureName] = value ? 1 : 0;
-        }
-      });
-    }
-
-    return obj;
+  const sampled = evenlySampleIndices(frames.length, MAX_EPISODE_POINTS);
+  const flatChartData = sampled.map((frameIndex, position) => {
+    const row: Record<string, number> = {
+      timestamp: timestampAt(frameIndex, position, sampled.length),
+    };
+    for (const [name, values] of series) row[name] = values[frameIndex];
+    return row;
   });
 
-  // List of columns that are ignored (now we handle 2D data by flattening)
-  const ignoredColumns = [
-    ...Object.entries(info.features)
-      .filter(
-        ([, value]) =>
-          ["float32", "int32"].includes(value.dtype) && value.shape.length > 2, // Only ignore 3D+ data
-      )
-      .map(([key]) => key),
-    ...excludedColumns, // Also include the manually excluded columns
-  ];
-
-  // Process chart data into organized groups using utility function
-  const chartGroups = processChartDataGroups(seriesNames, chartData);
-
-  const chartDataGroups = chartGroups.map((group) =>
-    chartData.map((row) => {
+  const seriesNames = ["timestamp", ...series.map(([name]) => name)];
+  const chartDataGroups = processChartDataGroups(
+    seriesNames,
+    flatChartData,
+  ).map((group) =>
+    flatChartData.map((row) => {
       const grouped = groupRowBySuffix(pick(row, [...group, "timestamp"]));
       // Ensure timestamp is always a number at the top level
       return {
@@ -1281,7 +1035,7 @@ function processEpisodeDataForCharts(
     }),
   );
 
-  return { chartDataGroups, flatChartData: chartData, ignoredColumns };
+  return { chartDataGroups, flatChartData };
 }
 
 // ─── Stats computation ───────────────────────────────────────────
@@ -2252,7 +2006,7 @@ export async function loadEpisodeFlatChartData(
     version,
     info,
     toEpisodeMetadataV3(episode),
-    episode.data,
+    episode,
   );
   return flatChartData;
 }

@@ -6,7 +6,7 @@
       "name": "lerobot-viewer",
       "dependencies": {
         "@huggingface/hub": "^2.11.0",
-        "@huggingface/lerobot": "^0.0.7",
+        "@huggingface/lerobot": "^0.0.8",
         "@react-three/drei": "^10.7.7",
         "@react-three/fiber": "^9.5.0",
         "hyparquet": "^1.12.1",
@@ -67,7 +67,7 @@
 
     "@huggingface/hub": ["@huggingface/hub@2.11.0", "", { "dependencies": { "@huggingface/tasks": "^0.19.90" }, "optionalDependencies": { "cli-progress": "^3.12.0" }, "bin": { "hfjs": "dist/cli.js" } }, "sha512-WS6QGaXYeBVFlaB4SOn6z4LGUpLB5kRZNL08uUni4izX353KxiwwZMK5+/AWX86MJh8SMZNa/JFcvFCcQsbszQ=="],
 
-    "@huggingface/lerobot": ["@huggingface/lerobot@0.0.7", "", { "dependencies": { "hyparquet": "^1.25.1" } }, "sha512-BJ2CsTW5Z0dRxRqEED70IWK1w9vWTdZu48W36ttFIr+qT5mKRtj+MfrOozf4qbBl/okauyXpHBfVqVqPCTudgA=="],
+    "@huggingface/lerobot": ["@huggingface/lerobot@0.0.8", "", { "dependencies": { "hyparquet": "^1.25.1" } }, "sha512-TeA8U5/idkQH0dmhb79+wkZHvrxkjB5Y+TllirJRg3vExl5SC2/E8LXZbRWSmfZibr7YD4w1kSGxeRL0f8/2/Q=="],
 
     "@huggingface/tasks": ["@huggingface/tasks@0.19.90", "", {}, "sha512-nfV9luJbvwGQ/5oKXkKhCV9h4X7mwh1YaGG3ORd6UMLDSwr1OFSSatcBX0O9OtBtmNK19aGSjbLFqqgcIR6+IA=="],
 
