@@ -90,7 +90,7 @@ export const DataRecharts = React.memo(
               className={`text-xs px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 ${
                 expanded
                   ? "bg-cyan-400/15 text-cyan-300 border border-cyan-400/40"
-                  : "bg-[var(--surface-1)]/60 text-slate-400 hover:text-slate-200 border border-white/10/50"
+                  : "bg-[var(--surface-1)]/60 text-slate-400 hover:text-slate-200 border border-white/10"
               }`}
             >
               <svg
@@ -402,7 +402,7 @@ const SingleDataGraph = React.memo(
     }, [groups, singles]);
 
     return (
-      <div className="w-full bg-[var(--surface-1)]/40 rounded-lg border border-white/10/50 p-3">
+      <div className="w-full bg-[var(--surface-1)]/40 rounded-lg border border-white/10 p-3">
         {chartTitle && (
           <p
             className="text-xs font-medium text-slate-300 mb-1 px-1 truncate"

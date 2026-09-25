@@ -311,7 +311,7 @@ function FlaggedIdsCopyBar({
       {onViewEpisodes && (
         <button
           onClick={onViewEpisodes}
-          className="w-full text-xs py-1.5 rounded bg-white/5/80 hover:bg-white/5 text-slate-300 hover:text-white transition-colors flex items-center justify-center gap-1.5"
+          className="w-full text-xs py-1.5 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors flex items-center justify-center gap-1.5"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -330,7 +330,7 @@ function FlaggedIdsCopyBar({
           View flagged episodes
         </button>
       )}
-      <div className="bg-[var(--surface-0)]/60 rounded-md px-3 py-2 border border-white/10/60 space-y-2.5">
+      <div className="bg-[var(--surface-0)]/60 rounded-md px-3 py-2 border border-white/10 space-y-2.5">
         <p className="text-xs text-slate-400">
           <a
             href="https://github.com/huggingface/lerobot"

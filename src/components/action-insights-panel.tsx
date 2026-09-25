@@ -70,7 +70,7 @@ function FullscreenWrapper({ children }: { children: React.ReactNode }) {
     <div className="relative">
       <button
         onClick={() => setFs((v) => !v)}
-        className="absolute top-3 right-3 z-10 p-1.5 rounded bg-white/5/60 hover:bg-white/5 text-slate-400 hover:text-slate-200 transition-colors backdrop-blur-sm"
+        className="absolute top-3 right-3 z-10 p-1.5 rounded bg-white/5 hover:bg-white/10 text-slate-400 hover:text-slate-200 transition-colors backdrop-blur-sm"
         title={fs ? "Exit fullscreen" : "Fullscreen"}
       >
         <svg
@@ -105,7 +105,7 @@ function FullscreenWrapper({ children }: { children: React.ReactNode }) {
         <div className="fixed inset-0 z-50 bg-[var(--bg)]/95 overflow-auto p-6">
           <button
             onClick={() => setFs(false)}
-            className="fixed top-4 right-4 z-50 p-2 rounded bg-white/5/80 hover:bg-white/5 text-slate-300 hover:text-white transition-colors"
+            className="fixed top-4 right-4 z-50 p-2 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
             title="Exit fullscreen (Esc)"
           >
             <svg
@@ -764,7 +764,7 @@ function ActionVelocitySection({
       </div>
 
       {insight && (
-        <div className="bg-[var(--surface-0)]/60 rounded-md px-4 py-3 border border-white/10/60 space-y-1.5">
+        <div className="bg-[var(--surface-0)]/60 rounded-md px-4 py-3 border border-white/10 space-y-1.5">
           <p className="text-sm font-medium text-slate-200">
             Overall:{" "}
             <span className={insight.verdict.color}>
@@ -792,7 +792,7 @@ function JerkyEpisodesList({ episodes }: { episodes: JerkyEpisode[] }) {
   const display = showAll ? episodes : episodes.slice(0, 15);
 
   return (
-    <div className="bg-[var(--surface-0)]/60 rounded-md px-4 py-3 border border-white/10/60 space-y-2">
+    <div className="bg-[var(--surface-0)]/60 rounded-md px-4 py-3 border border-white/10 space-y-2">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-slate-200">
           Most Jerky Episodes{" "}
@@ -825,7 +825,7 @@ function JerkyEpisodesList({ episodes }: { episodes: JerkyEpisode[] }) {
             {display.map((e) => (
               <tr
                 key={e.episodeIndex}
-                className="border-b border-white/5/40 text-slate-300"
+                className="border-b border-white/5 text-slate-300"
               >
                 <td className="py-1">
                   <FlagBtn id={e.episodeIndex} />
@@ -1231,7 +1231,7 @@ function SpeedVarianceSection({
         </div>
       </div>
 
-      <div className="bg-[var(--surface-0)]/60 rounded-md px-4 py-3 border border-white/10/60 space-y-1.5">
+      <div className="bg-[var(--surface-0)]/60 rounded-md px-4 py-3 border border-white/10 space-y-1.5">
         <p className="text-sm font-medium text-slate-200">
           Verdict: <span className={verdict.color}>{verdict.label}</span>
         </p>
