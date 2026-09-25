@@ -20,6 +20,7 @@ import type {
   JerkyEpisode,
   AggAlignment,
 } from "@/app/[org]/[dataset]/[episode]/fetch-data";
+import { InlineLoading, PageHeader, Switch } from "@/components/ui";
 
 const FullscreenCtx = React.createContext(false);
 const useIsFullscreen = () => React.useContext(FullscreenCtx);
@@ -860,24 +861,7 @@ function VarianceHeatmap({
         <h3 className="text-sm font-semibold text-slate-200 mb-2">
           Cross-Episode Action Variance
         </h3>
-        <div className="flex items-center gap-2 text-slate-400 text-sm py-8 justify-center">
-          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-            />
-          </svg>
-          Loading cross-episode data (sampled up to 500 episodes)…
-        </div>
+        <InlineLoading label="Loading cross-episode data…" />
       </div>
     );
   }
@@ -1600,40 +1584,19 @@ function ActionInsightsPanel({
   const showAgg = mode === "dataset" && !!crossEpisodeData;
 
   return (
-    <div className="w-full max-w-5xl mx-auto py-6 space-y-8">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-100">Action Insights</h2>
-          <p className="text-sm text-slate-400 mt-1">
-            Data-driven analysis to guide action chunking, data quality
-            assessment, and training configuration.
-          </p>
-        </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <span
-            className={`text-sm ${mode === "episode" ? "text-slate-100 font-medium" : "text-slate-500"}`}
-          >
-            Current Episode
-          </span>
-          <button
-            onClick={() =>
-              setMode((m) => (m === "episode" ? "dataset" : "episode"))
-            }
-            className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors shrink-0 ${mode === "dataset" ? "bg-cyan-500" : "bg-white/10"}`}
-            aria-label="Toggle episode/dataset scope"
-          >
-            <span
-              className={`inline-block w-3.5 h-3.5 bg-white rounded-full transition-transform ${mode === "dataset" ? "translate-x-[18px]" : "translate-x-[3px]"}`}
-            />
-          </button>
-          <span
-            className={`text-sm ${mode === "dataset" ? "text-slate-100 font-medium" : "text-slate-500"}`}
-          >
-            All Episodes
-            {crossEpisodeData ? ` (${crossEpisodeData.numEpisodes})` : ""}
-          </span>
-        </div>
-      </div>
+    <div className="w-full max-w-5xl mx-auto py-6 space-y-6">
+      <PageHeader
+        title="Action Insights"
+        description="Data-driven analysis to guide action chunking, data quality assessment, and training configuration."
+      >
+        <Switch
+          checked={mode === "dataset"}
+          onChange={(all) => setMode(all ? "dataset" : "episode")}
+          offLabel="Current Episode"
+          onLabel={`All Episodes${crossEpisodeData ? ` (${crossEpisodeData.numEpisodes})` : ""}`}
+          ariaLabel="Toggle episode/dataset scope"
+        />
+      </PageHeader>
 
       <FullscreenWrapper>
         <AutocorrelationSection

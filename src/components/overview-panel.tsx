@@ -8,6 +8,7 @@ import type {
 } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import { useFlaggedEpisodes } from "@/context/flagged-episodes-context";
 import { proxyHfUrl } from "@/utils/auth";
+import { InlineLoading, PageHeader, Switch } from "@/components/ui";
 
 const PAGE_SIZE = 48;
 
@@ -152,26 +153,7 @@ export default function OverviewPanel({
   );
 
   if (loading || !data) {
-    return (
-      <div className="flex items-center gap-2 text-slate-400 text-sm py-12 justify-center">
-        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-          <circle
-            className="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            strokeWidth="4"
-          />
-          <path
-            className="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-          />
-        </svg>
-        Loading episode frames…
-      </div>
-    );
+    return <InlineLoading label="Loading episode frames…" />;
   }
 
   const allFrames = data.framesByCamera[selectedCamera] ?? [];
@@ -207,15 +189,11 @@ export default function OverviewPanel({
   const pageFrames = frames.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   return (
-    <div className="w-full max-w-7xl mx-auto py-6 space-y-5">
-      <div>
-        <h2 className="text-xl font-bold text-slate-100">Frames</h2>
-        <p className="text-sm text-slate-400 mt-1">
-          Use first/last frame views to spot episodes with bad end states or
-          other anomalies. Hover over a thumbnail and click the flag icon to
-          mark episodes with wrong outcomes for review.
-        </p>
-      </div>
+    <div className="w-full max-w-5xl mx-auto py-6 space-y-6">
+      <PageHeader
+        title="Frames"
+        description="Use first/last frame views to spot episodes with bad end states or other anomalies. Hover over a thumbnail and click the flag icon to mark episodes with wrong outcomes for review."
+      />
 
       {/* Controls row */}
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -267,27 +245,13 @@ export default function OverviewPanel({
           )}
 
           {/* First / Last toggle */}
-          <div className="flex items-center gap-3">
-            <span
-              className={`text-sm ${!showLast ? "text-slate-100 font-medium" : "text-slate-500"}`}
-            >
-              First Frame
-            </span>
-            <button
-              onClick={() => setShowLast((v) => !v)}
-              className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors shrink-0 ${showLast ? "bg-cyan-500" : "bg-white/10"}`}
-              aria-label="Toggle first/last frame"
-            >
-              <span
-                className={`inline-block w-3.5 h-3.5 bg-white rounded-full transition-transform ${showLast ? "translate-x-[18px]" : "translate-x-[3px]"}`}
-              />
-            </button>
-            <span
-              className={`text-sm ${showLast ? "text-slate-100 font-medium" : "text-slate-500"}`}
-            >
-              Last Frame
-            </span>
-          </div>
+          <Switch
+            checked={showLast}
+            onChange={setShowLast}
+            offLabel="First Frame"
+            onLabel="Last Frame"
+            ariaLabel="Toggle first/last frame"
+          />
         </div>
 
         {/* Pagination */}

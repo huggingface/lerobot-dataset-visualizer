@@ -12,6 +12,7 @@ import {
   ActionVelocitySection,
   FullscreenWrapper,
 } from "@/components/action-insights-panel";
+import { InlineLoading, PageHeader } from "@/components/ui";
 
 // ─── Shared small components ─────────────────────────────────────
 
@@ -359,14 +360,11 @@ function FilteringPanel({
   onViewFlaggedEpisodes,
 }: FilteringPanelProps) {
   return (
-    <div className="w-full max-w-5xl mx-auto py-6 space-y-8">
-      <div>
-        <h2 className="text-xl font-bold text-slate-100">Filtering</h2>
-        <p className="text-sm text-slate-400 mt-1">
-          Identify and flag problematic episodes for removal. Flagged episodes
-          appear in the sidebar and can be exported as a CLI command.
-        </p>
-      </div>
+    <div className="w-full max-w-5xl mx-auto py-6 space-y-6">
+      <PageHeader
+        title="Filtering"
+        description="Identify and flag problematic episodes for removal. Flagged episodes appear in the sidebar and can be exported as a CLI command."
+      />
 
       <FlaggedIdsCopyBar
         repoId={repoId}
@@ -379,28 +377,7 @@ function FilteringPanel({
 
       {crossEpisodeLoading && (
         <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10">
-          <div className="flex items-center gap-2 text-slate-400 text-sm py-4 justify-center">
-            <svg
-              className="animate-spin h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-              />
-            </svg>
-            Loading cross-episode data…
-          </div>
+          <InlineLoading label="Loading cross-episode data…" />
         </div>
       )}
 
