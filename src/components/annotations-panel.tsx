@@ -41,6 +41,11 @@ function fmtTime(s: number): string {
   return s.toFixed(3) + "s";
 }
 
+/** Frame timestamps are float32, so they read back as 4.900000095…; show them to the microsecond. */
+function formatTimestampDraft(t: number): string {
+  return String(Number(t.toFixed(6)));
+}
+
 function StylePill({ style }: { style: string | null }) {
   const cls = style ?? "speech";
   return <span className={`style-pill ${cls}`}>{style ?? "speech"}</span>;
@@ -648,7 +653,10 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
           <div className="list-head">
             <div>
               <span className="section-kicker">Annotations</span>
-              <p>{atoms.length} atoms in this episode</p>
+              <p>
+                {atoms.length} {atoms.length === 1 ? "atom" : "atoms"} in this
+                episode
+              </p>
             </div>
             <span className="ts-pill">{fmtTime(currentTime)}</span>
           </div>
@@ -774,22 +782,25 @@ const AtomEditor: React.FC<{
   const cameraLabel = atom.camera ?? "all cameras";
   const roleLabel = isSpeech ? "speech" : atom.role;
   const [timestampDraft, setTimestampDraft] = useState(() =>
-    String(atom.timestamp),
+    formatTimestampDraft(atom.timestamp),
   );
 
   React.useEffect(() => {
-    setTimestampDraft(String(atom.timestamp));
+    setTimestampDraft(formatTimestampDraft(atom.timestamp));
   }, [atom.timestamp]);
 
   const commitTimestamp = React.useCallback(
     (raw = timestampDraft) => {
+      /// Untouched text is the rounded display of the exact value; committing it on blur would
+      /// replace a snapped frame timestamp with one that no longer matches the frame.
+      if (raw === formatTimestampDraft(atom.timestamp)) return;
       const next = Number(raw);
       if (!Number.isFinite(next) || next < 0) {
-        setTimestampDraft(String(atom.timestamp));
+        setTimestampDraft(formatTimestampDraft(atom.timestamp));
         return;
       }
       onChange({ timestamp: next });
-      setTimestampDraft(String(next));
+      setTimestampDraft(formatTimestampDraft(next));
     },
     [atom.timestamp, onChange, timestampDraft],
   );
@@ -798,7 +809,7 @@ const AtomEditor: React.FC<{
     const parsed = Number(timestampDraft);
     const next = snap(Number.isFinite(parsed) ? parsed : atom.timestamp);
     onChange({ timestamp: next });
-    setTimestampDraft(String(next));
+    setTimestampDraft(formatTimestampDraft(next));
   };
 
   return (
@@ -842,7 +853,8 @@ const AtomEditor: React.FC<{
             onBlur={() => commitTimestamp()}
             onKeyDown={(e) => {
               if (e.key === "Enter") commitTimestamp();
-              if (e.key === "Escape") setTimestampDraft(String(atom.timestamp));
+              if (e.key === "Escape")
+                setTimestampDraft(formatTimestampDraft(atom.timestamp));
             }}
           />
           <button
