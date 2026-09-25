@@ -220,11 +220,7 @@ export default function OverviewPanel({
                 onFlaggedOnlyChange(!flaggedOnly);
                 setPage(0);
               }}
-              className={`text-xs px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 ${
-                flaggedOnly
-                  ? "bg-orange-500/15 text-orange-300 border border-orange-500/30"
-                  : "text-slate-400 hover:text-slate-200 border border-white/10"
-              }`}
+              className={`btn ${flaggedOnly ? "btn-flagged" : ""}`}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -256,23 +252,23 @@ export default function OverviewPanel({
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center gap-2 text-sm text-slate-300">
+          <div className="flex items-center gap-2">
             <button
               disabled={page === 0}
               onClick={() => setPage((p) => p - 1)}
-              className="px-2 py-1 rounded bg-[var(--surface-1)] hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="btn"
             >
-              ← Prev
+              ‹ Prev
             </button>
-            <span className="tabular-nums">
+            <span className="tabular text-xs text-slate-500">
               {page + 1} / {totalPages}
             </span>
             <button
               disabled={page === totalPages - 1}
               onClick={() => setPage((p) => p + 1)}
-              className="px-2 py-1 rounded bg-[var(--surface-1)] hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="btn"
             >
-              Next →
+              Next ›
             </button>
           </div>
         )}

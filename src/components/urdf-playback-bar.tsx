@@ -48,11 +48,7 @@ export default function UrdfPlaybackBar({
       <button
         onClick={onTrailToggle}
         disabled={disabled}
-        className={`px-2 h-8 text-xs rounded transition-colors shrink-0 disabled:cursor-not-allowed ${
-          trailEnabled
-            ? "bg-cyan-400/15 text-cyan-300 border border-cyan-400/40"
-            : "bg-white/5 text-slate-400 border border-white/10"
-        }`}
+        className={`btn h-8 shrink-0 ${trailEnabled ? "btn-active" : ""}`}
         title={trailEnabled ? "Hide trail" : "Show trail"}
       >
         Trail

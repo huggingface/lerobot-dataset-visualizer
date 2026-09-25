@@ -148,11 +148,7 @@ export const DataRecharts = React.memo(
           <div className="flex justify-end mb-2">
             <button
               onClick={() => setExpanded((v) => !v)}
-              className={`text-xs px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 ${
-                expanded
-                  ? "bg-cyan-400/15 text-cyan-300 border border-cyan-400/40"
-                  : "bg-[var(--surface-1)]/60 text-slate-400 hover:text-slate-200 border border-white/10"
-              }`}
+              className={`btn ${expanded ? "btn-active" : ""}`}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
