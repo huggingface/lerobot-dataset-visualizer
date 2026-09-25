@@ -756,6 +756,7 @@ function EpisodeViewerInner({
           {activeTab === "frames" && (
             <OverviewPanel
               data={episodeFramesData}
+              cameras={datasetInfo.cameras}
               loading={framesLoading}
               flaggedOnly={framesFlaggedOnly}
               onFlaggedOnlyChange={setFramesFlaggedOnly}
