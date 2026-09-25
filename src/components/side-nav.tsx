@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useFlaggedEpisodes } from "@/context/flagged-episodes-context";
 
 import type { DatasetDisplayInfo } from "@/app/[org]/[dataset]/[episode]/fetch-data";
@@ -39,9 +39,23 @@ const Sidebar: React.FC<SidebarProps> = ({
     return [...flagged].sort((a, b) => a - b);
   }, [paginatedEpisodes, showFlaggedOnly, flagged, count]);
 
+  /// A page holds 100 episodes; without this, opening episode 80 left its highlighted row off screen.
+  /// Only scrolls when the row is out of view, so clicking a visible row doesn't make the list jump.
+  const navRef = useRef<HTMLElement>(null);
+  const activeItemRef = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    const item = activeItemRef.current?.getBoundingClientRect();
+    const nav = navRef.current?.getBoundingClientRect();
+    if (!item || !nav) return;
+    if (item.top < nav.top || item.bottom > nav.bottom) {
+      activeItemRef.current?.scrollIntoView({ block: "center" });
+    }
+  }, [episodeId, displayEpisodes]);
+
   return (
     <div className="flex z-10 shrink-0">
       <nav
+        ref={navRef}
         className={`shrink-0 overflow-y-auto bg-[var(--surface-0)] border-r border-white/5 p-4 break-words w-60 ${
           mobileVisible ? "block" : "hidden"
         } md:block`}
@@ -93,7 +107,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 : "text-slate-300 hover:bg-white/5"
             }`;
             return (
-              <li key={episode}>
+              <li key={episode} ref={active ? activeItemRef : undefined}>
                 {onEpisodeSelect ? (
                   <div className={itemClass}>
                     <button
