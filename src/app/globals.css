@@ -4,23 +4,32 @@
    Consolidated palette + surface scale. Use via Tailwind arbitrary
    values (bg-[var(--surface-1)]) or via the semantic helpers below. */
 :root {
-  /* surface / depth scale */
-  --bg: #0a0e17;
-  --surface-0: #0d1220;
-  --surface-1: #11172a;
-  --surface-2: #151c33;
-  --border-subtle: rgba(255, 255, 255, 0.05);
-  --border-strong: rgba(255, 255, 255, 0.1);
+  /* Surfaces, text and lines follow the Hub (moon-landing): its gray scale,
+     with gray-950 / gray-925 / gray-850 as the dark page, card and border. */
+  --bg: #0b0f19; /* gray-950 */
+  --surface-0: #0b0f19; /* chrome: tab bar, sidebar, inset boxes */
+  --surface-1: #101623; /* gray-925: cards */
+  --surface-2: #141c2e; /* gray-850 */
 
-  /* text scale */
-  --text-primary: #e7ebf3;
-  --text-muted: #9aa3b5;
-  --text-faint: #5b6274;
+  --fg: #e5e7eb; /* gray-200 */
+  --fg-soft: #d1d5db; /* gray-300 */
+  --fg-muted: #9ca3af; /* gray-400 */
+  --fg-faint: #6b7280; /* gray-500 */
+
+  --line: #1f2937; /* gray-800 */
+  --line-subtle: #141c2e; /* gray-850 */
+  --line-strong: #374151; /* gray-700 */
+
+  /* Hover / control fills that sit on top of any surface. */
+  --fill: rgba(255, 255, 255, 0.05);
+  --fill-strong: rgba(255, 255, 255, 0.1);
 
   /* single accent (cyan). Orange is reserved for flagged episodes. */
   --accent: #38bdf8;
   --accent-soft: rgba(56, 189, 248, 0.18);
   --accent-ring: rgba(56, 189, 248, 0.55);
+  --accent-fg: #67e8f9; /* accent as text */
+  --flag-fg: #fdba74; /* flagged-episode text */
 
   --radius: 6px;
 
@@ -36,6 +45,17 @@
   --color-surface-1: var(--surface-1);
   --color-surface-2: var(--surface-2);
   --color-accent: var(--accent);
+  --color-fg: var(--fg);
+  --color-fg-soft: var(--fg-soft);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-faint: var(--fg-faint);
+  --color-line: var(--line);
+  --color-line-subtle: var(--line-subtle);
+  --color-line-strong: var(--line-strong);
+  --color-fill: var(--fill);
+  --color-fill-strong: var(--fill-strong);
+  --color-accent-fg: var(--accent-fg);
+  --color-flag-fg: var(--flag-fg);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -46,7 +66,7 @@ html {
 
 body {
   background: var(--bg);
-  color: var(--text-primary);
+  color: var(--fg);
   font-feature-settings:
     "cv11" 1,
     "ss01" 1;
@@ -66,10 +86,10 @@ body {
    bar meant to sit on an opaque surface came out see-through. */
 @layer components {
   .panel {
-    @apply rounded-md border border-white/5 bg-white/[0.02];
+    @apply rounded-md border border-line-subtle bg-fill;
   }
   .panel-raised {
-    @apply rounded-md border border-white/10 bg-white/[0.03];
+    @apply rounded-md border border-line bg-fill;
   }
 }
 
@@ -78,16 +98,16 @@ body {
    flag actions, .btn-flagged (orange is reserved for flagged episodes). */
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-slate-300 transition-colors hover:bg-white/10 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white/5;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-line bg-fill px-2.5 py-1 text-xs text-fg-soft transition-colors hover:bg-fill-strong hover:text-fg disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-fill;
   }
   .btn-active {
-    @apply border-cyan-400/40 bg-cyan-400/15 text-cyan-300 hover:bg-cyan-400/20 hover:text-cyan-200;
+    @apply border-cyan-400/40 bg-cyan-400/15 text-accent-fg hover:bg-cyan-400/20 hover:text-accent-fg;
   }
   .btn-flagged {
-    @apply border-orange-500/30 bg-orange-500/15 text-orange-300 hover:bg-orange-500/20 hover:text-orange-200;
+    @apply border-orange-500/30 bg-orange-500/15 text-flag-fg hover:bg-orange-500/20 hover:text-flag-fg;
   }
   .btn-primary {
-    @apply border-cyan-400/30 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/15 hover:text-cyan-200;
+    @apply border-cyan-400/30 bg-cyan-400/10 text-accent-fg hover:bg-cyan-400/15 hover:text-accent-fg;
   }
 }
 

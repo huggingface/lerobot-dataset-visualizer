@@ -977,7 +977,7 @@ export default function URDFViewer({
 
   if (data.flatChartData.length === 0) {
     return (
-      <div className="text-slate-400 p-8 text-center">
+      <div className="text-fg-muted p-8 text-center">
         No trajectory data available.
       </div>
     );
@@ -986,10 +986,10 @@ export default function URDFViewer({
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* 3D Viewport */}
-      <div className="flex-1 min-h-0 bg-[var(--surface-0)] rounded-lg overflow-hidden border border-white/10 relative">
+      <div className="flex-1 min-h-0 bg-[var(--surface-0)] rounded-lg overflow-hidden border border-line relative">
         {(episodeLoading || urdfLoading) && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-[var(--bg)]/80">
-            <span className="text-white text-lg animate-pulse">
+            <span className="text-fg text-lg animate-pulse">
               {urdfLoading
                 ? "Loading 3D model…"
                 : `Loading episode ${selectedEpisode}…`}
@@ -1117,7 +1117,7 @@ export default function URDFViewer({
       </div>
 
       {/* Controls */}
-      <div className="bg-[var(--surface-1)]/90 border-t border-white/10 p-3 space-y-3 shrink-0">
+      <div className="bg-[var(--surface-1)]/90 border-t border-line p-3 space-y-3 shrink-0">
         <UrdfPlaybackBar
           frame={frame}
           totalFrames={totalFrames}
@@ -1133,7 +1133,7 @@ export default function URDFViewer({
         {/* Collapsible joint mapping */}
         <button
           onClick={() => setShowMapping((v) => !v)}
-          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+          className="flex items-center gap-1.5 text-xs text-fg-muted hover:text-fg transition-colors"
         >
           <span
             className={`transition-transform ${showMapping ? "rotate-90" : ""}`}
@@ -1141,7 +1141,7 @@ export default function URDFViewer({
             ▶
           </span>
           Joint Mapping
-          <span className="text-slate-600">
+          <span className="text-fg-faint">
             ({Object.keys(mapping).filter((k) => mapping[k]).length}/
             {displayJointNames.length} mapped)
           </span>
@@ -1150,7 +1150,7 @@ export default function URDFViewer({
         {showMapping && (
           <div className="flex flex-col lg:flex-row gap-3 lg:gap-4 lg:items-start">
             <div className="space-y-1 shrink-0">
-              <label className="text-xs text-slate-400">Data source</label>
+              <label className="text-xs text-fg-muted">Data source</label>
               <div className="flex gap-1 flex-wrap">
                 {groupNames.map((name) => (
                   <button
@@ -1167,7 +1167,7 @@ export default function URDFViewer({
             <div className="flex-1 overflow-x-auto max-h-48 overflow-y-auto">
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-[var(--surface-1)]">
-                  <tr className="text-slate-500">
+                  <tr className="text-fg-faint">
                     <th className="text-left font-normal px-1">URDF Joint</th>
                     <th className="text-left font-normal px-1">→</th>
                     <th className="text-left font-normal px-1">
@@ -1178,11 +1178,11 @@ export default function URDFViewer({
                 </thead>
                 <tbody>
                   {displayJointNames.map((jointName) => (
-                    <tr key={jointName} className="border-t border-white/10">
-                      <td className="px-1 py-0.5 text-slate-300 font-mono">
+                    <tr key={jointName} className="border-t border-line">
+                      <td className="px-1 py-0.5 text-fg-soft font-mono">
                         {jointName}
                       </td>
-                      <td className="px-1 text-slate-600">→</td>
+                      <td className="px-1 text-fg-faint">→</td>
                       <td className="px-1 py-0.5">
                         <select
                           value={mapping[jointName] ?? ""}
@@ -1192,7 +1192,7 @@ export default function URDFViewer({
                               [jointName]: e.target.value,
                             }))
                           }
-                          className="bg-[var(--surface-0)] text-slate-200 text-xs rounded px-1 py-0.5 border border-white/10 w-full max-w-[200px]"
+                          className="bg-[var(--surface-0)] text-fg text-xs rounded px-1 py-0.5 border border-line w-full max-w-[200px]"
                         >
                           <option value="">-- unmapped --</option>
                           {selectedColumns.map((col) => {
@@ -1205,7 +1205,7 @@ export default function URDFViewer({
                           })}
                         </select>
                       </td>
-                      <td className="px-1 py-0.5 text-right tabular-nums text-slate-400 font-mono">
+                      <td className="px-1 py-0.5 text-right tabular-nums text-fg-muted font-mono">
                         {jointValues[jointName] !== undefined
                           ? jointValues[jointName].toFixed(3)
                           : "—"}

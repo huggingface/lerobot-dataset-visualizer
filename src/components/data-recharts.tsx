@@ -267,9 +267,7 @@ function ChartLegend({
                 className="size-3"
                 style={{ accentColor: color }}
               />
-              <span className="text-xs font-semibold text-slate-200">
-                {group}
-              </span>
+              <span className="text-xs font-semibold text-fg">{group}</span>
             </label>
             <div className="pl-5 flex flex-col gap-0.5 mt-0.5">
               {children.map((key) => {
@@ -287,12 +285,12 @@ function ChartLegend({
                       style={{ accentColor: color }}
                     />
                     <span
-                      className={`text-xs ${visibleKeys.includes(key) ? "text-slate-300" : "text-slate-500"}`}
+                      className={`text-xs ${visibleKeys.includes(key) ? "text-fg-soft" : "text-fg-faint"}`}
                     >
                       {label}
                     </span>
                     <span
-                      className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-cyan-200/80" : "text-slate-600"}`}
+                      className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-accent-fg/80" : "text-fg-faint"}`}
                     >
                       {typeof currentData[key] === "number"
                         ? currentData[key].toFixed(2)
@@ -320,12 +318,12 @@ function ChartLegend({
               style={{ accentColor: color }}
             />
             <span
-              className={`text-xs ${visibleKeys.includes(key) ? "text-slate-200" : "text-slate-500"}`}
+              className={`text-xs ${visibleKeys.includes(key) ? "text-fg" : "text-fg-faint"}`}
             >
               {key}
             </span>
             <span
-              className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-cyan-200/80" : "text-slate-600"}`}
+              className={`text-xs font-mono tabular-nums ml-1 ${visibleKeys.includes(key) ? "text-accent-fg/80" : "text-fg-faint"}`}
             >
               {typeof currentData[key] === "number"
                 ? currentData[key].toFixed(2)
@@ -456,10 +454,10 @@ const SingleDataGraph = React.memo(
     }, [groups, singles]);
 
     return (
-      <div className="w-full bg-[var(--surface-1)]/40 rounded-lg border border-white/10 p-3">
+      <div className="w-full bg-[var(--surface-1)]/40 rounded-lg border border-line p-3">
         {chartTitle && (
           <p
-            className="text-xs font-medium text-slate-300 mb-1 px-1 truncate"
+            className="text-xs font-medium text-fg-soft mb-1 px-1 truncate"
             title={chartTitle}
           >
             {chartTitle}

@@ -164,7 +164,7 @@ function AdvancedTabsMenu({
         aria-expanded={open}
         data-active={active ? true : undefined}
         className={`relative flex items-center gap-1.5 whitespace-nowrap px-3 lg:px-5 py-3 text-xs font-medium tracking-wide uppercase transition-colors ${
-          active ? "text-cyan-300" : "text-slate-400 hover:text-slate-100"
+          active ? "text-accent-fg" : "text-fg-muted hover:text-fg"
         }`}
       >
         {active ? `Advanced · ${active.label}` : "Advanced"}
@@ -204,8 +204,8 @@ function AdvancedTabsMenu({
               }}
               className={`block w-full rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${
                 tab === activeTab
-                  ? "bg-cyan-400/10 text-cyan-300"
-                  : "text-slate-300 hover:bg-white/5 hover:text-slate-100"
+                  ? "bg-cyan-400/10 text-accent-fg"
+                  : "text-fg-soft hover:bg-fill hover:text-fg"
               }`}
             >
               {label}
@@ -237,7 +237,7 @@ function TabButton({
       title={title}
       data-active={active || undefined}
       className={`relative shrink-0 whitespace-nowrap px-3 lg:px-5 py-3 text-xs font-medium tracking-wide uppercase transition-colors ${
-        active ? "text-cyan-300" : "text-slate-400 hover:text-slate-100"
+        active ? "text-accent-fg" : "text-fg-muted hover:text-fg"
       }`}
     >
       {label}
@@ -709,7 +709,7 @@ function EpisodeViewerInner({
     <div className="flex flex-col h-screen max-h-screen bg-[var(--bg)] text-[var(--text-primary)]">
       <UrlTimeSync />
       {/* Top tab bar */}
-      <div className="relative z-20 flex items-center border-b border-white/5 bg-[var(--surface-0)] shrink-0">
+      <div className="relative z-20 flex items-center border-b border-line-subtle bg-[var(--surface-0)] shrink-0">
         {renderTab("episodes", "Episodes")}
         {urdfSupported && renderTab("urdf", "3D Replay")}
         <AdvancedTabsMenu activeTab={activeTab} onSelect={handleTabChange} />
@@ -771,10 +771,10 @@ function EpisodeViewerInner({
               {/* Language Instruction */}
               {task && (
                 <div className="mb-6 panel p-4">
-                  <p className="text-[10px] uppercase tracking-wide text-slate-500">
+                  <p className="text-[10px] uppercase tracking-wide text-fg-faint">
                     Language Instruction
                   </p>
-                  <div className="mt-1.5 space-y-0.5 text-sm text-slate-200">
+                  <div className="mt-1.5 space-y-0.5 text-sm text-fg">
                     {task
                       .split("\n")
                       .map((instruction: string, index: number) => (
@@ -880,14 +880,14 @@ function EpisodeViewerInner({
 
           {activeTab === "doctor" && (
             <div className="flex flex-col h-full">
-              <div className="flex items-center justify-between px-1 pb-2 text-xs text-slate-400">
+              <div className="flex items-center justify-between px-1 pb-2 text-xs text-fg-muted">
                 <span>
                   Dataset quality diagnostics &mdash; powered by{" "}
                   <a
                     href="https://github.com/jashshah999/lerobot-doctor"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="underline hover:text-slate-200"
+                    className="underline hover:text-fg"
                   >
                     lerobot-doctor
                   </a>
@@ -896,7 +896,7 @@ function EpisodeViewerInner({
                   href={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${org}/${dataset}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline hover:text-slate-200"
+                  className="underline hover:text-fg"
                 >
                   Open in new tab
                 </a>
@@ -904,7 +904,7 @@ function EpisodeViewerInner({
               <iframe
                 src={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${org}/${dataset}`}
                 title="lerobot-doctor"
-                className="flex-1 w-full rounded-lg border border-white/10 bg-[var(--surface-0)]"
+                className="flex-1 w-full rounded-lg border border-line bg-[var(--surface-0)]"
                 sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
               />
             </div>
