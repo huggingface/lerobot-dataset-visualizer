@@ -61,11 +61,16 @@ body {
 }
 
 /* ── Semantic helpers ────────────────────────────────────────────── */
-.panel {
-  @apply rounded-md border border-white/5 bg-white/[0.02];
-}
-.panel-raised {
-  @apply rounded-md border border-white/10 bg-white/[0.03];
+/* In the components layer, like .btn: unlayered, their near-transparent
+   fill beat any bg-* utility on the same element, so menus and the playback
+   bar meant to sit on an opaque surface came out see-through. */
+@layer components {
+  .panel {
+    @apply rounded-md border border-white/5 bg-white/[0.02];
+  }
+  .panel-raised {
+    @apply rounded-md border border-white/10 bg-white/[0.03];
+  }
 }
 
 /* Buttons. In the components layer so a utility on the element (a size, a
