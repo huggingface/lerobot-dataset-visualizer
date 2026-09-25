@@ -131,7 +131,6 @@ export type DatasetDisplayInfo = {
   robot_type: string | null;
   codebase_version: string;
   total_tasks: number;
-  dataset_size_mb: number;
   cameras: CameraInfo[];
 };
 
@@ -464,12 +463,6 @@ export async function getEpisodeData(
       robot_type: rawInfo.robot_type ?? null,
       codebase_version: rawInfo.codebase_version,
       total_tasks: rawInfo.total_tasks ?? 0,
-      dataset_size_mb:
-        Math.round(
-          ((rawInfo.data_files_size_in_mb ?? 0) +
-            (rawInfo.video_files_size_in_mb ?? 0)) *
-            10,
-        ) / 10,
       cameras,
     };
 
@@ -502,7 +495,6 @@ async function getEpisodeDataV2(
     robot_type: null,
     codebase_version: version,
     total_tasks: 0,
-    dataset_size_mb: 0,
     cameras: [],
   };
 
@@ -637,7 +629,6 @@ async function getEpisodeDataV3(
     robot_type: null,
     codebase_version: version,
     total_tasks: 0,
-    dataset_size_mb: 0,
     cameras: [],
   };
 
@@ -1061,9 +1052,9 @@ export function computeColumnMinMax(
  * Load all episode lengths from the episodes metadata parquet files (v3.0).
  * Returns min/max/mean/median/std and a histogram, or null if unavailable.
  */
-export async function loadAllEpisodeLengthsV3(
+/** Works for every version: the package reads v2's episodes.jsonl and v3's episode index alike. */
+export async function loadAllEpisodeLengths(
   repoId: string,
-  version: string,
   fps: number,
 ): Promise<EpisodeLengthStats | null> {
   try {

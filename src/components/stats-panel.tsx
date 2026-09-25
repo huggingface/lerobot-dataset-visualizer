@@ -13,11 +13,17 @@ interface StatsPanelProps {
 }
 
 function formatTotalTime(totalFrames: number, fps: number): string {
-  const totalSec = totalFrames / fps;
+  const totalSec = Math.round(totalFrames / fps);
   const hours = Math.floor(totalSec / 3600);
   const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
   if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
+function formatSeconds(value: number | undefined): string {
+  return value === undefined ? "–" : `${value.toFixed(2)}s`;
 }
 
 /** SVG bar chart for the episode-length histogram */
@@ -62,7 +68,7 @@ function EpisodeLengthHistogram({
                 y={y}
                 width={barWidth}
                 height={barH}
-                className="fill-orange-500/80 hover:fill-orange-400 transition-colors"
+                className="fill-cyan-400/70 hover:fill-cyan-300 transition-colors"
                 rx={Math.min(2, barWidth / 4)}
               />
               {bin.count > 0 && barWidth >= 8 && (
@@ -211,15 +217,22 @@ function StatsPanel({
             <div className="grid grid-cols-3 md:grid-cols-5 gap-4 mb-4">
               <Card
                 label="Shortest"
-                value={`${els.shortestEpisodes[0]?.lengthSeconds ?? "–"}s`}
+                value={formatSeconds(els.shortestEpisodes[0]?.lengthSeconds)}
               />
+              {/* longestEpisodes is sorted longest first. */}
               <Card
                 label="Longest"
-                value={`${els.longestEpisodes[els.longestEpisodes.length - 1]?.lengthSeconds ?? "–"}s`}
+                value={formatSeconds(els.longestEpisodes[0]?.lengthSeconds)}
               />
-              <Card label="Mean" value={`${els.meanEpisodeLength}s`} />
-              <Card label="Median" value={`${els.medianEpisodeLength}s`} />
-              <Card label="Std Dev" value={`${els.stdEpisodeLength}s`} />
+              <Card label="Mean" value={formatSeconds(els.meanEpisodeLength)} />
+              <Card
+                label="Median"
+                value={formatSeconds(els.medianEpisodeLength)}
+              />
+              <Card
+                label="Std Dev"
+                value={formatSeconds(els.stdEpisodeLength)}
+              />
             </div>
           </div>
 
