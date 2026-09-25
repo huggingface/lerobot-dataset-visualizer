@@ -68,7 +68,7 @@
   padding: 1px 5px;
   font-size: 10.5px;
   color: var(--fg-1);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
 }
 
 /* ----- Style pills (per atom style) — bright on dark ----- */
@@ -172,7 +172,7 @@
   outline-color: rgba(239, 83, 80, 0.4);
 }
 .annotations-skin .row-anno .ts {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--fg-3);
   width: 56px;
@@ -350,7 +350,7 @@
   margin-bottom: 8px;
 }
 .annotations-skin .tl-head .ts-display {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--fg-1);
   text-transform: none;
@@ -480,7 +480,7 @@
   top: 0;
   bottom: 0;
   border-left: 1px solid var(--border-1);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--fg-3);
   padding-left: 3px;
@@ -519,7 +519,7 @@
 .annotations-skin .tl-section-sub,
 .annotations-skin .rail-column-sub {
   font-size: 10px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   color: var(--fg-3);
 }
 .annotations-skin .rail-column {
@@ -617,7 +617,7 @@
   justify-content: flex-end;
 }
 .annotations-skin .ts-pill {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   padding: 3px 8px;
   border-radius: 999px;
@@ -728,7 +728,7 @@
 .annotations-skin .inspector-title strong {
   display: block;
   color: var(--fg-1);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -832,7 +832,7 @@
   color: var(--fg-3);
 }
 .annotations-skin .rail-group-head .count {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
 }
 .annotations-skin .rail-row {
@@ -854,7 +854,7 @@
   border-color: var(--accent);
 }
 .annotations-skin .rail-row .ts {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--fg-3);
   width: 56px;
@@ -942,7 +942,7 @@
   width: 100px;
 }
 .annotations-skin .editor .ts-row .frame-pill {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   padding: 3px 8px;
   border: 0;
@@ -1022,7 +1022,7 @@
   white-space: pre-line;
 }
 .annotations-skin .tl-tooltip .meta {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--fg-3);
   margin-bottom: 2px;
@@ -1039,7 +1039,7 @@
   color: #e0f2fe;
   font-size: 9.5px;
   font-weight: 700;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   line-height: 14px;
 }
 
