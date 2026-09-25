@@ -1058,7 +1058,7 @@ export default function URDFViewer({
         </button>
 
         {showMapping && (
-          <div className="flex gap-4 items-start">
+          <div className="flex flex-col lg:flex-row gap-3 lg:gap-4 lg:items-start">
             <div className="space-y-1 shrink-0">
               <label className="text-xs text-slate-400">Data source</label>
               <div className="flex gap-1 flex-wrap">
@@ -1068,8 +1068,8 @@ export default function URDFViewer({
                     onClick={() => setSelectedGroup(name)}
                     className={`px-2 py-1 text-xs rounded transition-colors ${
                       selectedGroup === name
-                        ? "bg-cyan-500 text-white"
-                        : "bg-white/5 text-slate-300 hover:bg-white/5"
+                        ? "bg-cyan-400/15 text-cyan-300 border border-cyan-400/40"
+                        : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"
                     }`}
                   >
                     {name}

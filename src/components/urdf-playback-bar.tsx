@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { FaPlay, FaPause, FaArrowDown, FaArrowUp } from "react-icons/fa";
 
 interface UrdfPlaybackBarProps {
   frame: number;
@@ -37,18 +38,10 @@ export default function UrdfPlaybackBar({
       <button
         onClick={onPlayPause}
         disabled={disabled}
-        className="w-8 h-8 flex items-center justify-center rounded-md bg-cyan-400/10 border border-cyan-400/30 text-cyan-300 hover:bg-cyan-400/15 disabled:bg-white/5 disabled:border-white/5 disabled:text-slate-500 disabled:cursor-not-allowed transition-colors shrink-0"
+        title={playing ? "Pause. Toggle with Space" : "Play. Toggle with Space"}
+        className="h-9 w-9 flex items-center justify-center rounded-md bg-cyan-400/10 border border-cyan-400/30 text-cyan-300 hover:bg-cyan-400/15 disabled:bg-white/5 disabled:border-white/5 disabled:text-slate-500 disabled:cursor-not-allowed transition-colors shrink-0"
       >
-        {playing ? (
-          <svg width="12" height="14" viewBox="0 0 12 14">
-            <rect x="1" y="1" width="3" height="12" fill="white" />
-            <rect x="8" y="1" width="3" height="12" fill="white" />
-          </svg>
-        ) : (
-          <svg width="12" height="14" viewBox="0 0 12 14">
-            <polygon points="2,1 11,7 2,13" fill="white" />
-          </svg>
-        )}
+        {playing ? <FaPause size={14} /> : <FaPlay size={14} />}
       </button>
 
       {/* Trail toggle */}
@@ -73,25 +66,30 @@ export default function UrdfPlaybackBar({
         value={frame}
         onChange={onFrameChange}
         disabled={disabled}
-        className="flex-1 h-1.5 accent-cyan-400 cursor-pointer disabled:cursor-not-allowed"
+        className="flex-1 min-w-16 mx-1 h-1 accent-cyan-400 cursor-pointer disabled:cursor-not-allowed"
+        aria-label="Seek frame"
       />
-      <span className="text-xs text-slate-400 tabular-nums w-28 text-right shrink-0">
+      <span
+        className="text-right tabular text-[11px] text-slate-400 shrink-0"
+        title={`Frame ${frame} of ${Math.max(totalFrames - 1, 0)}`}
+      >
         {currentTime}s / {totalTime}s
       </span>
-      <span className="text-xs text-slate-500 tabular-nums w-20 text-right shrink-0">
-        F {frame}/{Math.max(totalFrames - 1, 0)}
-      </span>
 
-      {/* Keyboard hints */}
-      <div className="text-xs text-slate-500 select-none hidden md:flex flex-col gap-y-0.5 ml-2 shrink-0">
-        <p>
-          <span className="px-1.5 py-0.5 rounded border border-white/10 bg-[var(--surface-1)] text-slate-400 text-xs">
+      {/* Same hints, and breakpoint, as the Episodes playback bar. */}
+      <div className="hidden lg:flex flex-col gap-y-0.5 ml-4 text-[10px] text-slate-500 select-none shrink-0">
+        <p className="inline-flex items-center gap-1.5">
+          <kbd className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-slate-300 text-[10px]">
             Space
-          </span>{" "}
-          pause/unpause
+          </kbd>
+          <span>pause/unpause</span>
         </p>
-        <p>
-          <span className="font-mono">↑/↓</span> prev/next episode
+        <p className="inline-flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-0.5 text-slate-300">
+            <FaArrowUp size={10} />
+            <FaArrowDown size={10} />
+          </span>
+          <span>prev/next episode</span>
         </p>
       </div>
     </div>
