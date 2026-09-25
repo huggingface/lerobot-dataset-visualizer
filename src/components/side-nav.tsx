@@ -87,10 +87,8 @@ const Sidebar: React.FC<SidebarProps> = ({
           {count > 0 && (
             <button
               onClick={() => onShowFlaggedOnlyChange(!showFlaggedOnly)}
-              className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-md transition-colors ${
-                showFlaggedOnly
-                  ? "bg-orange-500/15 text-orange-300 border border-orange-500/30"
-                  : "text-slate-500 hover:text-slate-300 border border-white/10"
+              className={`btn px-2 py-0.5 text-[10px] uppercase tracking-wide ${
+                showFlaggedOnly ? "btn-flagged" : ""
               }`}
             >
               Flagged · {count}
@@ -155,26 +153,20 @@ const Sidebar: React.FC<SidebarProps> = ({
         </ul>
 
         {!showFlaggedOnly && totalPages > 1 && (
-          <div className="mt-3 flex items-center gap-2 text-[10px] uppercase tracking-wide text-slate-400">
+          <div className="mt-3 flex items-center gap-2">
             <button
               onClick={prevPage}
-              className={`px-2 py-1 rounded-md border border-white/10 transition-colors hover:bg-white/5 hover:text-slate-200 ${
-                currentPage === 1 ? "cursor-not-allowed opacity-40" : ""
-              }`}
+              className="btn"
               disabled={currentPage === 1}
             >
               ‹ Prev
             </button>
-            <span className="tabular text-slate-500">
+            <span className="tabular text-xs text-slate-500">
               {currentPage} / {totalPages}
             </span>
             <button
               onClick={nextPage}
-              className={`ml-auto px-2 py-1 rounded-md border border-white/10 transition-colors hover:bg-white/5 hover:text-slate-200 ${
-                currentPage === totalPages
-                  ? "cursor-not-allowed opacity-40"
-                  : ""
-              }`}
+              className="btn ml-auto"
               disabled={currentPage === totalPages}
             >
               Next ›

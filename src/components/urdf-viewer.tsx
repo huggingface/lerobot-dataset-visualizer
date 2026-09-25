@@ -1066,11 +1066,7 @@ export default function URDFViewer({
                   <button
                     key={name}
                     onClick={() => setSelectedGroup(name)}
-                    className={`px-2 py-1 text-xs rounded transition-colors ${
-                      selectedGroup === name
-                        ? "bg-cyan-400/15 text-cyan-300 border border-cyan-400/40"
-                        : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"
-                    }`}
+                    className={`btn ${selectedGroup === name ? "btn-active" : ""}`}
                   >
                     {name}
                   </button>

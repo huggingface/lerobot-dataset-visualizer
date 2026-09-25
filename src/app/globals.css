@@ -68,6 +68,24 @@ body {
   @apply rounded-md border border-white/10 bg-white/[0.03];
 }
 
+/* Buttons. In the components layer so a utility on the element (a size, a
+   width) still wins. Toggles add .btn-active (cyan) or, for flag filters and
+   flag actions, .btn-flagged (orange is reserved for flagged episodes). */
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-slate-300 transition-colors hover:bg-white/10 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white/5;
+  }
+  .btn-active {
+    @apply border-cyan-400/40 bg-cyan-400/15 text-cyan-300 hover:bg-cyan-400/20 hover:text-cyan-200;
+  }
+  .btn-flagged {
+    @apply border-orange-500/30 bg-orange-500/15 text-orange-300 hover:bg-orange-500/20 hover:text-orange-200;
+  }
+  .btn-primary {
+    @apply border-cyan-400/30 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/15 hover:text-cyan-200;
+  }
+}
+
 /* Scrollbar: thin, subtle, matches the surface palette. */
 *::-webkit-scrollbar {
   width: 10px;

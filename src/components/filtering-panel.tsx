@@ -212,7 +212,7 @@ function EpisodeLengthFilter({ episodes }: { episodes: EpisodeLengthInfo[] }) {
           {outsideIds.length > 0 && (
             <button
               onClick={() => addMany(outsideIds)}
-              className="text-xs bg-orange-500/15 text-orange-300 border border-orange-500/30 rounded px-2 py-1 hover:bg-orange-500/20 transition-colors"
+              className="btn btn-flagged"
             >
               Flag {outsideIds.length} outside range
             </button>
@@ -311,10 +311,7 @@ function FlaggedIdsCopyBar({
         {idStr}
       </p>
       {onViewEpisodes && (
-        <button
-          onClick={onViewEpisodes}
-          className="w-full text-xs py-1.5 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors flex items-center justify-center gap-1.5"
-        >
+        <button onClick={onViewEpisodes} className="btn w-full py-1.5">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             width="12"
