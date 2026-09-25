@@ -172,7 +172,7 @@ function HomeInner() {
         {/* Title */}
         <h1 className="text-4xl md:text-5xl font-bold mb-2 drop-shadow-lg tracking-tight">
           LeRobot{" "}
-          <span className="bg-gradient-to-r from-cyan-400 to-sky-300 bg-clip-text text-transparent">
+          <span className="bg-gradient-to-r from-accent to-amber-300 bg-clip-text text-transparent">
             Dataset
           </span>{" "}
           Visualizer
@@ -209,7 +209,7 @@ function HomeInner() {
               onKeyDown={handleKeyDown}
               onFocus={() => query.trim() && setShowSuggestions(true)}
               placeholder="Enter dataset id (e.g. lerobot/pusht)"
-              className="pl-10 pr-4 py-2.5 rounded-md text-base text-white bg-white/10 backdrop-blur-sm border border-white/30 focus:outline-none focus:border-cyan-400 focus:bg-white/15 w-[380px] shadow-md placeholder:text-white/40 transition-colors"
+              className="pl-10 pr-4 py-2.5 rounded-md text-base text-white bg-white/10 backdrop-blur-sm border border-white/30 focus:outline-none focus:border-accent focus:bg-white/15 w-[380px] shadow-md placeholder:text-white/40 transition-colors"
               autoComplete="off"
             />
 
@@ -247,7 +247,7 @@ function HomeInner() {
                         type="button"
                         className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
                           i === activeIndex
-                            ? "bg-cyan-500 text-white"
+                            ? "bg-accent text-white"
                             : "text-slate-200 hover:bg-white/10"
                         }`}
                         onMouseDown={(e) => {
@@ -273,7 +273,7 @@ function HomeInner() {
 
           <button
             type="submit"
-            className="px-5 py-2.5 rounded-md bg-cyan-500 text-white font-semibold text-base hover:bg-cyan-400 active:scale-95 transition-all shadow-md flex items-center gap-2"
+            className="px-5 py-2.5 rounded-md bg-accent text-white font-semibold text-base hover:bg-accent active:scale-95 transition-all shadow-md flex items-center gap-2"
           >
             Go
             <kbd className="text-xs font-mono bg-white/20 rounded px-1 py-0.5 leading-tight">
@@ -296,7 +296,7 @@ function HomeInner() {
               <button
                 key={ds}
                 type="button"
-                className="px-3 py-1.5 rounded-full border border-white/20 text-sm text-cyan-200/80 hover:border-cyan-400 hover:text-white hover:bg-cyan-500/15 active:scale-95 transition-all backdrop-blur-sm"
+                className="px-3 py-1.5 rounded-full border border-white/20 text-sm text-accent-fg/80 hover:border-accent hover:text-white hover:bg-accent/15 active:scale-95 transition-all backdrop-blur-sm"
                 onClick={() => navigate(ds)}
               >
                 {ds}
@@ -310,7 +310,7 @@ function HomeInner() {
           href="https://huggingface.co/datasets?library=library:lerobot"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-6 py-3 mt-8 rounded-md bg-cyan-500/90 backdrop-blur-sm text-white font-semibold text-lg shadow-lg hover:bg-cyan-400 active:scale-95 transition-all"
+          className="inline-flex items-center gap-2 px-6 py-3 mt-8 rounded-md bg-accent/90 backdrop-blur-sm text-white font-semibold text-lg shadow-lg hover:bg-accent active:scale-95 transition-all"
         >
           Explore Open Datasets
           <svg

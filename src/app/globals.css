@@ -27,12 +27,13 @@
   --fill: rgba(17, 24, 39, 0.04);
   --fill-strong: rgba(17, 24, 39, 0.08);
 
-  /* single accent (cyan). Orange is reserved for flagged episodes. */
-  --accent: #38bdf8;
-  --accent-soft: rgba(56, 189, 248, 0.18);
-  --accent-ring: rgba(56, 189, 248, 0.55);
-  --accent-fg: #0e7490; /* accent as text: cyan-700 */
-  --flag-fg: #c2410c; /* flagged-episode text: orange-700 */
+  /* single accent: LeRobot orange (the logo's #ff9d00). Rose is reserved
+     for flagged episodes. */
+  --accent: #ff9d00;
+  --accent-soft: rgba(255, 157, 0, 0.16);
+  --accent-ring: rgba(255, 157, 0, 0.5);
+  --accent-fg: #a86200; /* accent as text: 4.8:1 on white, same hue */
+  --flag-fg: #be123c; /* flagged-episode text: rose-700 */
 
   --radius: 6px;
 
@@ -68,8 +69,8 @@
   --fill: rgba(255, 255, 255, 0.05);
   --fill-strong: rgba(255, 255, 255, 0.1);
 
-  --accent-fg: #67e8f9; /* cyan-300 */
-  --flag-fg: #fdba74; /* orange-300 */
+  --accent-fg: #ffb13d; /* lighter LeRobot orange */
+  --flag-fg: #fda4af; /* rose-300 */
 
   --playhead: #f1f5f9;
   --playhead-glow: rgba(241, 245, 249, 0.45);
@@ -147,13 +148,13 @@ body {
     @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-line bg-fill px-2.5 py-1 text-xs text-fg-soft transition-colors hover:bg-fill-strong hover:text-fg disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-fill;
   }
   .btn-active {
-    @apply border-cyan-400/40 bg-cyan-400/15 text-accent-fg hover:bg-cyan-400/20 hover:text-accent-fg;
+    @apply border-accent/40 bg-accent/15 text-accent-fg hover:bg-accent/20 hover:text-accent-fg;
   }
   .btn-flagged {
-    @apply border-orange-500/30 bg-orange-500/15 text-flag-fg hover:bg-orange-500/20 hover:text-flag-fg;
+    @apply border-rose-500/30 bg-rose-500/15 text-flag-fg hover:bg-rose-500/20 hover:text-flag-fg;
   }
   .btn-primary {
-    @apply border-cyan-400/30 bg-cyan-400/10 text-accent-fg hover:bg-cyan-400/15 hover:text-accent-fg;
+    @apply border-accent/30 bg-accent/10 text-accent-fg hover:bg-accent/15 hover:text-accent-fg;
   }
 }
 

@@ -207,7 +207,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               const active = episode === episodeId;
               const itemClass = `group flex items-center justify-between gap-2 px-2 py-1 rounded-md text-xs tabular transition-colors ${
                 active
-                  ? "bg-cyan-400/10 text-accent-fg"
+                  ? "bg-accent/10 text-accent-fg"
                   : "text-fg-soft hover:bg-fill"
               }`;
               return (
@@ -227,7 +227,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                         onClick={() => toggle(episode)}
                         className={`text-xs leading-none transition-colors ${
                           flagged.has(episode)
-                            ? "text-orange-400 hover:text-flag-fg"
+                            ? "text-rose-500 hover:text-flag-fg"
                             : "text-fg-faint hover:text-fg-muted opacity-0 group-hover:opacity-100"
                         }`}
                         title={flagged.has(episode) ? "Unflag" : "Flag"}
@@ -248,7 +248,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                         onClick={() => toggle(episode)}
                         className={`text-xs leading-none transition-colors ${
                           flagged.has(episode)
-                            ? "text-orange-400 hover:text-flag-fg"
+                            ? "text-rose-500 hover:text-flag-fg"
                             : "text-fg-faint hover:text-fg-muted opacity-0 group-hover:opacity-100"
                         }`}
                         title={flagged.has(episode) ? "Unflag" : "Flag"}

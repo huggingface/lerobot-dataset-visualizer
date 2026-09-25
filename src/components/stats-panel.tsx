@@ -69,7 +69,7 @@ function EpisodeLengthHistogram({
                 y={y}
                 width={barWidth}
                 height={barH}
-                className="fill-cyan-400/70 hover:fill-accent-fg transition-colors"
+                className="fill-accent/70 hover:fill-accent-fg transition-colors"
                 rx={Math.min(2, barWidth / 4)}
               />
               {bin.count > 0 && barWidth >= 8 && (

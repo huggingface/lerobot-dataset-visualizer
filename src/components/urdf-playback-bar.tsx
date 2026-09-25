@@ -39,7 +39,7 @@ export default function UrdfPlaybackBar({
         onClick={onPlayPause}
         disabled={disabled}
         title={playing ? "Pause. Toggle with Space" : "Play. Toggle with Space"}
-        className="h-9 w-9 flex items-center justify-center rounded-md bg-cyan-400/10 border border-cyan-400/30 text-accent-fg hover:bg-cyan-400/15 disabled:bg-fill disabled:border-line-subtle disabled:text-fg-faint disabled:cursor-not-allowed transition-colors shrink-0"
+        className="h-9 w-9 flex items-center justify-center rounded-md bg-accent/10 border border-accent/30 text-accent-fg hover:bg-accent/15 disabled:bg-fill disabled:border-line-subtle disabled:text-fg-faint disabled:cursor-not-allowed transition-colors shrink-0"
       >
         {playing ? <FaPause size={14} /> : <FaPlay size={14} />}
       </button>
@@ -62,7 +62,7 @@ export default function UrdfPlaybackBar({
         value={frame}
         onChange={onFrameChange}
         disabled={disabled}
-        className="flex-1 min-w-16 mx-1 h-1 accent-cyan-400 cursor-pointer disabled:cursor-not-allowed"
+        className="flex-1 min-w-16 mx-1 h-1 accent-accent cursor-pointer disabled:cursor-not-allowed"
         aria-label="Seek frame"
       />
       <span

@@ -146,7 +146,7 @@ function FlagBtn({ id }: { id: number }) {
     <button
       onClick={() => toggle(id)}
       title={flagged ? "Unflag episode" : "Flag for review"}
-      className={`p-0.5 rounded transition-colors ${flagged ? "text-orange-400 hover:text-flag-fg" : "text-fg-faint hover:text-fg-muted"}`}
+      className={`p-0.5 rounded transition-colors ${flagged ? "text-rose-500 hover:text-flag-fg" : "text-fg-faint hover:text-fg-muted"}`}
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -369,7 +369,7 @@ function AutocorrelationSection({
       </div>
 
       {suggestedChunk && (
-        <div className="flex items-center gap-3 bg-cyan-400/10 border border-cyan-400/30 rounded-md px-4 py-2.5">
+        <div className="flex items-center gap-3 bg-accent/10 border border-accent/30 rounded-md px-4 py-2.5">
           <span className="text-accent-fg font-bold text-lg tabular-nums">
             {suggestedChunk}
           </span>
@@ -1446,7 +1446,7 @@ function StateActionAlignmentSection({
       </div>
 
       {meanPeakLag !== 0 && (
-        <div className="flex items-center gap-3 bg-cyan-400/10 border border-cyan-400/30 rounded-md px-4 py-2.5">
+        <div className="flex items-center gap-3 bg-accent/10 border border-accent/30 rounded-md px-4 py-2.5">
           <span className="text-accent-fg font-bold text-lg tabular-nums">
             {meanPeakLag}
           </span>
@@ -1540,7 +1540,7 @@ function StateActionAlignmentSection({
 
       <div className="flex flex-wrap gap-x-4 gap-y-1 px-1">
         <div className="flex items-center gap-1.5">
-          <span className="w-3 h-[3px] rounded-full shrink-0 bg-cyan-500" />
+          <span className="w-3 h-[3px] rounded-full shrink-0 bg-accent" />
           <span className="text-xs text-fg-muted">
             max (peak: lag {maxPeakLag}, r={maxPeakCorr.toFixed(3)})
           </span>
