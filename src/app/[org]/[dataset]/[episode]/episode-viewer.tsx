@@ -115,15 +115,18 @@ function TabButton({
   onClick,
   label,
   title,
+  onPointerEnter,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
   title?: string;
+  onPointerEnter?: () => void;
 }) {
   return (
     <button
       onClick={onClick}
+      onPointerEnter={onPointerEnter}
       title={title}
       data-active={active || undefined}
       className={`relative shrink-0 whitespace-nowrap px-3 lg:px-5 py-3 text-xs font-medium tracking-wide uppercase transition-colors ${
@@ -154,6 +157,25 @@ export default function EpisodeViewer({
   const [data, setData] = useState<EpisodeData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
+
+  // Opening straight onto 3D Replay: start the robot meshes downloading now,
+  // alongside the episode data, rather than once it has loaded and the viewer
+  // mounts. info.json is all it needs, and the episode load fetches it anyway.
+  useEffect(() => {
+    if (sessionStorage.getItem("activeTab") !== "urdf") return;
+    getDatasetVersionAndInfo(`${org}/${dataset}`)
+      .then(({ info }) => {
+        if (
+          hasURDFSupport(info.robot_type ?? null) &&
+          info.codebase_version >= "v3.0"
+        ) {
+          return import("@/components/urdf-viewer").then((m) =>
+            m.prefetchRobotModel(info.robot_type ?? null),
+          );
+        }
+      })
+      .catch(() => {});
+  }, [org, dataset]);
 
   useEffect(() => {
     if (Number.isNaN(episodeId)) {
@@ -570,6 +592,15 @@ function EpisodeViewerInner({
       onClick={() => handleTabChange(tab)}
       label={label}
       title={title}
+      /// Hovering 3D Replay is a strong hint it's next; get the meshes going.
+      onPointerEnter={
+        tab === "urdf"
+          ? () =>
+              void import("@/components/urdf-viewer").then((m) =>
+                m.prefetchRobotModel(datasetInfo.robot_type),
+              )
+          : undefined
+      }
     />
   );
 

@@ -8,7 +8,13 @@ import React, {
   useCallback,
 } from "react";
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
-import { OrbitControls, Grid, Html, Environment } from "@react-three/drei";
+import {
+  OrbitControls,
+  Grid,
+  Html,
+  Environment,
+  Lightformer,
+} from "@react-three/drei";
 import * as THREE from "three";
 import URDFLoader from "urdf-loader";
 import type { URDFRobot } from "urdf-loader";
@@ -33,6 +39,23 @@ const stlGeometryCache = new Map<string, THREE.BufferGeometry>();
 // In-flight promise cache — prevents duplicate simultaneous fetches
 const stlGeometryLoading = new Map<string, Promise<THREE.BufferGeometry>>();
 
+function loadStlGeometry(url: string): Promise<THREE.BufferGeometry> {
+  const cached = stlGeometryCache.get(url);
+  if (cached) return Promise.resolve(cached);
+  let loading = stlGeometryLoading.get(url);
+  if (!loading) {
+    loading = new STLLoader()
+      .loadAsync(url)
+      .then((geometry) => {
+        stlGeometryCache.set(url, geometry);
+        return geometry;
+      })
+      .finally(() => stlGeometryLoading.delete(url));
+    stlGeometryLoading.set(url, loading);
+  }
+  return loading;
+}
+
 // URDFs + meshes are hosted in the Hub bucket at
 // https://huggingface.co/buckets/lerobot/robot-urdfs. URDFLoader resolves
 // relative mesh paths against the URDF's own URL, so the bucket layout
@@ -41,6 +64,33 @@ const stlGeometryLoading = new Map<string, Promise<THREE.BufferGeometry>>();
 const URDF_BASE_URL =
   process.env.NEXT_PUBLIC_URDF_BASE_URL ??
   "https://huggingface.co/buckets/lerobot/robot-urdfs/resolve";
+
+const prefetchedUrdfs = new Set<string>();
+
+/**
+ * Starts downloading a robot's visual STL meshes into the geometry cache. The viewer only mounts once
+ * the episode data has loaded, and the meshes (15.7 MB for SO-101) used to start downloading only
+ * then; calling this earlier overlaps the two.
+ */
+export function prefetchRobotModel(robotType: string | null) {
+  const { urdfUrl } = getRobotConfig(robotType);
+  if (prefetchedUrdfs.has(urdfUrl)) return;
+  prefetchedUrdfs.add(urdfUrl);
+  const base = THREE.LoaderUtils.extractUrlBase(urdfUrl);
+  fetch(urdfUrl)
+    .then((res) => res.text())
+    .then((text) => {
+      const doc = new DOMParser().parseFromString(text, "application/xml");
+      for (const mesh of doc.querySelectorAll("visual mesh")) {
+        const filename = mesh.getAttribute("filename");
+        /// Same resolution URDFLoader applies to relative paths; package:// and DAE meshes are left to it.
+        if (!filename || filename.startsWith("package://")) continue;
+        if (!filename.toLowerCase().endsWith(".stl")) continue;
+        loadStlGeometry(base + filename).catch(() => {});
+      }
+    })
+    .catch(() => prefetchedUrdfs.delete(urdfUrl));
+}
 
 function getRobotConfig(robotType: string | null) {
   const lower = (robotType ?? "").toLowerCase();
@@ -190,6 +240,36 @@ const TRAIL_DURATION = 1.0;
 const TRAIL_COLORS = [new THREE.Color("#ff6600"), new THREE.Color("#00aaff")];
 const MAX_TRAIL_POINTS = 300;
 
+/**
+ * Frames the robot's world-space bounding box. URDFs can ship world→base offsets (SO-arm does) that
+ * put the robot far from origin, so a fixed camera pose crops the arm.
+ */
+function fitCameraToRobot(
+  robot: THREE.Object3D,
+  camera: THREE.Camera,
+  controls: unknown,
+) {
+  const bbox = new THREE.Box3().setFromObject(robot);
+  if (bbox.isEmpty()) return;
+  const center = bbox.getCenter(new THREE.Vector3());
+  const sizeVec = bbox.getSize(new THREE.Vector3());
+  const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z);
+  const fov = ((camera as THREE.PerspectiveCamera).fov ?? 45) * (Math.PI / 180);
+  const distance = (maxDim / 2 / Math.tan(fov / 2)) * 1.6;
+  const dir = new THREE.Vector3(1, 0.85, 1).normalize();
+  camera.position.copy(center).addScaledVector(dir, distance);
+  camera.lookAt(center);
+  (camera as THREE.PerspectiveCamera).updateProjectionMatrix?.();
+  const orbit = controls as { target?: THREE.Vector3; update?: () => void };
+  if (orbit?.target) {
+    orbit.target.copy(center);
+    orbit.update?.();
+  }
+}
+
+/** Frames to wait for joint values before fitting anyway (a robot with no mapped joints). */
+const MAX_FIT_WAIT_FRAMES = 30;
+
 // ─── Robot scene (imperative, inside Canvas) ───
 function RobotScene({
   urdfUrl,
@@ -206,7 +286,7 @@ function RobotScene({
   trailResetKey: number;
   scale: number;
 }) {
-  const { scene, camera, controls, size } = useThree();
+  const { scene, controls, size } = useThree();
   const robotRef = useRef<URDFRobot | null>(null);
   const tipLinksRef = useRef<THREE.Object3D[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -221,6 +301,11 @@ function RobotScene({
   const linesRef = useRef<Line2[]>([]);
   const trailMatsRef = useRef<LineMaterial[]>([]);
   const trailCountRef = useRef(0);
+  /// Set once every mesh is attached; the frame loop fits the camera on the first frame that has
+  /// the episode's pose applied. Fitting in manager.onLoad framed the URDF's zero pose instead
+  /// whenever the meshes were already cached, since the joint values arrive a render later.
+  const pendingFitRef = useRef(false);
+  const pendingFitFramesRef = useRef(0);
 
   // Reset trails when episode changes
   useEffect(() => {
@@ -433,27 +518,14 @@ function RobotScene({
         );
       };
 
-      const cached = stlGeometryCache.get(url);
-      if (cached) {
-        onLoad(wrapForUrdf(makeMesh(cached)));
-        return;
-      }
-
-      // Deduplicate in-flight requests for the same URL
-      let loading = stlGeometryLoading.get(url);
-      if (!loading) {
-        loading = new Promise<THREE.BufferGeometry>((resolve, reject) => {
-          new STLLoader(mgr).load(url, resolve, undefined, reject);
-        }).then((geometry) => {
-          stlGeometryCache.set(url, geometry);
-          stlGeometryLoading.delete(url);
-          return geometry;
-        });
-        stlGeometryLoading.set(url, loading);
-      }
-      loading
+      /// Tracked on this manager even when the geometry is cached or a prefetch already started
+      /// the download: manager.onLoad (shadows, camera fit) only fires for tracked loads, and
+      /// with every mesh prefetched it would otherwise never fire.
+      mgr.itemStart(url);
+      loadStlGeometry(url)
         .then((geometry) => onLoad(wrapForUrdf(makeMesh(geometry))))
-        .catch((err) => onLoad(new THREE.Object3D(), err as Error));
+        .catch((err) => onLoad(new THREE.Object3D(), err as Error))
+        .finally(() => mgr.itemEnd(url));
     };
     // Materials are now set directly in loadMeshCb, so manager.onLoad only
     // needs to (a) enable shadows, (b) auto-fit the camera. We defer the
@@ -469,32 +541,8 @@ function RobotScene({
           c.castShadow = true;
           if (!isOpenArm) c.receiveShadow = true;
         });
-        robot.updateMatrixWorld(true);
-
-        // Auto-fit camera: URDFs can ship world→base offsets (SO-arm does)
-        // that put the robot far from origin, so a fixed camera pose crops
-        // the arm. Compute the world-space AABB and frame it.
-        const bbox = new THREE.Box3().setFromObject(robot);
-        if (!bbox.isEmpty()) {
-          const center = bbox.getCenter(new THREE.Vector3());
-          const sizeVec = bbox.getSize(new THREE.Vector3());
-          const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z);
-          const fov =
-            ((camera as THREE.PerspectiveCamera).fov ?? 45) * (Math.PI / 180);
-          const distance = (maxDim / 2 / Math.tan(fov / 2)) * 1.6;
-          const dir = new THREE.Vector3(1, 0.85, 1).normalize();
-          camera.position.copy(center).addScaledVector(dir, distance);
-          camera.lookAt(center);
-          camera.updateProjectionMatrix();
-          const orbit = controls as unknown as {
-            target?: THREE.Vector3;
-            update?: () => void;
-          };
-          if (orbit?.target) {
-            orbit.target.copy(center);
-            orbit.update?.();
-          }
-        }
+        pendingFitRef.current = true;
+        pendingFitFramesRef.current = 0;
       }, 0);
     };
 
@@ -561,7 +609,7 @@ function RobotScene({
 
   const tipWorldPos = useMemo(() => new THREE.Vector3(), []);
 
-  useFrame(() => {
+  useFrame((state) => {
     const robot = robotRef.current;
     if (!robot) return;
 
@@ -569,6 +617,17 @@ function RobotScene({
       robot.setJointValue(name, value);
     }
     robot.updateMatrixWorld(true);
+
+    if (pendingFitRef.current) {
+      pendingFitFramesRef.current++;
+      if (
+        Object.keys(jointValues).length > 0 ||
+        pendingFitFramesRef.current > MAX_FIT_WAIT_FRAMES
+      ) {
+        pendingFitRef.current = false;
+        fitCameraToRobot(robot, state.camera, state.controls);
+      }
+    }
 
     const tips = tipLinksRef.current;
     if (!trailEnabled || tips.length === 0) {
@@ -955,8 +1014,39 @@ export default function URDFViewer({
           }}
         >
           <color attach="background" args={["#1a2433"]} />
-          {/* IBL: PMREM studio env gives mesh highlights somewhere to bounce */}
-          <Environment preset="studio" background={false} />
+          {/* IBL: procedural studio softboxes give mesh highlights somewhere to
+              bounce. Not preset="studio": drei downloads that 1.6 MB HDR from
+              raw.githack.com and suspends the canvas until it arrives. */}
+          <Environment resolution={256} background={false}>
+            <Lightformer
+              form="rect"
+              intensity={5}
+              position={[0, 5, 0]}
+              rotation-x={Math.PI / 2}
+              scale={[10, 10, 1]}
+            />
+            <Lightformer
+              form="rect"
+              intensity={3}
+              position={[-5, 1.5, -1]}
+              rotation-y={Math.PI / 2}
+              scale={[10, 2, 1]}
+            />
+            <Lightformer
+              form="rect"
+              intensity={3}
+              position={[5, 1.5, -1]}
+              rotation-y={-Math.PI / 2}
+              scale={[10, 2, 1]}
+            />
+            <Lightformer
+              form="rect"
+              intensity={2.5}
+              position={[0, 1.5, 5]}
+              rotation-y={Math.PI}
+              scale={[10, 3, 1]}
+            />
+          </Environment>
           {/* 3-point studio rig — key is the only shadow caster */}
           <ambientLight intensity={0.12} />
           <directionalLight
