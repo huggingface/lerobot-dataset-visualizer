@@ -23,6 +23,11 @@
   --accent-ring: rgba(56, 189, 248, 0.55);
 
   --radius: 6px;
+
+  /* Playback position, wherever it is drawn (chart cursor, annotation
+     timeline). Neutral, so it never reads as a series, a role or a flag. */
+  --playhead: #f1f5f9;
+  --playhead-glow: rgba(241, 245, 249, 0.45);
 }
 
 @theme inline {

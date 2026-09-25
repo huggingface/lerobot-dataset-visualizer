@@ -583,14 +583,14 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys }) => {
           <button
             disabled={saving || !dirty}
             onClick={handleSave}
-            className="text-xs h-7 px-3 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-40"
+            className="text-xs h-7 px-3 rounded-md border border-cyan-400/30 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/15 disabled:opacity-40"
           >
             {saving ? "Saving…" : "Save episode"}
           </button>
           <button
             disabled={!backendEnabled}
             onClick={handleSaveDataset}
-            className="text-xs h-7 px-3 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-40"
+            className="text-xs h-7 px-3 rounded-md border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-slate-100 disabled:opacity-40"
           >
             Save dataset
           </button>
