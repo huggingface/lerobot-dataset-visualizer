@@ -816,7 +816,7 @@ function EpisodeViewerInner({
               <iframe
                 src={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${org}/${dataset}`}
                 title="lerobot-doctor"
-                className="flex-1 w-full rounded border border-slate-700 bg-white"
+                className="flex-1 w-full rounded-lg border border-white/10 bg-[var(--surface-0)]"
                 sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
               />
             </div>
