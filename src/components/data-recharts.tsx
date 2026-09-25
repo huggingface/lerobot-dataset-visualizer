@@ -94,7 +94,7 @@ function PlaybackCursor({ start, end }: { start: number; end: number }) {
   const left = CHART_MARGIN.left + Y_AXIS_WIDTH;
   return (
     <div
-      className="pointer-events-none absolute w-[1.5px] bg-orange-500/70"
+      className="pointer-events-none absolute w-[1.5px] bg-[var(--playhead)] opacity-70"
       style={{
         top: CHART_MARGIN.top,
         bottom: CHART_MARGIN.bottom + X_AXIS_HEIGHT,
