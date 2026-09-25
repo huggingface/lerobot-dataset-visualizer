@@ -138,10 +138,14 @@ Reserved/bookkeeping columns from lerobot — see `EXCLUDED_COLUMNS` in `src/uti
 
 ## Design system
 
-CSS tokens in `src/app/globals.css` (Tailwind v4 `@theme inline`):
+Colours, surfaces and fonts follow the Hub (moon-landing). Tokens live in `src/app/globals.css`: light values on `:root`, dark under `:root.dark`, exposed as Tailwind colours. **Never hard-code** `text-slate-*`, `border-white/*`, `bg-white/*` or hex colours for UI chrome; use the tokens so both themes work:
 
-- Surfaces: `--bg #0a0e17`, `--surface-0`, `--surface-1`, `--surface-2`
-- Text: `--text-primary`, `--text-muted`, `--text-faint`
+- Surfaces: `--bg`, `--surface-0` (chrome), `--surface-1` (cards), `--surface-2` — white / gray-50 / gray-100 light, gray-950 / gray-925 / gray-850 dark
+- Text: `text-fg`, `text-fg-soft`, `text-fg-muted`, `text-fg-faint`; accent text `text-accent-fg`, flag text `text-flag-fg`
+- Lines and fills: `border-line` / `border-line-subtle` / `border-line-strong`, `bg-fill` / `bg-fill-strong` (hover and control fills)
+- Charts: `var(--chart-grid)`, `var(--chart-axis)`, `var(--fg-muted)` for ticks; CSS variables work in Recharts' SVG attributes. Three.js needs real colours: read `useTheme()` from `src/utils/theme.ts`
+- Theme: `<html class="dark">`, set before paint by `THEME_INIT_SCRIPT` (`src/utils/theme-init.ts`) from `?__theme=` (what HF Spaces passes), then the saved choice, then the OS; `ThemeToggle` in the tab bar switches it. `dark:` utilities target that class
+- Fonts: Source Sans 3 (Source Sans Pro) and IBM Plex Mono via `next/font` in `layout.tsx`, as `font-sans` / `font-mono`
 - Accent: `--accent #38bdf8` (cyan) — primary interactive color across UI
 - Helpers: `.panel`, `.panel-raised`, `.tabular` (tabular-nums)
 - **Color semantics**: cyan = primary/active, orange (`orange-400/500`) is reserved for **flagged-episode** UI only — don't reuse it for generic accents.
