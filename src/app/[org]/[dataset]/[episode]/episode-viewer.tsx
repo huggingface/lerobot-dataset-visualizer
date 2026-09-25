@@ -184,7 +184,7 @@ function AdvancedTabsMenu({
         <span
           className={`pointer-events-none absolute bottom-0 left-3 right-3 h-px transition-all ${
             active
-              ? "bg-cyan-400 shadow-[0_0_8px_rgba(56,189,248,0.55)]"
+              ? "bg-accent shadow-[0_0_8px_var(--accent-ring)]"
               : "bg-transparent"
           }`}
         />
@@ -205,7 +205,7 @@ function AdvancedTabsMenu({
               }}
               className={`block w-full rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${
                 tab === activeTab
-                  ? "bg-cyan-400/10 text-accent-fg"
+                  ? "bg-accent/10 text-accent-fg"
                   : "text-fg-soft hover:bg-fill hover:text-fg"
               }`}
             >
@@ -245,7 +245,7 @@ function TabButton({
       <span
         className={`pointer-events-none absolute bottom-0 left-3 right-3 h-px transition-all ${
           active
-            ? "bg-cyan-400 shadow-[0_0_8px_rgba(56,189,248,0.55)]"
+            ? "bg-accent shadow-[0_0_8px_var(--accent-ring)]"
             : "bg-transparent"
         }`}
       />

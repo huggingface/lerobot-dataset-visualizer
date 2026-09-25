@@ -86,7 +86,7 @@ function FrameThumbnail({
           onClick={() => toggle(info.episodeIndex)}
           className={`absolute top-1 right-1 p-1 rounded transition-opacity ${
             isFlagged
-              ? "opacity-100 text-orange-400 hover:text-flag-fg"
+              ? "opacity-100 text-rose-500 hover:text-flag-fg"
               : "opacity-0 group-hover:opacity-100 text-fg-muted hover:text-fg"
           }`}
           title={isFlagged ? "Unflag episode" : "Flag episode"}
@@ -203,7 +203,7 @@ export default function OverviewPanel({
             <select
               value={selectedCamera}
               onChange={handleCameraChange}
-              className="bg-[var(--surface-1)] text-fg text-sm rounded px-3 py-1.5 border border-line focus:outline-none focus:border-cyan-400"
+              className="bg-[var(--surface-1)] text-fg text-sm rounded px-3 py-1.5 border border-line focus:outline-none focus:border-accent"
             >
               {data.cameras.map((cam) => (
                 <option key={cam} value={cam}>

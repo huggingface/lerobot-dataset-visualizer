@@ -59,7 +59,7 @@ const PlaybackBar: React.FC = () => {
         <FaBackward size={14} />
       </button>
       <button
-        className="flex h-9 w-9 items-center justify-center rounded-md bg-cyan-400/10 border border-cyan-400/30 text-accent-fg hover:bg-cyan-400/15 transition-colors"
+        className="flex h-9 w-9 items-center justify-center rounded-md bg-accent/10 border border-accent/30 text-accent-fg hover:bg-accent/15 transition-colors"
         title={
           isPlaying ? "Pause. Toggle with Space" : "Play. Toggle with Space"
         }
@@ -92,7 +92,7 @@ const PlaybackBar: React.FC = () => {
         onMouseUp={handleSliderMouseUp}
         onTouchStart={handleSliderMouseDown}
         onTouchEnd={handleSliderMouseUp}
-        className="flex-1 mx-1 h-1 accent-cyan-400 cursor-pointer focus:outline-none focus:ring-0"
+        className="flex-1 mx-1 h-1 accent-accent cursor-pointer focus:outline-none focus:ring-0"
         aria-label="Seek video"
       />
       <span className="w-16 text-right tabular text-[11px] text-fg-muted shrink-0">

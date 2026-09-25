@@ -591,12 +591,12 @@
   color: var(--fg-1);
 }
 .annotations-skin .quick-popup .popup-btn.primary {
-  border-color: rgba(56, 189, 248, 0.4);
-  background: rgba(56, 189, 248, 0.12);
-  color: #c5ecff;
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+  color: var(--accent-fg);
 }
 .annotations-skin .quick-popup .popup-btn.primary:hover {
-  background: rgba(56, 189, 248, 0.2);
+  background: rgba(255, 157, 0, 0.24);
 }
 .annotations-skin .quick-popup .popup-btn:disabled {
   opacity: 0.4;
@@ -773,9 +773,9 @@
   min-width: 200px;
 }
 .annotations-skin .quick-add .add-btn {
-  background: rgba(56, 189, 248, 0.1);
-  color: #67e8f9;
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: var(--accent-soft);
+  color: var(--accent-fg);
+  border: 1px solid var(--accent-ring);
   border-radius: var(--radius-sm);
   padding: 6px 14px;
   font-size: 13px;
@@ -784,7 +784,7 @@
   white-space: nowrap;
 }
 .annotations-skin .quick-add .add-btn:hover {
-  background: rgba(56, 189, 248, 0.15);
+  background: rgba(255, 157, 0, 0.24);
 }
 .annotations-skin .quick-add .add-btn:disabled {
   opacity: 0.4;

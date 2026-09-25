@@ -117,7 +117,7 @@ export function Switch({
         aria-checked={checked}
         aria-label={ariaLabel}
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors shrink-0 ${checked ? "bg-cyan-500" : "bg-fill-strong"}`}
+        className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors shrink-0 ${checked ? "bg-accent" : "bg-fill-strong"}`}
       >
         <span
           className={`inline-block w-3.5 h-3.5 bg-white rounded-full transition-transform ${checked ? "translate-x-[18px]" : "translate-x-[3px]"}`}

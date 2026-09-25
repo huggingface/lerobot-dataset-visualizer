@@ -23,7 +23,7 @@ function FlagBtn({ id }: { id: number }) {
     <button
       onClick={() => toggle(id)}
       title={flagged ? "Unflag episode" : "Flag for review"}
-      className={`p-0.5 rounded transition-colors ${flagged ? "text-orange-400 hover:text-flag-fg" : "text-fg-faint hover:text-fg-muted"}`}
+      className={`p-0.5 rounded transition-colors ${flagged ? "text-rose-500 hover:text-flag-fg" : "text-fg-faint hover:text-fg-muted"}`}
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -170,7 +170,7 @@ function EpisodeLengthFilter({ episodes }: { episodes: EpisodeLengthInfo[] }) {
         <div className="relative h-5">
           <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1 rounded bg-fill" />
           <div
-            className="absolute top-1/2 -translate-y-1/2 h-1 rounded bg-cyan-500"
+            className="absolute top-1/2 -translate-y-1/2 h-1 rounded bg-accent"
             style={{
               left: `${((rangeMin - globalMin) / (globalMax - globalMin || 1)) * 100}%`,
               right: `${100 - ((rangeMax - globalMin) / (globalMax - globalMin || 1)) * 100}%`,
@@ -185,7 +185,7 @@ function EpisodeLengthFilter({ episodes }: { episodes: EpisodeLengthInfo[] }) {
             onChange={(e) =>
               setRangeMin(Math.min(Number(e.target.value), rangeMax))
             }
-            className="absolute inset-0 w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-cyan-400 [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-cyan-400 [&::-moz-range-thumb]:cursor-pointer"
+            className="absolute inset-0 w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-accent [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-accent [&::-moz-range-thumb]:cursor-pointer"
           />
           <input
             type="range"
@@ -196,7 +196,7 @@ function EpisodeLengthFilter({ episodes }: { episodes: EpisodeLengthInfo[] }) {
             onChange={(e) =>
               setRangeMax(Math.max(Number(e.target.value), rangeMin))
             }
-            className="absolute inset-0 w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-cyan-400 [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-cyan-400 [&::-moz-range-thumb]:cursor-pointer"
+            className="absolute inset-0 w-full appearance-none bg-transparent pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-accent [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-accent [&::-moz-range-thumb]:cursor-pointer"
           />
         </div>
       </div>
@@ -254,7 +254,7 @@ function FlaggedIdsCopyBar({
   if (count === 0) return null;
 
   return (
-    <div className="bg-[var(--surface-1)]/60 rounded-lg p-4 border border-orange-500/30 space-y-3">
+    <div className="bg-[var(--surface-1)]/60 rounded-lg p-4 border border-rose-500/30 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-flag-fg">
           Flagged Episodes
