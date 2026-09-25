@@ -61,6 +61,15 @@ export const SimpleVideosPlayer = ({
 
   const hiddenSet = React.useMemo(() => new Set(hiddenVideos), [hiddenVideos]);
 
+  useEffect(() => {
+    if (!enlargedVideo) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setEnlargedVideo(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [enlargedVideo]);
+
   const firstVisibleIdx = videosInfo.findIndex(
     (video) => !hiddenSet.has(video.filename),
   );
@@ -347,83 +356,105 @@ export const SimpleVideosPlayer = ({
           if (hiddenVideos.includes(info.filename)) return null;
 
           const isEnlarged = enlargedVideo === info.filename;
+          const videoEl = videoEls[idx];
+          /// Size the enlarged box to the video's own aspect ratio, so object-contain never letterboxes
+          /// it away from the title bar.
+          const aspect =
+            videoEl && videoEl.videoHeight > 0
+              ? videoEl.videoWidth / videoEl.videoHeight
+              : 4 / 3;
 
           return (
             <div
               key={info.filename}
               className={`${
                 isEnlarged
-                  ? "z-40 fixed inset-0 bg-black bg-opacity-90 flex flex-col items-center justify-center"
+                  ? "z-40 fixed inset-0 bg-black/90 flex items-center justify-center"
                   : "max-w-96"
               }`}
+              onClick={
+                isEnlarged
+                  ? (e) => {
+                      if (e.target === e.currentTarget) setEnlargedVideo(null);
+                    }
+                  : undefined
+              }
             >
-              <p className="truncate w-full rounded-t-md bg-[var(--surface-1)] border border-b-0 border-white/5 px-2.5 py-1 text-[11px] text-slate-400 flex items-center justify-between gap-2">
-                <span className="truncate">{info.filename}</span>
-                <span className="flex gap-0.5 shrink-0">
-                  <button
-                    title={isEnlarged ? "Minimize" : "Enlarge"}
-                    className="p-1 rounded text-slate-500 hover:text-slate-200 hover:bg-white/5 transition-colors"
-                    onClick={() =>
-                      setEnlargedVideo(isEnlarged ? null : info.filename)
-                    }
-                  >
-                    {isEnlarged ? (
-                      <FaCompress size={10} />
-                    ) : (
-                      <FaExpand size={10} />
-                    )}
-                  </button>
-                  <button
-                    title="Hide Video"
-                    className="p-1 rounded text-slate-500 hover:text-slate-200 hover:bg-white/5 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
-                    onClick={() => {
-                      setHiddenVideos((prev) => [...prev, info.filename]);
-                      // If the user hid the camera that was enlarged, clear
-                      // the enlarged state too — otherwise it stays pointed
-                      // at the now-hidden filename and pops back to fullscreen
-                      // the moment the user un-hides it.
-                      if (enlargedVideo === info.filename) {
-                        setEnlargedVideo(null);
+              {/* Shrink-wraps the enlarged video so the title bar matches its width. */}
+              <div className={isEnlarged ? "w-fit" : undefined}>
+                <p className="truncate w-full rounded-t-md bg-[var(--surface-1)] border border-b-0 border-white/5 px-2.5 py-1 text-[11px] text-slate-400 flex items-center justify-between gap-2">
+                  <span className="truncate">{info.filename}</span>
+                  <span className="flex gap-0.5 shrink-0">
+                    <button
+                      title={isEnlarged ? "Minimize (Esc)" : "Enlarge"}
+                      className="p-1 rounded text-slate-500 hover:text-slate-200 hover:bg-white/5 transition-colors"
+                      onClick={() =>
+                        setEnlargedVideo(isEnlarged ? null : info.filename)
                       }
-                    }}
-                    disabled={
-                      videosInfo.filter(
-                        (v) => !hiddenVideos.includes(v.filename),
-                      ).length === 1
+                    >
+                      {isEnlarged ? (
+                        <FaCompress size={10} />
+                      ) : (
+                        <FaExpand size={10} />
+                      )}
+                    </button>
+                    <button
+                      title="Hide Video"
+                      className="p-1 rounded text-slate-500 hover:text-slate-200 hover:bg-white/5 transition-colors disabled:opacity-30 disabled:hover:bg-transparent"
+                      onClick={() => {
+                        setHiddenVideos((prev) => [...prev, info.filename]);
+                        // If the user hid the camera that was enlarged, clear
+                        // the enlarged state too — otherwise it stays pointed
+                        // at the now-hidden filename and pops back to fullscreen
+                        // the moment the user un-hides it.
+                        if (enlargedVideo === info.filename) {
+                          setEnlargedVideo(null);
+                        }
+                      }}
+                      disabled={
+                        videosInfo.filter(
+                          (v) => !hiddenVideos.includes(v.filename),
+                        ).length === 1
+                      }
+                    >
+                      <FaTimes size={10} />
+                    </button>
+                  </span>
+                </p>
+                <div className="relative w-full">
+                  <video
+                    ref={videoRefCallbacksRef.current[idx]}
+                    className={`object-contain ${
+                      isEnlarged ? "block h-auto" : "w-full"
+                    } ${info.isGrayscale ? "opacity-0" : ""}`}
+                    style={
+                      isEnlarged
+                        ? { width: `min(90vw, calc(85vh * ${aspect}))` }
+                        : undefined
                     }
+                    muted
+                    preload="auto"
+                    crossOrigin="anonymous"
                   >
-                    <FaTimes size={10} />
-                  </button>
-                </span>
-              </p>
-              <div className="relative w-full">
-                <video
-                  ref={videoRefCallbacksRef.current[idx]}
-                  className={`w-full object-contain ${
-                    isEnlarged ? "max-h-[90vh] max-w-[90vw]" : ""
-                  } ${info.isGrayscale ? "opacity-0" : ""}`}
-                  muted
-                  preload="auto"
-                  crossOrigin="anonymous"
-                >
-                  <source src={proxyHfUrl(info.url)} type="video/mp4" />
-                  Your browser does not support the video tag.
-                </video>
-                {/* Grayscale feeds: the hidden <video> above still decodes and
+                    <source src={proxyHfUrl(info.url)} type="video/mp4" />
+                    Your browser does not support the video tag.
+                  </video>
+                  {/* Grayscale feeds: the hidden <video> above still decodes and
                     drives timing; this canvas paints its frames recolored with
                     the viridis colormap. */}
-                <ColormappedVideo
-                  videoEl={videoEls[idx] ?? null}
-                  active={info.isGrayscale}
-                  range={info.colormapRange}
-                />
-                {/* VQA bbox/keypoint overlay. Reads atoms + drawMode from
+                  <ColormappedVideo
+                    videoEl={videoEls[idx] ?? null}
+                    active={info.isGrayscale}
+                    range={info.colormapRange}
+                  />
+                  {/* VQA bbox/keypoint overlay. Reads atoms + drawMode from
                     AnnotationsContext; pointer-events fall through when
                     not in draw mode so video controls remain usable. */}
-                <VideoOverlayCanvas
-                  videoEl={videoEls[idx] ?? null}
-                  cameraKey={info.filename}
-                />
+                  <VideoOverlayCanvas
+                    videoEl={videoEls[idx] ?? null}
+                    cameraKey={info.filename}
+                  />
+                </div>
               </div>
             </div>
           );
