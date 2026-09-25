@@ -5,6 +5,7 @@ import React, {
   useState,
   useCallback,
   useEffect,
+  useMemo,
 } from "react";
 
 // `external` (default) — user-initiated seek (slider drag, chart click,
@@ -17,14 +18,8 @@ import React, {
 //                        report, not a command.
 type TimeUpdateSource = "external" | "video";
 
-type TimeContextType = {
-  currentTime: number;
+type TimeControls = {
   seek: (t: number, source?: TimeUpdateSource) => void;
-  // Monotonically increasing counter that bumps on every `external` seek.
-  // Sync effects compare the current value against a stored ref to detect
-  // user-initiated seeks without relying on heuristics like "did the time
-  // jump by more than 0.3s".
-  externalSeekVersion: number;
   subscribe: (cb: (t: number) => void) => () => void;
   isPlaying: boolean;
   setIsPlaying: React.Dispatch<React.SetStateAction<boolean>>;
@@ -32,11 +27,34 @@ type TimeContextType = {
   setDuration: React.Dispatch<React.SetStateAction<number>>;
 };
 
+type TimeContextType = TimeControls & {
+  currentTime: number;
+  // Monotonically increasing counter that bumps on every `external` seek.
+  // Sync effects compare the current value against a stored ref to detect
+  // user-initiated seeks without relying on heuristics like "did the time
+  // jump by more than 0.3s".
+  externalSeekVersion: number;
+};
+
+const TimeControlsContext = createContext<TimeControls | undefined>(undefined);
 const TimeContext = createContext<TimeContextType | undefined>(undefined);
 
+/** Everything, including `currentTime`: re-renders on every playback tick. */
 export const useTime = () => {
   const ctx = useContext(TimeContext);
   if (!ctx) throw new Error("useTime must be used within a TimeProvider");
+  return ctx;
+};
+
+/**
+ * Seeking and play state without `currentTime`. A component that only seeks or toggles playback
+ * should use this: reading `useTime()` at all re-renders it on every playback tick, whichever
+ * fields it destructures.
+ */
+export const useTimeControls = () => {
+  const ctx = useContext(TimeControlsContext);
+  if (!ctx)
+    throw new Error("useTimeControls must be used within a TimeProvider");
   return ctx;
 };
 
@@ -106,20 +124,25 @@ export const TimeProvider: React.FC<{
     return () => listeners.current.delete(cb);
   }, []);
 
+  const controls = useMemo(
+    () => ({
+      seek: updateTime,
+      subscribe,
+      isPlaying,
+      setIsPlaying,
+      duration,
+      setDuration,
+    }),
+    [updateTime, subscribe, isPlaying, duration],
+  );
+  const value = useMemo(
+    () => ({ ...controls, currentTime, externalSeekVersion }),
+    [controls, currentTime, externalSeekVersion],
+  );
+
   return (
-    <TimeContext.Provider
-      value={{
-        currentTime,
-        seek: updateTime,
-        externalSeekVersion,
-        subscribe,
-        isPlaying,
-        setIsPlaying,
-        duration,
-        setDuration,
-      }}
-    >
-      {children}
-    </TimeContext.Provider>
+    <TimeControlsContext.Provider value={controls}>
+      <TimeContext.Provider value={value}>{children}</TimeContext.Provider>
+    </TimeControlsContext.Provider>
   );
 };
