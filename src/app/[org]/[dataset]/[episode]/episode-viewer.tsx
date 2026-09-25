@@ -18,6 +18,7 @@ import StatsPanel from "@/components/stats-panel";
 import OverviewPanel from "@/components/overview-panel";
 import Loading from "@/components/loading-component";
 import HfAuthButton from "@/components/hf-auth-button";
+import { EpisodeHeader } from "@/components/ui";
 import { hasURDFSupport } from "@/lib/so101-robot";
 import {
   computeColumnMinMax,
@@ -638,35 +639,10 @@ function EpisodeViewerInner({
 
           {activeTab === "episodes" && (
             <>
-              <div className="flex items-center gap-4 mb-2">
-                <a
-                  href="https://github.com/huggingface/lerobot"
-                  target="_blank"
-                  className="block shrink-0 opacity-90 hover:opacity-100 transition-opacity"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="https://github.com/huggingface/lerobot/raw/main/media/readme/lerobot-logo-thumbnail.png"
-                    alt="LeRobot Logo"
-                    className="w-24"
-                  />
-                </a>
-
-                <div className="min-w-0">
-                  <a
-                    href={`https://huggingface.co/datasets/${datasetInfo.repoId}`}
-                    target="_blank"
-                    className="text-slate-200 hover:text-cyan-300 transition-colors"
-                  >
-                    <p className="text-base font-medium truncate">
-                      {datasetInfo.repoId}
-                    </p>
-                  </a>
-                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mt-0.5 tabular">
-                    Episode · {episodeId}
-                  </p>
-                </div>
-              </div>
+              <EpisodeHeader
+                repoId={datasetInfo.repoId}
+                episodeId={episodeId}
+              />
 
               {/* Videos */}
               {videosInfo.length > 0 && (
@@ -708,14 +684,10 @@ function EpisodeViewerInner({
 
           {activeTab === "annotations" && (
             <div className="annotations-skin flex flex-col gap-4">
-              <div className="flex items-center gap-3">
-                <p className="text-base font-medium text-slate-200 truncate">
-                  {datasetInfo.repoId}
-                </p>
-                <p className="text-[10px] uppercase tracking-wide text-slate-500 tabular">
-                  Episode · {episodeId}
-                </p>
-              </div>
+              <EpisodeHeader
+                repoId={datasetInfo.repoId}
+                episodeId={episodeId}
+              />
               {videosInfo.length > 0 && (
                 <SimpleVideosPlayer
                   videosInfo={videosInfo}
