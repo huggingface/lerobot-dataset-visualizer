@@ -606,14 +606,14 @@ function EpisodeViewerInner({
       {/* Top tab bar */}
       <div className="flex items-center border-b border-white/5 bg-[var(--surface-0)] shrink-0">
         {renderTab("episodes", "Episodes")}
+        {hasURDFSupport(datasetInfo.robot_type) &&
+          datasetInfo.codebase_version >= "v3.0" &&
+          renderTab("urdf", "3D Replay")}
         {renderTab(
           "annotations",
           "Annotations",
           "Edit subtask / plan / memory / interjection / VQA atoms (lerobot v3.1 schema)",
         )}
-        {hasURDFSupport(datasetInfo.robot_type) &&
-          datasetInfo.codebase_version >= "v3.0" &&
-          renderTab("urdf", "3D Replay")}
         {renderTab("statistics", "Statistics")}
         {renderTab("filtering", "Filtering")}
         {renderTab("frames", "Frames")}
