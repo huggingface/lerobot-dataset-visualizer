@@ -712,7 +712,7 @@ function EpisodeViewerInner({
     <div className="flex flex-col h-screen max-h-screen bg-[var(--bg)] text-[var(--text-primary)]">
       <UrlTimeSync />
       {/* Top tab bar */}
-      <div className="relative z-20 flex items-center border-b border-line-subtle bg-[var(--surface-0)] shrink-0">
+      <div className="relative z-30 flex items-center border-b border-line-subtle bg-[var(--surface-0)] shrink-0">
         {renderTab("episodes", "Episodes")}
         {urdfSupported && renderTab("urdf", "3D Replay")}
         <AdvancedTabsMenu activeTab={activeTab} onSelect={handleTabChange} />
