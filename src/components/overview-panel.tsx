@@ -78,8 +78,8 @@ function FrameThumbnail({
           onClick={() => toggle(info.episodeIndex)}
           className={`absolute top-1 right-1 p-1 rounded transition-opacity ${
             isFlagged
-              ? "opacity-100 text-cyan-300"
-              : "opacity-0 group-hover:opacity-100 text-slate-400 hover:text-cyan-300"
+              ? "opacity-100 text-orange-400 hover:text-orange-300"
+              : "opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-200"
           }`}
           title={isFlagged ? "Unflag episode" : "Flag episode"}
         >
@@ -100,7 +100,7 @@ function FrameThumbnail({
         </button>
       </div>
       <p
-        className={`text-xs mt-1 tabular-nums ${isFlagged ? "text-cyan-300" : "text-slate-400"}`}
+        className={`text-xs mt-1 tabular-nums ${isFlagged ? "text-orange-300" : "text-slate-400"}`}
       >
         ep {info.episodeIndex}
         {isFlagged ? " ⚑" : ""}
@@ -228,7 +228,7 @@ export default function OverviewPanel({
               }}
               className={`text-xs px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 ${
                 flaggedOnly
-                  ? "bg-cyan-400/15 text-cyan-300 border border-cyan-400/40"
+                  ? "bg-orange-500/15 text-orange-300 border border-orange-500/30"
                   : "text-slate-400 hover:text-slate-200 border border-white/10"
               }`}
             >
