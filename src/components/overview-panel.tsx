@@ -2,19 +2,23 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import type {
+  CameraInfo,
   EpisodeFrameInfo,
   EpisodeFramesData,
 } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import { useFlaggedEpisodes } from "@/context/flagged-episodes-context";
+import { proxyHfUrl } from "@/utils/auth";
 
 const PAGE_SIZE = 48;
 
 function FrameThumbnail({
   info,
   showLast,
+  aspectRatio,
 }: {
   info: EpisodeFrameInfo;
   showLast: boolean;
+  aspectRatio: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -62,11 +66,14 @@ function FrameThumbnail({
 
   return (
     <div ref={containerRef} className="flex flex-col items-center">
-      <div className="w-full aspect-video bg-[var(--surface-1)] rounded overflow-hidden relative group">
+      <div
+        className="w-full bg-[var(--surface-1)] rounded overflow-hidden relative group"
+        style={{ aspectRatio }}
+      >
         {inView ? (
           <video
             ref={videoRef}
-            src={info.videoUrl}
+            src={proxyHfUrl(info.videoUrl)}
             preload="metadata"
             muted
             className="w-full h-full object-cover"
@@ -111,6 +118,7 @@ function FrameThumbnail({
 
 interface OverviewPanelProps {
   data: EpisodeFramesData | null;
+  cameras: CameraInfo[];
   loading: boolean;
   flaggedOnly?: boolean;
   onFlaggedOnlyChange?: (v: boolean) => void;
@@ -118,6 +126,7 @@ interface OverviewPanelProps {
 
 export default function OverviewPanel({
   data,
+  cameras,
   loading,
   flaggedOnly = false,
   onFlaggedOnlyChange,
@@ -191,15 +200,22 @@ export default function OverviewPanel({
   }
 
   const totalPages = Math.ceil(frames.length / PAGE_SIZE);
+  /// The camera's own shape: a fixed 16:9 box with object-cover cropped 4:3 frames top and bottom.
+  const camera = cameras.find((c) => c.name === selectedCamera);
+  const aspectRatio =
+    camera && camera.height > 0 ? camera.width / camera.height : 16 / 9;
   const pageFrames = frames.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   return (
     <div className="max-w-7xl mx-auto py-6 space-y-5">
-      <p className="text-sm text-slate-500">
-        Use first/last frame views to spot episodes with bad end states or other
-        anomalies. Hover over a thumbnail and click the flag icon to mark
-        episodes with wrong outcomes for review.
-      </p>
+      <div>
+        <h2 className="text-xl font-bold text-slate-100">Frames</h2>
+        <p className="text-sm text-slate-400 mt-1">
+          Use first/last frame views to spot episodes with bad end states or
+          other anomalies. Hover over a thumbnail and click the flag icon to
+          mark episodes with wrong outcomes for review.
+        </p>
+      </div>
 
       {/* Controls row */}
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -308,6 +324,7 @@ export default function OverviewPanel({
             key={`${selectedCamera}-${info.episodeIndex}`}
             info={info}
             showLast={showLast}
+            aspectRatio={aspectRatio}
           />
         ))}
       </div>
