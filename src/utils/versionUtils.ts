@@ -183,11 +183,6 @@ export async function getDatasetVersionAndInfo(
   return { version, info };
 }
 
-export async function getDatasetVersion(repoId: string): Promise<string> {
-  const { version } = await getDatasetVersionAndInfo(repoId);
-  return version;
-}
-
 export function buildVersionedUrl(
   repoId: string,
   version: string,

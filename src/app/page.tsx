@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useRef, useState, useCallback, Suspense } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { authHeaders } from "@/utils/auth";
@@ -307,8 +306,10 @@ function HomeInner() {
         </div>
 
         {/* Explore CTA */}
-        <Link
-          href="/explore"
+        <a
+          href="https://huggingface.co/datasets?library=library:lerobot"
+          target="_blank"
+          rel="noopener noreferrer"
           className="inline-flex items-center gap-2 px-6 py-3 mt-8 rounded-md bg-cyan-500/90 backdrop-blur-sm text-white font-semibold text-lg shadow-lg hover:bg-cyan-400 active:scale-95 transition-all"
         >
           Explore Open Datasets
@@ -326,7 +327,7 @@ function HomeInner() {
               d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"
             />
           </svg>
-        </Link>
+        </a>
       </div>
     </div>
   );
