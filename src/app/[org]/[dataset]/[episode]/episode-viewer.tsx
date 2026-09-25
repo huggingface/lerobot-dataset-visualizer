@@ -110,6 +110,113 @@ function UrlTimeSync() {
 // component type on every parent render — and the parent re-renders ~12.5×/s
 // during playback because it consumes `currentTime` from useTime. React
 // would unmount and remount every tab on every tick.
+/** Analysis tabs, grouped under "Advanced" so the bar leads with Episodes and 3D Replay. */
+const ADVANCED_TABS: { tab: ActiveTab; label: string; title?: string }[] = [
+  {
+    tab: "annotations",
+    label: "Annotations",
+    title:
+      "Edit subtask / plan / memory / interjection / VQA atoms (lerobot v3.1 schema)",
+  },
+  { tab: "statistics", label: "Statistics" },
+  { tab: "filtering", label: "Filtering" },
+  { tab: "frames", label: "Frames" },
+  { tab: "insights", label: "Action Insights" },
+  {
+    tab: "doctor",
+    label: "Doctor",
+    title: "Dataset quality diagnostics (powered by lerobot-doctor)",
+  },
+];
+
+function AdvancedTabsMenu({
+  activeTab,
+  onSelect,
+}: {
+  activeTab: ActiveTab;
+  onSelect: (tab: ActiveTab) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const active = ADVANCED_TABS.find((t) => t.tab === activeTab);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        data-active={active ? true : undefined}
+        className={`relative flex items-center gap-1.5 whitespace-nowrap px-3 lg:px-5 py-3 text-xs font-medium tracking-wide uppercase transition-colors ${
+          active ? "text-cyan-300" : "text-slate-400 hover:text-slate-100"
+        }`}
+      >
+        {active ? `Advanced · ${active.label}` : "Advanced"}
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          className={`transition-transform ${open ? "rotate-180" : ""}`}
+          aria-hidden="true"
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+        <span
+          className={`pointer-events-none absolute bottom-0 left-3 right-3 h-px transition-all ${
+            active
+              ? "bg-cyan-400 shadow-[0_0_8px_rgba(56,189,248,0.55)]"
+              : "bg-transparent"
+          }`}
+        />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute left-0 top-full z-50 mt-1 min-w-[12rem] panel-raised bg-[var(--surface-1)] p-1.5 shadow-xl animate-menu-pop [transform-origin:top_left]"
+        >
+          {ADVANCED_TABS.map(({ tab, label, title }) => (
+            <button
+              key={tab}
+              role="menuitem"
+              title={title}
+              onClick={() => {
+                onSelect(tab);
+                setOpen(false);
+              }}
+              className={`block w-full rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${
+                tab === activeTab
+                  ? "bg-cyan-400/10 text-cyan-300"
+                  : "text-slate-300 hover:bg-white/5 hover:text-slate-100"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TabButton({
   active,
   onClick,
@@ -303,12 +410,6 @@ function EpisodeViewerInner({
     }
     return "episodes";
   });
-  const tabBarRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    tabBarRef.current
-      ?.querySelector("[data-active]")
-      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [activeTab]);
   const isLoading = activeTab === "episodes" && (!videosReady || !chartsReady);
 
   useEffect(() => {
@@ -608,26 +709,10 @@ function EpisodeViewerInner({
     <div className="flex flex-col h-screen max-h-screen bg-[var(--bg)] text-[var(--text-primary)]">
       <UrlTimeSync />
       {/* Top tab bar */}
-      <div
-        ref={tabBarRef}
-        className="flex items-center border-b border-white/5 bg-[var(--surface-0)] shrink-0 overflow-x-auto [scrollbar-width:none]"
-      >
+      <div className="relative z-20 flex items-center border-b border-white/5 bg-[var(--surface-0)] shrink-0">
         {renderTab("episodes", "Episodes")}
         {urdfSupported && renderTab("urdf", "3D Replay")}
-        {renderTab(
-          "annotations",
-          "Annotations",
-          "Edit subtask / plan / memory / interjection / VQA atoms (lerobot v3.1 schema)",
-        )}
-        {renderTab("statistics", "Statistics")}
-        {renderTab("filtering", "Filtering")}
-        {renderTab("frames", "Frames")}
-        {renderTab("insights", "Action Insights")}
-        {renderTab(
-          "doctor",
-          "Doctor",
-          "Dataset quality diagnostics (powered by lerobot-doctor)",
-        )}
+        <AdvancedTabsMenu activeTab={activeTab} onSelect={handleTabChange} />
         <div className="ml-auto shrink-0 pl-2">
           <HfAuthButton variant="tab" />
         </div>
