@@ -1348,12 +1348,17 @@ export async function loadCrossEpisodeActionVariance(
   while (typeof names === "object" && names !== null && !Array.isArray(names)) {
     names = Object.values(names)[0];
   }
-  const actionNames = Array.isArray(names)
-    ? (names as string[]).map((n) => `${actionKey}${SERIES_NAME_DELIMITER}${n}`)
-    : Array.from(
-        { length: actionDim },
-        (_, i) => `${actionKey}${SERIES_NAME_DELIMITER}${i}`,
-      );
+  /// Some datasets list fewer names than the action has components (libero declares ["actions"]
+  /// for a 7-wide action); index those instead of leaving components unnamed.
+  const actionNames =
+    Array.isArray(names) && names.length === actionDim
+      ? (names as string[]).map(
+          (n) => `${actionKey}${SERIES_NAME_DELIMITER}${n}`,
+        )
+      : Array.from(
+          { length: actionDim },
+          (_, i) => `${actionKey}${SERIES_NAME_DELIMITER}${i}`,
+        );
 
   // State feature for alignment computation
   const stateEntry = Object.entries(info.features).find(
