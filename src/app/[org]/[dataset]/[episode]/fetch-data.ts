@@ -22,8 +22,8 @@ import {
   depthEncodingFromFeature,
 } from "@/utils/colormaps";
 import type { VideoInfo, AdjacentEpisodeVideos } from "@/types";
-import { LeRobotDataset } from "@huggingface/lerobot";
-import type { LeRobotEpisode } from "@huggingface/lerobot";
+import { LeRobotDataset, parseInfo } from "@huggingface/lerobot";
+import type { LeRobotEpisode, LeRobotEpisodeData } from "@huggingface/lerobot";
 import { authHeaders } from "@/utils/auth";
 
 const SERIES_NAME_DELIMITER = CHART_CONFIG.SERIES_NAME_DELIMITER;
@@ -98,8 +98,6 @@ function toEpisodeMetadataV3(episode: LeRobotEpisode): EpisodeMetadataV3 {
     episode_index: episode.index,
     data_chunk_index: 0,
     data_file_index: 0,
-    dataset_from_index: episode.data.fromRow,
-    dataset_to_index: episode.data.toRow,
     /// Unused downstream: the package resolves the video URL itself.
     video_chunk_index: 0,
     video_file_index: 0,
@@ -190,8 +188,6 @@ type EpisodeMetadataV3 = {
   episode_index: number;
   data_chunk_index: number;
   data_file_index: number;
-  dataset_from_index: number;
-  dataset_to_index: number;
   video_chunk_index: number;
   video_file_index: number;
   video_from_timestamp: number;
@@ -450,10 +446,10 @@ export async function getEpisodeData(
       }
     }
 
-    // Extract camera resolutions from features
-    const cameras: CameraInfo[] = Object.entries(rawInfo.features)
-      .filter(([, f]) => f.dtype === "video" && f.shape.length >= 2)
-      .map(([name, f]) => ({ name, height: f.shape[0], width: f.shape[1] }));
+    // The package reads sizes from video info first, so channel-first shapes ([3, H, W]) resolve too.
+    const cameras: CameraInfo[] = parseInfo(
+      JSON.stringify(rawInfo),
+    ).cameras.map(({ key, width, height }) => ({ name: key, width, height }));
 
     result.datasetInfo = {
       ...result.datasetInfo,
@@ -805,7 +801,7 @@ async function getEpisodeDataV3(
     version,
     info,
     episodeMetadata,
-    leRobotEpisode.data.url,
+    leRobotEpisode.data,
   );
 
   const duration = episodeMetadata.length
@@ -833,7 +829,7 @@ async function loadEpisodeDataV3(
   version: string,
   info: DatasetMetadata,
   episodeMetadata: EpisodeMetadataV3,
-  dataUrl: string,
+  data: LeRobotEpisodeData | undefined,
 ): Promise<{
   chartDataGroups: ChartRow[][];
   flatChartData: Record<string, number>[];
@@ -843,7 +839,8 @@ async function loadEpisodeDataV3(
   frameTimestamps?: number[];
 }> {
   try {
-    const parquetFile = await fetchParquetFile(dataUrl);
+    if (!data) throw new Error("Episode has no data rows");
+    const parquetFile = await fetchParquetFile(data.url);
     const v3DataColumns = Array.from(
       new Set([
         "index",
@@ -878,42 +875,11 @@ async function loadEpisodeDataV3(
           .map(([key]) => key),
       ]),
     );
-    // Extract the episode-specific data slice
-    const fromIndex = bigIntToNumber(episodeMetadata.dataset_from_index, 0);
-    let toIndex = bigIntToNumber(episodeMetadata.dataset_to_index, fromIndex);
-    if (toIndex <= fromIndex) {
-      toIndex = fromIndex + 1;
-    }
-
-    let episodeRows: Record<string, unknown>[] = [];
-    let usedRowRange = false;
-
-    try {
-      const indexPreview = await readParquetAsObjects(parquetFile, ["index"], {
-        rowStart: 0,
-        rowEnd: 1,
-      });
-      const startIndexValue = indexPreview[0]?.index;
-      if (startIndexValue !== undefined && startIndexValue !== null) {
-        const fileStartIndex =
-          typeof startIndexValue === "bigint"
-            ? Number(startIndexValue)
-            : Number(startIndexValue);
-        const localFromIndex = Math.max(0, fromIndex - fileStartIndex);
-        const localToIndex = Math.max(localFromIndex, toIndex - fileStartIndex);
-        episodeRows = await readParquetAsObjects(parquetFile, v3DataColumns, {
-          rowStart: localFromIndex,
-          rowEnd: localToIndex,
-        });
-        usedRowRange = true;
-      }
-    } catch {
-      // Fall back to full reads if row-range selection fails.
-    }
-
-    if (!usedRowRange) {
-      episodeRows = await readParquetAsObjects(parquetFile, v3DataColumns);
-    }
+    // `fromRow`/`toRow` are offsets inside `data.url`, not dataset-wide frame indexes.
+    const episodeRows = await readParquetAsObjects(parquetFile, v3DataColumns, {
+      rowStart: data.fromRow,
+      rowEnd: data.toRow,
+    });
 
     // Extract frame timestamps from the *full* (non-sampled) row set so the
     // annotations editor can snap to the exact frame the user is on.
@@ -1657,6 +1623,7 @@ export async function loadCrossEpisodeActionVariance(
       repoId,
       info.total_episodes,
     )) {
+      if (!episode.data) continue;
       allEps.push({
         index: episode.index,
         dataUrl: episode.data.url,
@@ -1713,19 +1680,14 @@ export async function loadCrossEpisodeActionVariance(
           const buf = await fetchParquetFile(ep0.dataUrl ?? "");
           const rows = await readParquetAsObjects(
             buf,
-            stateKey ? ["index", actionKey, stateKey] : ["index", actionKey],
+            stateKey ? [actionKey, stateKey] : [actionKey],
           );
-          const fileStart =
-            rows.length > 0 && rows[0].index !== undefined
-              ? Number(rows[0].index)
-              : 0;
 
           for (const ep of eps) {
-            const localFrom = Math.max(0, ep.from - fileStart);
-            const localTo = Math.min(rows.length, ep.to - fileStart);
+            const localTo = Math.min(rows.length, ep.to);
             const actions: number[][] = [];
             const states: number[][] = [];
-            for (let r = localFrom; r < localTo; r++) {
+            for (let r = ep.from; r < localTo; r++) {
               const raw = rows[r]?.[actionKey];
               if (Array.isArray(raw)) actions.push(raw.map(Number));
               if (stateKey) {
@@ -2290,7 +2252,7 @@ export async function loadEpisodeFlatChartData(
     version,
     info,
     toEpisodeMetadataV3(episode),
-    episode.data.url,
+    episode.data,
   );
   return flatChartData;
 }
