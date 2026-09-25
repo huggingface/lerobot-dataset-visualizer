@@ -22,7 +22,7 @@ import { hasURDFSupport } from "@/lib/so101-robot";
 import {
   computeColumnMinMax,
   getEpisodeDataSafe,
-  loadAllEpisodeLengthsV3,
+  loadAllEpisodeLengths,
   loadAllEpisodeFrameInfo,
   loadCrossEpisodeActionVariance,
   type EpisodeData,
@@ -361,10 +361,7 @@ function EpisodeViewerInner({
     if (org && dataset) {
       const repoId = `${org}/${dataset}`;
       getDatasetVersionAndInfo(repoId)
-        .then(({ version, info }) => {
-          if (version !== "v3.0") return null;
-          return loadAllEpisodeLengthsV3(repoId, version, info.fps);
-        })
+        .then(({ info }) => loadAllEpisodeLengths(repoId, info.fps))
         .then((result) => {
           if (!mountedRef.current) return;
           setEpisodeLengthStats(result);
