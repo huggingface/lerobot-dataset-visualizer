@@ -31,19 +31,6 @@ export interface DatasetMetadata {
   >;
 }
 
-export async function fetchJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, {
-    cache: "no-store",
-    headers: authHeaders(),
-  });
-  if (!res.ok) {
-    throw new Error(
-      `Failed to fetch JSON ${url}: ${res.status} ${res.statusText}`,
-    );
-  }
-  return res.json() as Promise<T>;
-}
-
 export function formatStringWithVars(
   format: string,
   vars: Record<string, string | number>,
