@@ -5,6 +5,7 @@ import type {
   EpisodeLengthStats,
   CameraInfo,
 } from "@/app/[org]/[dataset]/[episode]/fetch-data";
+import { InlineLoading, PageHeader, StatCard } from "@/components/ui";
 
 interface StatsPanelProps {
   datasetInfo: DatasetDisplayInfo;
@@ -108,15 +109,6 @@ function EpisodeLengthHistogram({
   );
 }
 
-function Card({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="bg-[var(--surface-1)]/60 rounded-lg p-4 border border-white/10">
-      <p className="text-xs text-slate-400 uppercase tracking-wide">{label}</p>
-      <p className="text-xl font-bold tabular-nums mt-1">{value}</p>
-    </div>
-  );
-}
-
 function StatsPanel({
   datasetInfo,
   episodeLengthStats,
@@ -125,34 +117,36 @@ function StatsPanel({
   const els = episodeLengthStats;
 
   return (
-    <div className="w-full max-w-4xl mx-auto py-6 space-y-8">
-      <div>
-        <h2 className="text-xl text-slate-100">
-          <span className="font-bold">Dataset Statistics:</span>{" "}
-          <span className="font-normal text-slate-400">
-            {datasetInfo.repoId}
-          </span>
-        </h2>
-      </div>
+    <div className="w-full max-w-5xl mx-auto py-6 space-y-6">
+      <PageHeader
+        title="Statistics"
+        description={`Size, cameras and episode lengths of ${datasetInfo.repoId}.`}
+      />
 
       {/* Overview cards */}
       <div className="grid grid-cols-3 gap-4">
-        <Card label="Robot Type" value={datasetInfo.robot_type ?? "unknown"} />
-        <Card label="Dataset Version" value={datasetInfo.codebase_version} />
-        <Card label="Tasks" value={datasetInfo.total_tasks} />
+        <StatCard
+          label="Robot Type"
+          value={datasetInfo.robot_type ?? "unknown"}
+        />
+        <StatCard
+          label="Dataset Version"
+          value={datasetInfo.codebase_version}
+        />
+        <StatCard label="Tasks" value={datasetInfo.total_tasks} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card
+        <StatCard
           label="Total Frames"
           value={datasetInfo.total_frames.toLocaleString()}
         />
-        <Card
+        <StatCard
           label="Total Episodes"
           value={datasetInfo.total_episodes.toLocaleString()}
         />
-        <Card label="FPS" value={datasetInfo.fps} />
-        <Card
+        <StatCard label="FPS" value={datasetInfo.fps} />
+        <StatCard
           label="Total Recording Time"
           value={formatTotalTime(datasetInfo.total_frames, datasetInfo.fps)}
         />
@@ -166,46 +160,17 @@ function StatsPanel({
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {datasetInfo.cameras.map((cam: CameraInfo) => (
-              <div
+              <StatCard
                 key={cam.name}
-                className="bg-[var(--surface-0)]/50 rounded-md p-3"
-              >
-                <p
-                  className="text-xs text-slate-400 mb-1 truncate"
-                  title={cam.name}
-                >
-                  {cam.name}
-                </p>
-                <p className="text-base font-bold tabular-nums">
-                  {cam.width}×{cam.height}
-                </p>
-              </div>
+                label={cam.name}
+                value={`${cam.width}×${cam.height}`}
+              />
             ))}
           </div>
         </div>
       )}
 
-      {/* Loading spinner for async stats */}
-      {loading && (
-        <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
-          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-            />
-          </svg>
-          Computing episode statistics…
-        </div>
-      )}
+      {loading && <InlineLoading label="Computing episode statistics…" />}
 
       {/* Episode length section */}
       {els && (
@@ -215,21 +180,24 @@ function StatsPanel({
               Episode Lengths
             </h3>
             <div className="grid grid-cols-3 md:grid-cols-5 gap-4 mb-4">
-              <Card
+              <StatCard
                 label="Shortest"
                 value={formatSeconds(els.shortestEpisodes[0]?.lengthSeconds)}
               />
               {/* longestEpisodes is sorted longest first. */}
-              <Card
+              <StatCard
                 label="Longest"
                 value={formatSeconds(els.longestEpisodes[0]?.lengthSeconds)}
               />
-              <Card label="Mean" value={formatSeconds(els.meanEpisodeLength)} />
-              <Card
+              <StatCard
+                label="Mean"
+                value={formatSeconds(els.meanEpisodeLength)}
+              />
+              <StatCard
                 label="Median"
                 value={formatSeconds(els.medianEpisodeLength)}
               />
-              <Card
+              <StatCard
                 label="Std Dev"
                 value={formatSeconds(els.stdEpisodeLength)}
               />
