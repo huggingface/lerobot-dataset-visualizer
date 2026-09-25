@@ -60,15 +60,17 @@ function isKeyboardFocusInsideTextEntry(target: EventTarget | null): boolean {
   );
 }
 
-type ActiveTab =
-  | "episodes"
-  | "annotations"
-  | "statistics"
-  | "frames"
-  | "insights"
-  | "filtering"
-  | "doctor"
-  | "urdf";
+const TABS = [
+  "episodes",
+  "annotations",
+  "statistics",
+  "frames",
+  "insights",
+  "filtering",
+  "doctor",
+  "urdf",
+] as const;
+type ActiveTab = (typeof TABS)[number];
 
 // Subscribes to `currentTime` so its parent doesn't have to. Keeping this
 // in a leaf component means the throttled time ticks (~12.5/s during
@@ -122,7 +124,8 @@ function TabButton({
     <button
       onClick={onClick}
       title={title}
-      className={`relative px-5 py-3 text-xs font-medium tracking-wide uppercase transition-colors ${
+      data-active={active || undefined}
+      className={`relative shrink-0 whitespace-nowrap px-3 lg:px-5 py-3 text-xs font-medium tracking-wide uppercase transition-colors ${
         active ? "text-cyan-300" : "text-slate-400 hover:text-slate-100"
       }`}
     >
@@ -257,29 +260,32 @@ function EpisodeViewerInner({
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const urdfSupported =
+    hasURDFSupport(datasetInfo.robot_type) &&
+    datasetInfo.codebase_version >= "v3.0";
+
   // Tab state & lazy stats — read sessionStorage in the initializer so the
   // correct tab renders on the very first frame (no post-mount flash).
   // Safe because EpisodeViewerInner only mounts client-side (behind a loading gate).
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     if (typeof window !== "undefined") {
       const stored = sessionStorage.getItem("activeTab");
+      /// A tab saved on another dataset may not exist here (3D Replay needs a supported robot).
       if (
-        stored &&
-        [
-          "episodes",
-          "annotations",
-          "statistics",
-          "frames",
-          "insights",
-          "filtering",
-          "urdf",
-        ].includes(stored)
+        TABS.includes(stored as ActiveTab) &&
+        (stored !== "urdf" || urdfSupported)
       ) {
         return stored as ActiveTab;
       }
     }
     return "episodes";
   });
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    tabBarRef.current
+      ?.querySelector("[data-active]")
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeTab]);
   const isLoading = activeTab === "episodes" && (!videosReady || !chartsReady);
 
   useEffect(() => {
@@ -333,13 +339,10 @@ function EpisodeViewerInner({
   // Eagerly load the URDFViewer bundle + warm the STL geometry cache while
   // the user is on the Episodes tab, so the 3D Replay tab opens faster.
   useEffect(() => {
-    if (
-      hasURDFSupport(datasetInfo.robot_type) &&
-      datasetInfo.codebase_version >= "v3.0"
-    ) {
+    if (urdfSupported) {
       void import("@/components/urdf-viewer");
     }
-  }, [datasetInfo.robot_type, datasetInfo.codebase_version]);
+  }, [urdfSupported]);
 
   // Persist UI state across episode navigations. One effect instead of
   // three near-identical writes — fewer commit hooks per render and the
@@ -576,11 +579,12 @@ function EpisodeViewerInner({
     <div className="flex flex-col h-screen max-h-screen bg-[var(--bg)] text-[var(--text-primary)]">
       <UrlTimeSync />
       {/* Top tab bar */}
-      <div className="flex items-center border-b border-white/5 bg-[var(--surface-0)] shrink-0">
+      <div
+        ref={tabBarRef}
+        className="flex items-center border-b border-white/5 bg-[var(--surface-0)] shrink-0 overflow-x-auto [scrollbar-width:none]"
+      >
         {renderTab("episodes", "Episodes")}
-        {hasURDFSupport(datasetInfo.robot_type) &&
-          datasetInfo.codebase_version >= "v3.0" &&
-          renderTab("urdf", "3D Replay")}
+        {urdfSupported && renderTab("urdf", "3D Replay")}
         {renderTab(
           "annotations",
           "Annotations",
@@ -595,7 +599,7 @@ function EpisodeViewerInner({
           "Doctor",
           "Dataset quality diagnostics (powered by lerobot-doctor)",
         )}
-        <div className="ml-auto">
+        <div className="ml-auto shrink-0 pl-2">
           <HfAuthButton variant="tab" />
         </div>
       </div>
