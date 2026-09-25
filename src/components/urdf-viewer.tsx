@@ -1092,7 +1092,7 @@ export default function URDFViewer({
                 </thead>
                 <tbody>
                   {displayJointNames.map((jointName) => (
-                    <tr key={jointName} className="border-t border-white/10/50">
+                    <tr key={jointName} className="border-t border-white/10">
                       <td className="px-1 py-0.5 text-slate-300 font-mono">
                         {jointName}
                       </td>
