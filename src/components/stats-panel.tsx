@@ -125,7 +125,7 @@ function StatsPanel({
   const els = episodeLengthStats;
 
   return (
-    <div className="max-w-4xl mx-auto py-6 space-y-8">
+    <div className="w-full max-w-4xl mx-auto py-6 space-y-8">
       <div>
         <h2 className="text-xl text-slate-100">
           <span className="font-bold">Dataset Statistics:</span>{" "}

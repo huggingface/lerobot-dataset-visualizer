@@ -1600,7 +1600,7 @@ function ActionInsightsPanel({
   const showAgg = mode === "dataset" && !!crossEpisodeData;
 
   return (
-    <div className="max-w-5xl mx-auto py-6 space-y-8">
+    <div className="w-full max-w-5xl mx-auto py-6 space-y-8">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-100">Action Insights</h2>

@@ -359,7 +359,7 @@ function FilteringPanel({
   onViewFlaggedEpisodes,
 }: FilteringPanelProps) {
   return (
-    <div className="max-w-5xl mx-auto py-6 space-y-8">
+    <div className="w-full max-w-5xl mx-auto py-6 space-y-8">
       <div>
         <h2 className="text-xl font-bold text-slate-100">Filtering</h2>
         <p className="text-sm text-slate-400 mt-1">

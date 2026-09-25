@@ -207,7 +207,7 @@ export default function OverviewPanel({
   const pageFrames = frames.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   return (
-    <div className="max-w-7xl mx-auto py-6 space-y-5">
+    <div className="w-full max-w-7xl mx-auto py-6 space-y-5">
       <div>
         <h2 className="text-xl font-bold text-slate-100">Frames</h2>
         <p className="text-sm text-slate-400 mt-1">
