@@ -430,13 +430,20 @@ const SingleDataGraph = React.memo(
       return { groups: grouped, singles: singleList, groupColorMap: colorMap };
     }, [dataKeys]);
 
-    const handleMouseLeave = () => hoverStore.set(null);
+    /// Pressing seeks, and so does moving while the button is down: the chart doubles as a
+    /// scrubber, like the one on the Hub's episode preview.
+    const isScrubbingRef = useRef(false);
 
-    const handleClick = (
-      data: { activePayload?: { payload: { timestamp: number } }[] } | null,
+    const handleMouseLeave = () => {
+      isScrubbingRef.current = false;
+      hoverStore.set(null);
+    };
+
+    const seekToPoint = (
+      state: { activePayload?: { payload: { timestamp: number } }[] } | null,
     ) => {
-      if (data?.activePayload?.length) {
-        seek(data.activePayload[0].payload.timestamp);
+      if (state?.activePayload?.length) {
+        seek(state.activePayload[0].payload.timestamp);
       }
     };
 
@@ -464,7 +471,7 @@ const SingleDataGraph = React.memo(
           </p>
         )}
         <div
-          className={`relative w-full ${tall ? "h-[500px]" : "h-72"}`}
+          className={`relative w-full select-none ${tall ? "h-[500px]" : "h-72"}`}
           onMouseLeave={handleMouseLeave}
         >
           <ResponsiveContainer width="100%" height="100%">
@@ -472,12 +479,19 @@ const SingleDataGraph = React.memo(
               data={chartData}
               syncId="episode-sync"
               margin={CHART_MARGIN}
-              onClick={handleClick}
+              onMouseDown={(state) => {
+                isScrubbingRef.current = true;
+                seekToPoint(state);
+              }}
+              onMouseUp={() => {
+                isScrubbingRef.current = false;
+              }}
               onMouseMove={(state) => {
                 const payload = state?.activePayload?.[0]?.payload as
                   | { timestamp?: number }
                   | undefined;
                 hoverStore.set(payload?.timestamp ?? null);
+                if (isScrubbingRef.current) seekToPoint(state);
               }}
               onMouseLeave={handleMouseLeave}
             >
