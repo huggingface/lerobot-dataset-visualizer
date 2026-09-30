@@ -400,6 +400,9 @@ function buildSampledEpisodeSet(
   return new Set(evenlySampleIndices(totalEpisodes, maxEpisodes));
 }
 
+/** `meta/info.json` lists no episodes: the recording was pushed before any episode was saved. */
+export class NoEpisodesError extends Error {}
+
 export async function getEpisodeData(
   org: string,
   dataset: string,
@@ -411,6 +414,10 @@ export async function getEpisodeData(
     const { version, info: rawInfo } = await getDatasetVersionAndInfo(repoId);
     console.timeEnd(`[perf] getDatasetVersionAndInfo`);
     const info = rawInfo as unknown as DatasetMetadata;
+
+    if (info.total_episodes === 0) {
+      throw new NoEpisodesError(`${repoId} has no episodes`);
+    }
 
     if (info.video_path === null) {
       throw new Error(
@@ -475,7 +482,9 @@ export async function getEpisodeData(
 
     return result;
   } catch (err) {
-    console.error("Error loading episode data:", err);
+    if (!(err instanceof NoEpisodesError)) {
+      console.error("Error loading episode data:", err);
+    }
     throw err;
   }
 }
@@ -1985,11 +1994,14 @@ export async function getEpisodeDataSafe(
   org: string,
   dataset: string,
   episodeId: number,
-): Promise<{ data?: EpisodeData; error?: string }> {
+): Promise<{ data?: EpisodeData; error?: string; noEpisodes?: boolean }> {
   try {
     const data = await getEpisodeData(org, dataset, episodeId);
     return { data };
   } catch (err: unknown) {
+    if (err instanceof NoEpisodesError) {
+      return { noEpisodes: true };
+    }
     const message = err instanceof Error ? err.message : String(err);
     return { error: message || "Unknown error" };
   }
