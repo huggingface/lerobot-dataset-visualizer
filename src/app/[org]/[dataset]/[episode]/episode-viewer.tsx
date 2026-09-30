@@ -264,6 +264,7 @@ export default function EpisodeViewer({
 }) {
   const [data, setData] = useState<EpisodeData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [noEpisodes, setNoEpisodes] = useState(false);
   const requestIdRef = useRef(0);
 
   // Opening straight onto 3D Replay: start the robot meshes downloading now,
@@ -293,10 +294,15 @@ export default function EpisodeViewer({
     }
     const requestId = ++requestIdRef.current;
     setError(null);
+    setNoEpisodes(false);
     setData(null);
     getEpisodeDataSafe(org, dataset, episodeId)
-      .then(({ data: loaded, error: loadError }) => {
+      .then(({ data: loaded, error: loadError, noEpisodes: empty }) => {
         if (requestIdRef.current !== requestId) return;
+        if (empty) {
+          setNoEpisodes(true);
+          return;
+        }
         if (loadError) {
           setError(loadError);
           setData(null);
@@ -311,6 +317,28 @@ export default function EpisodeViewer({
         setData(null);
       });
   }, [org, dataset, episodeId]);
+
+  if (noEpisodes) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[var(--bg)]">
+        <div className="panel-raised max-w-xl p-6">
+          <h2 className="text-xl font-medium text-fg mb-2">No episodes yet</h2>
+          <p className="text-sm text-fg-muted">
+            <a
+              href={`https://huggingface.co/datasets/${org}/${dataset}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-fg hover:text-accent-fg transition-colors"
+            >
+              {org}/{dataset}
+            </a>{" "}
+            has a <code className="font-mono">meta/info.json</code> but no
+            recorded episodes, so there is nothing to play.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (
