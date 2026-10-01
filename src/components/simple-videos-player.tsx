@@ -15,6 +15,15 @@ const THRESHOLDS = {
 
 const VIDEO_READY_TIMEOUT_MS = 10_000;
 
+/// The Hub redirects each video to a presigned URL that expires after an hour, and browsers keep
+/// reusing the URL they were redirected to, so a long-open page starts getting 403s. Reloading asks
+/// for a fresh one; capped, with growing delays, so a broken camera does not keep the CDN busy.
+const MAX_VIDEO_RELOADS = 3;
+const VIDEO_RELOAD_DELAY_MS = 2_000;
+/// Left alone this long, the episode stops at its end instead of looping, so a forgotten tab does
+/// not keep fetching video.
+const IDLE_LOOP_LIMIT_MS = 10 * 60_000;
+
 /** Same feature check three.js's VideoTexture uses. */
 const SUPPORTS_RVFC =
   typeof HTMLVideoElement !== "undefined" &&
@@ -65,6 +74,40 @@ export const SimpleVideosPlayer = ({
   const [videosReady, setVideosReady] = React.useState(false);
 
   const hiddenSet = React.useMemo(() => new Set(hiddenVideos), [hiddenVideos]);
+
+  const isPlayingRef = useRef(isPlaying);
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  const lastInteractionRef = useRef(Date.now());
+  // Nobody watches a hidden tab: pausing stops the fetching, and it picks up
+  // where it was when shown again.
+  useEffect(() => {
+    let resumeWhenVisible = false;
+    const markInteraction = () => {
+      lastInteractionRef.current = Date.now();
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        if (isPlayingRef.current) {
+          resumeWhenVisible = true;
+          setIsPlaying(false);
+        }
+      } else if (resumeWhenVisible) {
+        resumeWhenVisible = false;
+        setIsPlaying(true);
+      }
+    };
+    window.addEventListener("pointerdown", markInteraction);
+    window.addEventListener("keydown", markInteraction);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("pointerdown", markInteraction);
+      window.removeEventListener("keydown", markInteraction);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [setIsPlaying]);
 
   useEffect(() => {
     if (!enlargedVideo) return;
@@ -142,6 +185,10 @@ export const SimpleVideosPlayer = ({
     // played fresh frames while the others still showed the segment-end
     // frame. Now the gap is microseconds.
     const loopAllVideos = () => {
+      if (Date.now() - lastInteractionRef.current > IDLE_LOOP_LIMIT_MS) {
+        setIsPlaying(false);
+        return;
+      }
       videoRefs.current.forEach((other, otherIdx) => {
         if (!other) return;
         const otherInfo = videosInfo[otherIdx];
@@ -152,6 +199,11 @@ export const SimpleVideosPlayer = ({
       // since we already drove every video to its target.
       seek(0, "video");
     };
+
+    // Cleanup removes listeners from these, not from videoRefs: React 19's
+    // StrictMode detaches refs before effect cleanup, which left every
+    // listener attached twice in development.
+    const attachedVideos = [...videoRefs.current];
 
     videoRefs.current.forEach((video, index) => {
       if (!video) return;
@@ -226,7 +278,33 @@ export const SimpleVideosPlayer = ({
             }
           };
 
+      let reloads = 0;
+      let reloadTimer: ReturnType<typeof setTimeout> | undefined;
+      const handleError = () => {
+        if (reloads >= MAX_VIDEO_RELOADS) return;
+        reloads++;
+        const resumeAt = video.currentTime;
+        reloadTimer = setTimeout(() => {
+          // Registered after handleLoadedData, so it runs last and wins over
+          // its jump back to segmentStart. The other cameras kept playing
+          // while this one was down, so an external seek re-aligns them all.
+          video.addEventListener(
+            "loadeddata",
+            () => {
+              reloads = 0;
+              seek(
+                resumeAt - (info.isSegmented ? (info.segmentStart ?? 0) : 0),
+              );
+              if (isPlayingRef.current) video.play().catch(() => {});
+            },
+            { once: true },
+          );
+          video.load();
+        }, VIDEO_RELOAD_DELAY_MS * reloads);
+      };
+
       video.addEventListener("timeupdate", handleTimeUpdate);
+      video.addEventListener("error", handleError);
       if (handlePlay) video.addEventListener("play", handlePlay);
       if (handleEnded) video.addEventListener("ended", handleEnded);
 
@@ -250,6 +328,8 @@ export const SimpleVideosPlayer = ({
       }
 
       videoEventCleanup.set(video, () => {
+        clearTimeout(reloadTimer);
+        video.removeEventListener("error", handleError);
         video.removeEventListener("timeupdate", handleTimeUpdate);
         if (handlePlay) video.removeEventListener("play", handlePlay);
         if (handleLoadedData)
@@ -261,7 +341,7 @@ export const SimpleVideosPlayer = ({
 
     return () => {
       clearTimeout(timeout);
-      videoRefs.current.forEach((video) => {
+      attachedVideos.forEach((video) => {
         if (!video) return;
         const cleanup = videoEventCleanup.get(video);
         if (cleanup) {
