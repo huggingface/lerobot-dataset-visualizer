@@ -68,6 +68,28 @@ const URDF_BASE_URL =
 
 const prefetchedUrdfs = new Set<string>();
 
+// The bucket resolve is a 302 with no Cache-Control, to a URL re-signed every second, so the
+// browser downloads the URDF again on every mount unless the text is kept here.
+const urdfTextCache = new Map<string, Promise<string>>();
+
+function loadUrdfText(url: string): Promise<string> {
+  let loading = urdfTextCache.get(url);
+  if (!loading) {
+    loading = fetch(url)
+      .then((res) => {
+        if (!res.ok)
+          throw new Error(`Failed to load URDF ${url} (HTTP ${res.status})`);
+        return res.text();
+      })
+      .catch((err) => {
+        urdfTextCache.delete(url);
+        throw err;
+      });
+    urdfTextCache.set(url, loading);
+  }
+  return loading;
+}
+
 /**
  * Starts downloading a robot's visual STL meshes into the geometry cache. The viewer only mounts once
  * the episode data has loaded, and the meshes (15.7 MB for SO-101) used to start downloading only
@@ -78,8 +100,7 @@ export function prefetchRobotModel(robotType: string | null) {
   if (prefetchedUrdfs.has(urdfUrl)) return;
   prefetchedUrdfs.add(urdfUrl);
   const base = THREE.LoaderUtils.extractUrlBase(urdfUrl);
-  fetch(urdfUrl)
-    .then((res) => res.text())
+  loadUrdfText(urdfUrl)
     .then((text) => {
       const doc = new DOMParser().parseFromString(text, "application/xml");
       for (const mesh of doc.querySelectorAll("visual mesh")) {
@@ -547,9 +568,13 @@ function RobotScene({
       }, 0);
     };
 
-    loader.load(
-      urdfUrl,
-      (robot) => {
+    loader.workingPath = THREE.LoaderUtils.extractUrlBase(urdfUrl);
+    let cancelled = false;
+    manager.itemStart(urdfUrl);
+    loadUrdfText(urdfUrl)
+      .then((text) => {
+        if (cancelled) return;
+        const robot = loader.parse(text);
         robotRef.current = robot;
         robot.rotateOnAxis(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
         robot.scale.set(scale, scale, scale);
@@ -592,14 +617,17 @@ function RobotScene({
           )
           .map((j) => j.name);
         onJointsLoaded(movable);
-      },
-      undefined,
-      (err) => {
+      })
+      .catch((err) => {
+        if (cancelled) return;
         console.error("Error loading URDF:", err);
         setError(String(err));
-      },
-    );
+      })
+      .finally(() => {
+        if (!cancelled) manager.itemEnd(urdfUrl);
+      });
     return () => {
+      cancelled = true;
       if (robotRef.current) {
         scene.remove(robotRef.current);
         robotRef.current = null;
