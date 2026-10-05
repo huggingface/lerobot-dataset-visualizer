@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { postParentMessageWithParams } from "@/utils/postParentMessage";
 import { SimpleVideosPlayer } from "@/components/simple-videos-player";
 import PlaybackBar from "@/components/playback-bar";
@@ -80,7 +80,6 @@ type ActiveTab = (typeof TABS)[number];
 // EpisodeViewerInner. Vercel rule: rerender-defer-reads.
 function UrlTimeSync() {
   const { currentTime, isPlaying } = useTime();
-  const searchParams = useSearchParams();
   const lastUrlSecondRef = useRef<number>(-1);
 
   // Only update the URL ?t= param when the integer second changes, and
@@ -91,7 +90,7 @@ function UrlTimeSync() {
     const currentSec = Math.floor(currentTime);
     if (currentTime > 0 && lastUrlSecondRef.current !== currentSec) {
       lastUrlSecondRef.current = currentSec;
-      const newParams = new URLSearchParams(searchParams.toString());
+      const newParams = new URLSearchParams(window.location.search);
       newParams.set("t", currentSec.toString());
       window.history.replaceState(
         {},
@@ -102,7 +101,7 @@ function UrlTimeSync() {
         params.set("path", window.location.pathname + window.location.search);
       });
     }
-  }, [isPlaying, currentTime, searchParams]);
+  }, [isPlaying, currentTime]);
 
   return null;
 }
@@ -417,7 +416,6 @@ function EpisodeViewerInner({
   const loadStartRef = useRef(performance.now());
 
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const urdfSupported =
     hasURDFSupport(datasetInfo.robot_type) &&
@@ -623,16 +621,16 @@ function EpisodeViewerInner({
     currentPage * pageSize,
   );
 
-  // Initialize based on URL time parameter
+  // Mount-only: UrlTimeSync's replaceState goes through Next's patched
+  // history and changes useSearchParams, so depending on it would re-seek
+  // every camera to the floored second on each ?t= write. A new episode
+  // remounts this component.
   useEffect(() => {
-    const timeParam = searchParams.get("t");
-    if (timeParam) {
-      const timeValue = parseFloat(timeParam);
-      if (!isNaN(timeValue)) {
-        seek(timeValue);
-      }
-    }
-  }, [searchParams, seek]);
+    const timeValue = parseFloat(
+      new URLSearchParams(window.location.search).get("t") ?? "",
+    );
+    if (!isNaN(timeValue)) seek(timeValue);
+  }, [seek]);
 
   // sync with parent window hf.co/spaces
   useEffect(() => {
