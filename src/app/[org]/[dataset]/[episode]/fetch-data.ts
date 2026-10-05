@@ -33,6 +33,84 @@ const HUB_ENDPOINT = (
   process.env.DATASET_URL || "https://huggingface.co/datasets"
 ).replace(/\/datasets\/?$/, "");
 
+type RangeEntry =
+  | { ok: true; body: ArrayBuffer; status: number; contentRange: string | null }
+  | { ok: false; status: number; statusText: string };
+
+const RANGE_CACHE_MAX_BYTES = 128 * 1024 * 1024;
+const rangeCache = new Map<string, Promise<RangeEntry>>();
+/** Sizes of the settled entries in `rangeCache`; in-flight ones have none yet. */
+const rangeSizes = new Map<string, number>();
+let rangeCacheBytes = 0;
+
+/**
+ * Memoizes the package's range reads, least recently used out first past `RANGE_CACHE_MAX_BYTES`.
+ * Every package call opens its files afresh, and a v3 file is a single row group with no page index,
+ * so every episode in it requests byte-identical ranges. The browser cache never helps: the /resolve/
+ * 302 is `no-store` and points at a URL that is signed anew each time.
+ */
+const rangeCachedFetch = (async (input, init) => {
+  const headers = new Headers(init?.headers);
+  const range = headers.get("range");
+  if (!range) return fetch(input, init);
+  const url = input instanceof Request ? input.url : String(input);
+  // The request's own token, not getAuthToken(): a dataset instance keeps the headers it was built with.
+  const key = `${headers.get("authorization") ?? ""}\n${url}\n${range}`;
+  let pending = rangeCache.get(key);
+  if (pending) {
+    rangeCache.delete(key);
+    rangeCache.set(key, pending);
+  } else {
+    // Stored before it settles, so concurrent identical reads share one download.
+    pending = fetch(input, init)
+      .then(async (res): Promise<RangeEntry> => {
+        if (!res.ok) {
+          // Never cached: the package needs the 404 that ends its walk over the index shards.
+          rangeCache.delete(key);
+          return { ok: false, status: res.status, statusText: res.statusText };
+        }
+        const body = await res.arrayBuffer();
+        if (body.byteLength > RANGE_CACHE_MAX_BYTES / 2) {
+          rangeCache.delete(key);
+        } else {
+          rangeSizes.set(key, body.byteLength);
+          rangeCacheBytes += body.byteLength;
+          for (const k of rangeCache.keys()) {
+            if (rangeCacheBytes <= RANGE_CACHE_MAX_BYTES) break;
+            const size = rangeSizes.get(k);
+            if (size === undefined) continue;
+            rangeCache.delete(k);
+            rangeSizes.delete(k);
+            rangeCacheBytes -= size;
+          }
+        }
+        return {
+          ok: true,
+          body,
+          status: res.status,
+          contentRange: res.headers.get("content-range"),
+        };
+      })
+      .catch((err) => {
+        rangeCache.delete(key);
+        throw err;
+      });
+    rangeCache.set(key, pending);
+  }
+  const entry = await pending;
+  if (!entry.ok) {
+    return new Response(null, {
+      status: entry.status,
+      statusText: entry.statusText,
+    });
+  }
+  // The package reads the file size from content-range.
+  return new Response(entry.body, {
+    status: entry.status,
+    headers: entry.contentRange ? { "content-range": entry.contentRange } : {},
+  });
+}) as typeof fetch; // Bun's types add `fetch.preconnect`, which the package never calls.
+
 const leRobotDatasets = new Map<string, LeRobotDataset>();
 
 /**
@@ -47,6 +125,7 @@ function leRobotDataset(repoId: string): LeRobotDataset {
     dataset = new LeRobotDataset(repoId, {
       endpoint: HUB_ENDPOINT,
       additionalFetchHeaders: authHeaders(),
+      fetch: rangeCachedFetch,
     });
     leRobotDatasets.set(key, dataset);
   }
@@ -242,6 +321,11 @@ const PROGRESS_PARQUET_CANDIDATES = [
   "sarm_progress.parquet",
   "srm_progress.parquet",
 ] as const;
+/**
+ * Progress files the Hub answered 404 for. With the range cache serving a same-file switch, probing
+ * them again would be most of what the switch costs.
+ */
+const missingProgressFiles = new Set<string>();
 const PREFERRED_PROGRESS_COLUMNS = [
   "progress_sparse",
   "progress_dense",
@@ -335,6 +419,7 @@ async function loadEpisodeProgressGroup(
 ): Promise<((episodeDuration: number) => ChartRow[]) | null> {
   for (const progressPath of PROGRESS_PARQUET_CANDIDATES) {
     const progressUrl = buildVersionedUrl(repoId, version, progressPath);
+    if (missingProgressFiles.has(progressUrl)) continue;
     try {
       const progressBuffer = await fetchParquetFile(progressUrl);
       const progressRows = await readParquetAsObjects(progressBuffer, []);
@@ -384,8 +469,12 @@ async function loadEpisodeProgressGroup(
           [progressKey]: point.progress,
         }));
       };
-    } catch {
-      // Optional file: ignore and try next candidate.
+    } catch (err) {
+      // Optional file: ignore and try next candidate. hyparquet reports a missing file as
+      // "fetch head failed 404"; any other failure is retried next time.
+      if (err instanceof Error && /\b404$/.test(err.message)) {
+        missingProgressFiles.add(progressUrl);
+      }
     }
   }
 
