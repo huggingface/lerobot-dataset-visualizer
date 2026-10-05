@@ -6,7 +6,7 @@
       "name": "lerobot-viewer",
       "dependencies": {
         "@huggingface/hub": "^2.11.0",
-        "@huggingface/lerobot": "^0.0.9",
+        "@huggingface/lerobot": "^0.0.11",
         "@react-three/drei": "^10.7.7",
         "@react-three/fiber": "^9.5.0",
         "hyparquet": "^1.12.1",
@@ -67,7 +67,7 @@
 
     "@huggingface/hub": ["@huggingface/hub@2.11.0", "", { "dependencies": { "@huggingface/tasks": "^0.19.90" }, "optionalDependencies": { "cli-progress": "^3.12.0" }, "bin": { "hfjs": "dist/cli.js" } }, "sha512-WS6QGaXYeBVFlaB4SOn6z4LGUpLB5kRZNL08uUni4izX353KxiwwZMK5+/AWX86MJh8SMZNa/JFcvFCcQsbszQ=="],
 
-    "@huggingface/lerobot": ["@huggingface/lerobot@0.0.9", "", { "dependencies": { "hyparquet": "^1.25.1" } }, "sha512-40Kc4I9/nuAmLDP4rHl1HJhazSnSoZCPF83qz+eLchDukxhPDpwIqqbPMb9/fCNnBQ946tuEcjwWS3CSdGAqHA=="],
+    "@huggingface/lerobot": ["@huggingface/lerobot@0.0.11", "", { "dependencies": { "hyparquet": "^1.31.2" } }, "sha512-HlU2b8PC+khySlnTeRWxIUSB41eN83H0Gpci0GK/folPWrAppLD4v0dqAXq1NDTloh5elBxX+rfhf+TQD12fkw=="],
 
     "@huggingface/tasks": ["@huggingface/tasks@0.19.90", "", {}, "sha512-nfV9luJbvwGQ/5oKXkKhCV9h4X7mwh1YaGG3ORd6UMLDSwr1OFSSatcBX0O9OtBtmNK19aGSjbLFqqgcIR6+IA=="],
 
@@ -999,7 +999,7 @@
 
     "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="],
 
-    "@huggingface/lerobot/hyparquet": ["hyparquet@1.31.1", "", {}, "sha512-tF9580Xb+41+Eb+mH0av1k7m1PWl+PSKrX66Yd7UOZ760cwEXP9/enwHRMSCeVncaubRI8XPb3v580/ujYKK5w=="],
+    "@huggingface/lerobot/hyparquet": ["hyparquet@1.31.2", "", {}, "sha512-dpVTCGkPPIdfDExa7YZGaJpuBTmLFDKGeZ6meHUj1mz/Q3qmaQHGLLqCyPBkQjfxrYNb08YTax682qeGO+zkVA=="],
 
     "@tailwindcss/oxide-wasm32-wasi/@emnapi/core": ["@emnapi/core@1.8.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.1.0", "tslib": "^2.4.0" }, "bundled": true }, "sha512-AvT9QFpxK0Zd8J0jopedNm+w/2fIzvtPKPjqyw9jwvBaReTTqPBk9Hixaz7KbjimP+QNz605/XnjFcDAL2pqBg=="],
 
