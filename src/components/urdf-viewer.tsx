@@ -738,6 +738,44 @@ function PlaybackDriver({
   return null;
 }
 
+// IBL: procedural studio softboxes give mesh highlights somewhere to bounce.
+// Not preset="studio": drei downloads that 1.6 MB HDR from raw.githack.com and
+// suspends the canvas until it arrives. Module scope keeps the element's
+// identity across URDFViewer renders (one per playback frame): drei re-captures
+// the cube map and three re-runs PMREM whenever Environment's children change.
+const STUDIO_ENVIRONMENT = (
+  <Environment resolution={256} background={false}>
+    <Lightformer
+      form="rect"
+      intensity={5}
+      position={[0, 5, 0]}
+      rotation-x={Math.PI / 2}
+      scale={[10, 10, 1]}
+    />
+    <Lightformer
+      form="rect"
+      intensity={3}
+      position={[-5, 1.5, -1]}
+      rotation-y={Math.PI / 2}
+      scale={[10, 2, 1]}
+    />
+    <Lightformer
+      form="rect"
+      intensity={3}
+      position={[5, 1.5, -1]}
+      rotation-y={-Math.PI / 2}
+      scale={[10, 2, 1]}
+    />
+    <Lightformer
+      form="rect"
+      intensity={2.5}
+      position={[0, 1.5, 5]}
+      rotation-y={Math.PI}
+      scale={[10, 3, 1]}
+    />
+  </Environment>
+);
+
 // ═══════════════════════════════════════
 // ─── Main URDF Viewer ───
 // ═══════════════════════════════════════
@@ -1017,39 +1055,7 @@ export default function URDFViewer({
           }}
         >
           <color attach="background" args={[dark ? "#141c2e" : "#f3f4f6"]} />
-          {/* IBL: procedural studio softboxes give mesh highlights somewhere to
-              bounce. Not preset="studio": drei downloads that 1.6 MB HDR from
-              raw.githack.com and suspends the canvas until it arrives. */}
-          <Environment resolution={256} background={false}>
-            <Lightformer
-              form="rect"
-              intensity={5}
-              position={[0, 5, 0]}
-              rotation-x={Math.PI / 2}
-              scale={[10, 10, 1]}
-            />
-            <Lightformer
-              form="rect"
-              intensity={3}
-              position={[-5, 1.5, -1]}
-              rotation-y={Math.PI / 2}
-              scale={[10, 2, 1]}
-            />
-            <Lightformer
-              form="rect"
-              intensity={3}
-              position={[5, 1.5, -1]}
-              rotation-y={-Math.PI / 2}
-              scale={[10, 2, 1]}
-            />
-            <Lightformer
-              form="rect"
-              intensity={2.5}
-              position={[0, 1.5, 5]}
-              rotation-y={Math.PI}
-              scale={[10, 3, 1]}
-            />
-          </Environment>
+          {STUDIO_ENVIRONMENT}
           {/* 3-point studio rig — key is the only shadow caster */}
           <ambientLight intensity={0.12} />
           <directionalLight
