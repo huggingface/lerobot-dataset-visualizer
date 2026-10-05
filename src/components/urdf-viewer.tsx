@@ -20,6 +20,8 @@ import URDFLoader from "urdf-loader";
 import type { URDFRobot } from "urdf-loader";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { ColladaLoader } from "three/examples/jsm/loaders/ColladaLoader.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
@@ -57,6 +59,69 @@ function loadStlGeometry(url: string): Promise<THREE.BufferGeometry> {
   return loading;
 }
 
+/**
+ * Rebuilds every mesh with a MeshStandardMaterial bucketed into one of three archetypes (carbon-black,
+ * brushed metal, off-white paint) by the original base-colour lightness. `flatShading` is for the GLB
+ * meshes, which carry no normals.
+ */
+function applyOpenArmMaterials(root: THREE.Object3D, flatShading: boolean) {
+  root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh) || !child.material) return;
+
+    const originals = Array.isArray(child.material)
+      ? child.material
+      : [child.material];
+
+    const rebuilt = originals.map((orig) => {
+      const srcColor =
+        (orig as THREE.MeshStandardMaterial).color ??
+        new THREE.Color("#c0c4cc");
+      const hsl = { h: 0, s: 0, l: 0 };
+      srcColor.getHSL(hsl);
+
+      // Archetype classification by original lightness.
+      let color: THREE.Color;
+      let metalness: number;
+      let roughness: number;
+      let envMapIntensity: number;
+      if (hsl.l < 0.3) {
+        // Carbon / anodised structural parts
+        color = new THREE.Color().setHSL(hsl.h, 0.02, 0.09);
+        metalness = 0.15;
+        roughness = 0.75;
+        envMapIntensity = 0.6;
+      } else if (hsl.l < 0.7) {
+        // Brushed metal joint collars / accents
+        color = new THREE.Color().setHSL(hsl.h, 0.04, 0.42);
+        metalness = 0.75;
+        roughness = 0.35;
+        envMapIntensity = 1.1;
+      } else {
+        // Off-white painted plates
+        color = new THREE.Color().setHSL(hsl.h, 0.03, 0.6);
+        metalness = 0.1;
+        roughness = 0.5;
+        envMapIntensity = 0.9;
+      }
+
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        metalness,
+        roughness,
+        envMapIntensity,
+        side: THREE.DoubleSide,
+        flatShading,
+      });
+      orig.dispose?.();
+      return mat;
+    });
+
+    child.material = Array.isArray(child.material) ? rebuilt : rebuilt[0];
+    child.castShadow = true;
+    child.receiveShadow = true;
+  });
+}
+
 /// One download and parse per DAE file per session: the OpenArm URDF references finger.dae 4 times
 /// and each arm link twice, and the viewer remounts on every visit to the 3D Replay tab.
 const daeSceneCache = new Map<string, Promise<THREE.Object3D>>();
@@ -87,62 +152,7 @@ function loadDaeScene(url: string): Promise<THREE.Object3D> {
           });
           for (const l of strayLights) l.parent?.remove(l);
 
-          collada.scene.traverse((child) => {
-            if (!(child instanceof THREE.Mesh) || !child.material) return;
-
-            const originals = Array.isArray(child.material)
-              ? child.material
-              : [child.material];
-
-            const rebuilt = originals.map((orig) => {
-              const srcColor =
-                (orig as THREE.MeshStandardMaterial).color ??
-                new THREE.Color("#c0c4cc");
-              const hsl = { h: 0, s: 0, l: 0 };
-              srcColor.getHSL(hsl);
-
-              // Archetype classification by original lightness.
-              let color: THREE.Color;
-              let metalness: number;
-              let roughness: number;
-              let envMapIntensity: number;
-              if (hsl.l < 0.3) {
-                // Carbon / anodised structural parts
-                color = new THREE.Color().setHSL(hsl.h, 0.02, 0.09);
-                metalness = 0.15;
-                roughness = 0.75;
-                envMapIntensity = 0.6;
-              } else if (hsl.l < 0.7) {
-                // Brushed metal joint collars / accents
-                color = new THREE.Color().setHSL(hsl.h, 0.04, 0.42);
-                metalness = 0.75;
-                roughness = 0.35;
-                envMapIntensity = 1.1;
-              } else {
-                // Off-white painted plates
-                color = new THREE.Color().setHSL(hsl.h, 0.03, 0.6);
-                metalness = 0.1;
-                roughness = 0.5;
-                envMapIntensity = 0.9;
-              }
-
-              const mat = new THREE.MeshStandardMaterial({
-                color,
-                metalness,
-                roughness,
-                envMapIntensity,
-                side: THREE.DoubleSide,
-              });
-              orig.dispose?.();
-              return mat;
-            });
-
-            child.material = Array.isArray(child.material)
-              ? rebuilt
-              : rebuilt[0];
-            child.castShadow = true;
-            child.receiveShadow = true;
-          });
+          applyOpenArmMaterials(collada.scene, false);
         }
         return collada.scene;
       })
@@ -151,6 +161,30 @@ function loadDaeScene(url: string): Promise<THREE.Object3D> {
         throw err;
       });
     daeSceneCache.set(url, loading);
+  }
+  return loading;
+}
+
+/// The bucket holds meshopt-compressed GLB copies of the SO-101 and OpenArm meshes, about 16x and 20x
+/// smaller than the STL/DAE originals. They carry no normals: the originals' are flat per face, and
+/// flatShading derives the same ones.
+const glbSceneCache = new Map<string, Promise<THREE.Object3D>>();
+
+function loadGlbScene(url: string): Promise<THREE.Object3D> {
+  let loading = glbSceneCache.get(url);
+  if (!loading) {
+    loading = new GLTFLoader()
+      .setMeshoptDecoder(MeshoptDecoder)
+      .loadAsync(url)
+      .then((gltf) => {
+        if (url.includes("openarm")) applyOpenArmMaterials(gltf.scene, true);
+        return gltf.scene;
+      })
+      .catch((err) => {
+        glbSceneCache.delete(url);
+        throw err;
+      });
+    glbSceneCache.set(url, loading);
   }
   return loading;
 }
@@ -189,9 +223,9 @@ function loadUrdfText(url: string): Promise<string> {
 }
 
 /**
- * Starts downloading a robot's visual STL meshes into the geometry cache. The viewer only mounts once
- * the episode data has loaded, and the meshes (15.7 MB for SO-101) used to start downloading only
- * then; calling this earlier overlaps the two.
+ * Starts downloading a robot's visual meshes into the caches. The viewer only mounts once the episode
+ * data has loaded, and the meshes used to start downloading only then; calling this earlier overlaps
+ * the two.
  */
 export function prefetchRobotModel(robotType: string | null) {
   const { urdfUrl } = getRobotConfig(robotType);
@@ -205,8 +239,11 @@ export function prefetchRobotModel(robotType: string | null) {
         const filename = mesh.getAttribute("filename");
         /// Same resolution URDFLoader applies to relative paths; package:// and DAE meshes are left to it.
         if (!filename || filename.startsWith("package://")) continue;
-        if (!filename.toLowerCase().endsWith(".stl")) continue;
-        loadStlGeometry(base + filename).catch(() => {});
+        const lower = filename.toLowerCase();
+        if (lower.endsWith(".glb"))
+          loadGlbScene(base + filename).catch(() => {});
+        else if (lower.endsWith(".stl"))
+          loadStlGeometry(base + filename).catch(() => {});
       }
     })
     .catch(() => prefetchedUrdfs.delete(urdfUrl));
@@ -219,12 +256,12 @@ function getRobotConfig(robotType: string | null) {
   }
   if (lower.includes("openarm")) {
     return {
-      urdfUrl: `${URDF_BASE_URL}/openarm/openarm_bimanual.urdf`,
+      urdfUrl: `${URDF_BASE_URL}/openarm/openarm_bimanual_web.urdf`,
       scale: 3,
     };
   }
   return {
-    urdfUrl: `${URDF_BASE_URL}/so101/so101_new_calib.urdf`,
+    urdfUrl: `${URDF_BASE_URL}/so101/so101_new_calib_web.urdf`,
     scale: 10,
   };
 }
@@ -508,28 +545,7 @@ function RobotScene({
       return group;
     };
     loader.loadMeshCb = (url, mgr, onLoad) => {
-      if (url.endsWith(".dae")) {
-        /// URDFLoader re-parents and re-orients what it is handed, so it gets a clone (sharing
-        /// geometry and materials) and the cached scene stays intact.
-        mgr.itemStart(url);
-        loadDaeScene(url)
-          .then((daeScene) => onLoad(daeScene.clone()))
-          .catch((err) => onLoad(new THREE.Object3D(), err as Error))
-          .finally(() => mgr.itemEnd(url));
-        return;
-      }
-      // STL files — apply final PBR materials directly here. We used to do a
-      // post-load archetype rebuild in manager.onLoad, but STLLoader calls
-      // `manager.itemEnd` *before* our Promise resolves — so when the last
-      // STL completes, manager.onLoad fires synchronously, our traverse runs,
-      // and THEN URDFLoader's inner `group.add(obj)` + `obj.material = urdf`
-      // runs in a microtask. Last-batch meshes ended up gold/green because
-      // they were added to the robot after our rebuild passed.
-      //
-      // Fix: pick the archetype color here, wrap the mesh in a Group so
-      // URDFLoader won't override our material (its override only triggers
-      // for direct `THREE.Mesh` instances), and skip the onLoad rebuild.
-      const makeMesh = (geometry: THREE.BufferGeometry) => {
+      const makeMaterial = (flatShading: boolean) => {
         // Defaults: neutral off-white plastic, matches OpenArm "light" archetype
         let color = "#9ba1ab";
         let metalness = 0.1;
@@ -558,16 +574,54 @@ function RobotScene({
           roughness = 0.6;
           side = THREE.DoubleSide;
         }
-        return new THREE.Mesh(
-          geometry,
-          new THREE.MeshStandardMaterial({
-            color,
-            metalness,
-            roughness,
-            side,
-          }),
-        );
+        return new THREE.MeshStandardMaterial({
+          color,
+          metalness,
+          roughness,
+          side,
+          flatShading,
+        });
       };
+      const makeMesh = (geometry: THREE.BufferGeometry) =>
+        new THREE.Mesh(geometry, makeMaterial(false));
+      if (url.endsWith(".glb")) {
+        mgr.itemStart(url);
+        loadGlbScene(url)
+          .then((glbScene) => {
+            const obj = glbScene.clone();
+            if (!isOpenArm) {
+              obj.traverse((child) => {
+                if (child instanceof THREE.Mesh)
+                  child.material = makeMaterial(true);
+              });
+            }
+            onLoad(obj);
+          })
+          .catch((err) => onLoad(new THREE.Object3D(), err as Error))
+          .finally(() => mgr.itemEnd(url));
+        return;
+      }
+      if (url.endsWith(".dae")) {
+        /// URDFLoader re-parents and re-orients what it is handed, so it gets a clone (sharing
+        /// geometry and materials) and the cached scene stays intact.
+        mgr.itemStart(url);
+        loadDaeScene(url)
+          .then((daeScene) => onLoad(daeScene.clone()))
+          .catch((err) => onLoad(new THREE.Object3D(), err as Error))
+          .finally(() => mgr.itemEnd(url));
+        return;
+      }
+      // STL files — apply final PBR materials directly here. We used to do a
+      // post-load archetype rebuild in manager.onLoad, but STLLoader calls
+      // `manager.itemEnd` *before* our Promise resolves — so when the last
+      // STL completes, manager.onLoad fires synchronously, our traverse runs,
+      // and THEN URDFLoader's inner `group.add(obj)` + `obj.material = urdf`
+      // runs in a microtask. Last-batch meshes ended up gold/green because
+      // they were added to the robot after our rebuild passed.
+      //
+      // Fix: pick the archetype color here, wrap the mesh in a Group so
+      // URDFLoader won't override our material (its override only triggers
+      // for direct `THREE.Mesh` instances), and skip the onLoad rebuild.
 
       /// Tracked on this manager even when the geometry is cached or a prefetch already started
       /// the download: manager.onLoad (shadows, camera fit) only fires for tracked loads, and
