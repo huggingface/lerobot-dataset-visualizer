@@ -57,6 +57,104 @@ function loadStlGeometry(url: string): Promise<THREE.BufferGeometry> {
   return loading;
 }
 
+/// One download and parse per DAE file per session: the OpenArm URDF references finger.dae 4 times
+/// and each arm link twice, and the viewer remounts on every visit to the 3D Replay tab.
+const daeSceneCache = new Map<string, Promise<THREE.Object3D>>();
+
+function loadDaeScene(url: string): Promise<THREE.Object3D> {
+  let loading = daeSceneCache.get(url);
+  if (!loading) {
+    loading = new ColladaLoader()
+      .loadAsync(url)
+      .then((collada) => {
+        // DAE (Collada) files — ColladaLoader yields whatever the .dae author
+        // baked in: flat MeshPhongMaterial/MeshBasicMaterial colors plus, in
+        // OpenArm's case, ~23 per-file PointLight/SpotLight nodes. The stray
+        // lights caused the scene to look pure-white everywhere regardless of
+        // our own lighting, and the flat materials looked cartoonish. We strip
+        // both and rebuild every mesh with a MeshStandardMaterial bucketed into
+        // one of three archetypes (carbon-black, brushed metal, off-white paint)
+        // based on the original base-color lightness.
+        if (url.includes("openarm")) {
+          const strayLights: THREE.Object3D[] = [];
+          collada.scene.traverse((child) => {
+            if (
+              (child as THREE.Light).isLight &&
+              !(child instanceof THREE.AmbientLight)
+            ) {
+              strayLights.push(child);
+            }
+          });
+          for (const l of strayLights) l.parent?.remove(l);
+
+          collada.scene.traverse((child) => {
+            if (!(child instanceof THREE.Mesh) || !child.material) return;
+
+            const originals = Array.isArray(child.material)
+              ? child.material
+              : [child.material];
+
+            const rebuilt = originals.map((orig) => {
+              const srcColor =
+                (orig as THREE.MeshStandardMaterial).color ??
+                new THREE.Color("#c0c4cc");
+              const hsl = { h: 0, s: 0, l: 0 };
+              srcColor.getHSL(hsl);
+
+              // Archetype classification by original lightness.
+              let color: THREE.Color;
+              let metalness: number;
+              let roughness: number;
+              let envMapIntensity: number;
+              if (hsl.l < 0.3) {
+                // Carbon / anodised structural parts
+                color = new THREE.Color().setHSL(hsl.h, 0.02, 0.09);
+                metalness = 0.15;
+                roughness = 0.75;
+                envMapIntensity = 0.6;
+              } else if (hsl.l < 0.7) {
+                // Brushed metal joint collars / accents
+                color = new THREE.Color().setHSL(hsl.h, 0.04, 0.42);
+                metalness = 0.75;
+                roughness = 0.35;
+                envMapIntensity = 1.1;
+              } else {
+                // Off-white painted plates
+                color = new THREE.Color().setHSL(hsl.h, 0.03, 0.6);
+                metalness = 0.1;
+                roughness = 0.5;
+                envMapIntensity = 0.9;
+              }
+
+              const mat = new THREE.MeshStandardMaterial({
+                color,
+                metalness,
+                roughness,
+                envMapIntensity,
+                side: THREE.DoubleSide,
+              });
+              orig.dispose?.();
+              return mat;
+            });
+
+            child.material = Array.isArray(child.material)
+              ? rebuilt
+              : rebuilt[0];
+            child.castShadow = true;
+            child.receiveShadow = true;
+          });
+        }
+        return collada.scene;
+      })
+      .catch((err) => {
+        daeSceneCache.delete(url);
+        throw err;
+      });
+    daeSceneCache.set(url, loading);
+  }
+  return loading;
+}
+
 // URDFs + meshes are hosted in the Hub bucket at
 // https://huggingface.co/buckets/lerobot/robot-urdfs. URDFLoader resolves
 // relative mesh paths against the URDF's own URL, so the bucket layout
@@ -410,93 +508,14 @@ function RobotScene({
       return group;
     };
     loader.loadMeshCb = (url, mgr, onLoad) => {
-      // DAE (Collada) files — ColladaLoader yields whatever the .dae author
-      // baked in: flat MeshPhongMaterial/MeshBasicMaterial colors plus, in
-      // OpenArm's case, ~23 per-file PointLight/SpotLight nodes. The stray
-      // lights caused the scene to look pure-white everywhere regardless of
-      // our own lighting, and the flat materials looked cartoonish. We strip
-      // both and rebuild every mesh with a MeshStandardMaterial bucketed into
-      // one of three archetypes (carbon-black, brushed metal, off-white paint)
-      // based on the original base-color lightness.
       if (url.endsWith(".dae")) {
-        const colladaLoader = new ColladaLoader(mgr);
-        colladaLoader.load(
-          url,
-          (collada) => {
-            if (isOpenArm) {
-              const strayLights: THREE.Object3D[] = [];
-              collada.scene.traverse((child) => {
-                if (
-                  (child as THREE.Light).isLight &&
-                  !(child instanceof THREE.AmbientLight)
-                ) {
-                  strayLights.push(child);
-                }
-              });
-              for (const l of strayLights) l.parent?.remove(l);
-
-              collada.scene.traverse((child) => {
-                if (!(child instanceof THREE.Mesh) || !child.material) return;
-
-                const originals = Array.isArray(child.material)
-                  ? child.material
-                  : [child.material];
-
-                const rebuilt = originals.map((orig) => {
-                  const srcColor =
-                    (orig as THREE.MeshStandardMaterial).color ??
-                    new THREE.Color("#c0c4cc");
-                  const hsl = { h: 0, s: 0, l: 0 };
-                  srcColor.getHSL(hsl);
-
-                  // Archetype classification by original lightness.
-                  let color: THREE.Color;
-                  let metalness: number;
-                  let roughness: number;
-                  let envMapIntensity: number;
-                  if (hsl.l < 0.3) {
-                    // Carbon / anodised structural parts
-                    color = new THREE.Color().setHSL(hsl.h, 0.02, 0.09);
-                    metalness = 0.15;
-                    roughness = 0.75;
-                    envMapIntensity = 0.6;
-                  } else if (hsl.l < 0.7) {
-                    // Brushed metal joint collars / accents
-                    color = new THREE.Color().setHSL(hsl.h, 0.04, 0.42);
-                    metalness = 0.75;
-                    roughness = 0.35;
-                    envMapIntensity = 1.1;
-                  } else {
-                    // Off-white painted plates
-                    color = new THREE.Color().setHSL(hsl.h, 0.03, 0.6);
-                    metalness = 0.1;
-                    roughness = 0.5;
-                    envMapIntensity = 0.9;
-                  }
-
-                  const mat = new THREE.MeshStandardMaterial({
-                    color,
-                    metalness,
-                    roughness,
-                    envMapIntensity,
-                    side: THREE.DoubleSide,
-                  });
-                  orig.dispose?.();
-                  return mat;
-                });
-
-                child.material = Array.isArray(child.material)
-                  ? rebuilt
-                  : rebuilt[0];
-                child.castShadow = true;
-                child.receiveShadow = true;
-              });
-            }
-            onLoad(collada.scene);
-          },
-          undefined,
-          (err) => onLoad(new THREE.Object3D(), err as Error),
-        );
+        /// URDFLoader re-parents and re-orients what it is handed, so it gets a clone (sharing
+        /// geometry and materials) and the cached scene stays intact.
+        mgr.itemStart(url);
+        loadDaeScene(url)
+          .then((daeScene) => onLoad(daeScene.clone()))
+          .catch((err) => onLoad(new THREE.Object3D(), err as Error))
+          .finally(() => mgr.itemEnd(url));
         return;
       }
       // STL files — apply final PBR materials directly here. We used to do a
