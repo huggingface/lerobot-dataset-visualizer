@@ -21,13 +21,13 @@ type TimeUpdateSource = "external" | "video";
 type TimeControls = {
   seek: (t: number, source?: TimeUpdateSource) => void;
   subscribe: (cb: (t: number) => void) => () => void;
-  isPlaying: boolean;
   setIsPlaying: React.Dispatch<React.SetStateAction<boolean>>;
-  duration: number;
   setDuration: React.Dispatch<React.SetStateAction<number>>;
 };
 
 type TimeContextType = TimeControls & {
+  isPlaying: boolean;
+  duration: number;
   currentTime: number;
   // Monotonically increasing counter that bumps on every `external` seek.
   // Sync effects compare the current value against a stored ref to detect
@@ -47,9 +47,9 @@ export const useTime = () => {
 };
 
 /**
- * Seeking and play state without `currentTime`. A component that only seeks or toggles playback
- * should use this: reading `useTime()` at all re-renders it on every playback tick, whichever
- * fields it destructures.
+ * Seeking and play/pause setters, stable for the provider's lifetime. A component that only seeks
+ * or toggles playback should use this: reading `useTime()` at all re-renders it on every playback
+ * tick, whichever fields it destructures. `isPlaying` and `duration` are read through `useTime()`.
  */
 export const useTimeControls = () => {
   const ctx = useContext(TimeControlsContext);
@@ -119,19 +119,18 @@ export const TimeProvider: React.FC<{
   }, []);
 
   const controls = useMemo(
-    () => ({
-      seek: updateTime,
-      subscribe,
-      isPlaying,
-      setIsPlaying,
-      duration,
-      setDuration,
-    }),
-    [updateTime, subscribe, isPlaying, duration],
+    () => ({ seek: updateTime, subscribe, setIsPlaying, setDuration }),
+    [updateTime, subscribe],
   );
   const value = useMemo(
-    () => ({ ...controls, currentTime, externalSeekVersion }),
-    [controls, currentTime, externalSeekVersion],
+    () => ({
+      ...controls,
+      isPlaying,
+      duration,
+      currentTime,
+      externalSeekVersion,
+    }),
+    [controls, isPlaying, duration, currentTime, externalSeekVersion],
   );
 
   return (
