@@ -853,9 +853,12 @@ export default function URDFViewer({
   const chartDataCache = useRef<Record<number, Record<string, number>[]>>({
     [data.episodeId]: data.flatChartData,
   });
+  /// A slower load for an earlier pick must not overwrite the episode picked since.
+  const latestEpisodeRef = useRef(data.episodeId);
 
   const handleEpisodeChange = useCallback(
     (epId: number) => {
+      latestEpisodeRef.current = epId;
       setSelectedEpisode(epId);
       setFrame(0);
       frameRef.current = 0;
@@ -863,6 +866,7 @@ export default function URDFViewer({
 
       if (chartDataCache.current[epId]) {
         setChartData(chartDataCache.current[epId]);
+        setEpisodeLoading(false);
         return;
       }
 
@@ -881,10 +885,12 @@ export default function URDFViewer({
         .then((result) => {
           if (!result) return;
           chartDataCache.current[epId] = result;
-          setChartData(result);
+          if (latestEpisodeRef.current === epId) setChartData(result);
         })
         .catch((err) => console.error("Failed to load episode:", err))
-        .finally(() => setEpisodeLoading(false));
+        .finally(() => {
+          if (latestEpisodeRef.current === epId) setEpisodeLoading(false);
+        });
     },
     [ensureDatasetInfo, repoId],
   );
