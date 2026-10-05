@@ -648,8 +648,9 @@ function isV2IndexContiguous(
 }
 
 /**
- * What the package would return for a contiguous v2 index, built from info.json alone. The v2
- * path reads only `videos[].url` and `data`; its duration comes from the chart timestamps.
+ * Enough of the package's episode for getEpisodeDataV2, built from info.json alone. Only
+ * `videos[].url` and `data` are filled in: `length`, `durationSec`, `tasks` and `toSec` stay empty,
+ * since that path takes its duration from the chart timestamps.
  */
 async function v2EpisodeFromTemplates(
   repoId: string,
@@ -725,7 +726,11 @@ async function getEpisodeDataV2(
           .map((x) => parseInt(x.trim(), 10))
           .filter((x) => !isNaN(x));
 
-  const contiguous = await isV2IndexContiguous(repoId, info.total_episodes);
+  /// Both ways of locating the episode need the package's info.json; fetch it alongside the probe.
+  const [contiguous] = await Promise.all([
+    isV2IndexContiguous(repoId, info.total_episodes),
+    leRobotDataset(repoId).info(),
+  ]);
   const leRobotEpisode = contiguous
     ? await v2EpisodeFromTemplates(repoId, episodeId)
     : await loadLeRobotEpisode(repoId, episodeId);
