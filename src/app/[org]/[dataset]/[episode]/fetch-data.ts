@@ -22,7 +22,13 @@ import {
   depthEncodingFromFeature,
 } from "@/utils/colormaps";
 import type { VideoInfo } from "@/types";
-import { LeRobotDataset, parseInfo } from "@huggingface/lerobot";
+import {
+  LeRobotDataset,
+  HttpError,
+  fetchRange,
+  formatPathTemplate,
+  parseInfo,
+} from "@huggingface/lerobot";
 import type { LeRobotEpisode, LeRobotFrames } from "@huggingface/lerobot";
 import { authHeaders, getAuthToken } from "@/utils/auth";
 
@@ -590,6 +596,109 @@ export async function getEpisodeData(
   }
 }
 
+const v2ContiguousIndexes = new Map<string, Promise<boolean>>();
+/// The package's first 8 KB read of episodes.jsonl already holds the first few dozen episodes, so
+/// probing for those would only add a round trip.
+const V2_PROBE_FROM_EPISODE = 32;
+
+/**
+ * Whether line N of `meta/episodes.jsonl` is episode N, judged from its first and last lines.
+ *
+ * The package finds line N by re-downloading ever longer prefixes of the file (8 KB × 4^k) one
+ * after another and gives up past 4 MB, so the upper episodes of a large v2 dataset could not open.
+ * An index running 0..total-1 lets the episode be located from info.json instead; indexes that
+ * start elsewhere (10, 20, 30, ... in behavior-1k) keep the package's lookup.
+ */
+function isV2IndexContiguous(
+  repoId: string,
+  totalEpisodes: number,
+): Promise<boolean> {
+  const url = leRobotDataset(repoId).fileUrl("meta/episodes.jsonl");
+  let contiguous = v2ContiguousIndexes.get(url);
+  if (!contiguous) {
+    const read = (start: number, end?: number) =>
+      fetchRange(url, start, end, {
+        additionalFetchHeaders: authHeaders(),
+      }).then(({ bytes }) => new TextDecoder().decode(bytes));
+    const headRead = read(0, 4095);
+    /// The Hub answers a suffix longer than the file with a 416; the head then holds all of it.
+    const tailRead = read(-4096).catch((error) => {
+      if (error instanceof HttpError && error.status === 416) return headRead;
+      throw error;
+    });
+    contiguous = Promise.all([headRead, tailRead]).then(
+      ([head, tail]) => {
+        try {
+          const first = JSON.parse(head.split("\n")[0]);
+          const last = JSON.parse(tail.trimEnd().split("\n").pop() ?? "");
+          return (
+            first.episode_index === 0 &&
+            last.episode_index === totalEpisodes - 1
+          );
+        } catch {
+          /// A line longer than the 4 KB window: the answer would not change on a retry.
+          return false;
+        }
+      },
+      () => {
+        v2ContiguousIndexes.delete(url);
+        return false;
+      },
+    );
+    v2ContiguousIndexes.set(url, contiguous);
+  }
+  return contiguous;
+}
+
+/**
+ * Enough of the package's episode for getEpisodeDataV2, built from info.json alone. Only
+ * `videos[].url` and `data` are filled in: `length`, `durationSec`, `tasks` and `toSec` stay empty,
+ * since that path takes its duration from the chart timestamps.
+ */
+async function v2EpisodeFromTemplates(
+  repoId: string,
+  episodeId: number,
+): Promise<LeRobotEpisode> {
+  const dataset = leRobotDataset(repoId);
+  const info = await dataset.info();
+  /// The package's lookup keeps answering for ids that name no episode ("not found" past the end).
+  if (
+    !Number.isInteger(episodeId) ||
+    episodeId < 0 ||
+    episodeId >= info.totalEpisodes
+  ) {
+    return loadLeRobotEpisode(repoId, episodeId);
+  }
+  const { videoPath } = info;
+  const vars = {
+    episode_chunk: Math.floor(episodeId / info.chunksSize),
+    episode_index: episodeId,
+  };
+  return {
+    index: episodeId,
+    length: 0,
+    durationSec: 0,
+    tasks: [],
+    videos:
+      videoPath === undefined
+        ? []
+        : info.cameras.map((camera) => ({
+            cameraKey: camera.key,
+            url: dataset.fileUrl(
+              formatPathTemplate(videoPath, { ...vars, video_key: camera.key }),
+            ),
+            fromSec: 0,
+            toSec: 0,
+          })),
+    data: {
+      url: dataset.fileUrl(formatPathTemplate(info.dataPath, vars)),
+      /// The file holds this one episode, and hyparquet stops at its last row.
+      fromRow: 0,
+      toRow: Number.MAX_SAFE_INTEGER,
+    },
+  };
+}
+
 // Legacy v2.x data loading
 async function getEpisodeDataV2(
   repoId: string,
@@ -620,7 +729,19 @@ async function getEpisodeDataV2(
           .map((x) => parseInt(x.trim(), 10))
           .filter((x) => !isNaN(x));
 
-  const leRobotEpisode = await loadLeRobotEpisode(repoId, episodeId);
+  /// Both ways of locating the episode need the package's info.json; fetch it alongside the probe.
+  const probe =
+    episodeId >= V2_PROBE_FROM_EPISODE ||
+    v2ContiguousIndexes.has(
+      leRobotDataset(repoId).fileUrl("meta/episodes.jsonl"),
+    );
+  const [contiguous] = await Promise.all([
+    probe && isV2IndexContiguous(repoId, info.total_episodes),
+    leRobotDataset(repoId).info(),
+  ]);
+  const leRobotEpisode = contiguous
+    ? await v2EpisodeFromTemplates(repoId, episodeId)
+    : await loadLeRobotEpisode(repoId, episodeId);
   const videosInfo =
     info.video_path !== null ? toVideosInfo(leRobotEpisode, info, false) : [];
 
