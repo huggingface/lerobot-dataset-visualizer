@@ -410,12 +410,24 @@ export async function getEpisodeData(
 ): Promise<EpisodeData> {
   const repoId = `${org}/${dataset}`;
   try {
+    // episodes() awaits the package's own meta/info.json read, which would otherwise start only after ours.
+    // Forget the instance if that read fails, so the next load retries instead of reusing the memoized rejection.
+    const leRobot = leRobotDataset(repoId);
+    const forgetLeRobot = () => {
+      for (const [key, cached] of leRobotDatasets) {
+        if (cached === leRobot) leRobotDatasets.delete(key);
+      }
+    };
+    void leRobot.info().catch(forgetLeRobot);
+
     console.time(`[perf] getDatasetVersionAndInfo`);
     const { version, info: rawInfo } = await getDatasetVersionAndInfo(repoId);
     console.timeEnd(`[perf] getDatasetVersionAndInfo`);
     const info = rawInfo as unknown as DatasetMetadata;
 
     if (info.total_episodes === 0) {
+      // The package memoizes info() with no TTL: keeping it would pin totalEpisodes at 0 after episodes are pushed.
+      forgetLeRobot();
       throw new NoEpisodesError(`${repoId} has no episodes`);
     }
 
