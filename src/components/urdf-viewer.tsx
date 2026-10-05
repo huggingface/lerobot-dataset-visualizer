@@ -308,7 +308,7 @@ function RobotScene({
   trailResetKey: number;
   scale: number;
 }) {
-  const { scene, controls, size } = useThree();
+  const { scene, controls, size, invalidate } = useThree();
   const robotRef = useRef<URDFRobot | null>(null);
   const tipLinksRef = useRef<THREE.Object3D[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -328,6 +328,7 @@ function RobotScene({
   /// whenever the meshes were already cached, since the joint values arrive a render later.
   const pendingFitRef = useRef(false);
   const pendingFitFramesRef = useRef(0);
+  const framesSinceInputRef = useRef(0);
 
   // Reset trails when episode changes
   useEffect(() => {
@@ -337,6 +338,13 @@ function RobotScene({
     }
     for (const l of linesRef.current) l.visible = false;
   }, [trailResetKey]);
+
+  /// useFrame applies these, so R3F can't tell they changed: request a frame and restart the trail
+  /// keep-alive in useFrame.
+  useEffect(() => {
+    framesSinceInputRef.current = 0;
+    invalidate();
+  }, [jointValues, trailEnabled, trailResetKey, invalidate]);
 
   // Create/destroy trail Line2 objects when tip count changes
   const ensureTrails = useCallback(
@@ -388,6 +396,8 @@ function RobotScene({
     const isG1 = urdfUrl.includes("g1");
     const manager = new THREE.LoadingManager();
     const loader = new URDFLoader(manager);
+    /// itemEnd fires after URDFLoader attaches the URDF or a mesh, so each one paints as it lands.
+    manager.onProgress = () => invalidate();
     // URDFLoader (node_modules/urdf-loader/src/URDFLoader.js ~line 556) does
     //   `if (obj instanceof THREE.Mesh) obj.material = material;`
     // on every mesh we hand back — overwriting our PBR material with the
@@ -565,6 +575,7 @@ function RobotScene({
         });
         pendingFitRef.current = true;
         pendingFitFramesRef.current = 0;
+        invalidate();
       }, 0);
     };
 
@@ -634,7 +645,7 @@ function RobotScene({
       }
       tipLinksRef.current = [];
     };
-  }, [urdfUrl, scale, scene, onJointsLoaded, ensureTrails]);
+  }, [urdfUrl, scale, scene, onJointsLoaded, ensureTrails, invalidate]);
 
   const tipWorldPos = useMemo(() => new THREE.Vector3(), []);
 
@@ -657,6 +668,15 @@ function RobotScene({
         fitCameraToRobot(robot, state.camera, state.controls);
       }
     }
+
+    /// The fit wait counts rendered frames and the trail appends a point per rendered frame: keep
+    /// rendering until the fit is done and for MAX_TRAIL_POINTS frames after the last change, so
+    /// the trail fades and collapses as it did when every display frame rendered.
+    if (
+      pendingFitRef.current ||
+      (trailEnabled && framesSinceInputRef.current++ < MAX_TRAIL_POINTS)
+    )
+      state.invalidate();
 
     const tips = tipLinksRef.current;
     if (!trailEnabled || tips.length === 0) {
@@ -1073,6 +1093,7 @@ export default function URDFViewer({
         )}
         <Canvas
           shadows
+          frameloop="demand"
           camera={{
             position: isG1
               ? [1.5, 1.0, 1.5]
