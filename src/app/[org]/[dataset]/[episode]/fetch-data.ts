@@ -597,6 +597,9 @@ export async function getEpisodeData(
 }
 
 const v2ContiguousIndexes = new Map<string, Promise<boolean>>();
+/// The package's first 8 KB read of episodes.jsonl already holds the first few dozen episodes, so
+/// probing for those would only add a round trip.
+const V2_PROBE_FROM_EPISODE = 32;
 
 /**
  * Whether line N of `meta/episodes.jsonl` is episode N, judged from its first and last lines.
@@ -727,8 +730,13 @@ async function getEpisodeDataV2(
           .filter((x) => !isNaN(x));
 
   /// Both ways of locating the episode need the package's info.json; fetch it alongside the probe.
+  const probe =
+    episodeId >= V2_PROBE_FROM_EPISODE ||
+    v2ContiguousIndexes.has(
+      leRobotDataset(repoId).fileUrl("meta/episodes.jsonl"),
+    );
   const [contiguous] = await Promise.all([
-    isV2IndexContiguous(repoId, info.total_episodes),
+    probe && isV2IndexContiguous(repoId, info.total_episodes),
     leRobotDataset(repoId).info(),
   ]);
   const leRobotEpisode = contiguous
