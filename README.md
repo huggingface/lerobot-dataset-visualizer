@@ -100,7 +100,7 @@ bun run format
 
 ### Environment Variables
 
-- `DATASET_URL`: (optional) Base URL for dataset hosting (defaults to HuggingFace Datasets).
+- `NEXT_PUBLIC_DATASET_URL` (or `DATASET_URL`): (optional) Base URL for dataset hosting (defaults to `https://huggingface.co/datasets`). Also accepts a relative path (e.g. `/api/datasets`) when serving datasets through a same-origin storage proxy.
 - `NEXT_PUBLIC_ANNOTATE_BACKEND_URL`: (optional) URL of the FastAPI annotation
   backend (`backend/app.py`). When set, the Annotations tab can save edits and
   rewrite parquet shards / push to the Hub. When unset the tab is read/edit
