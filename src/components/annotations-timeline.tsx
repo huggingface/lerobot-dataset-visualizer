@@ -6,7 +6,7 @@
  * sections that mirror the two language columns:
  *
  *   PERSISTENT (language_persistent — broadcast across every frame):
- *   - task_aug: task phrasings shown as point-in-time ticks at episode start.
+ *   - task_aug: task phrasings collapsed into one full-episode span.
  *   - subtask: filled spans from each emit time until the next subtask emit
  *     (or episode end). Numbered. Resizable edges; the empty subtask track
  *     also accepts drag-to-create.
@@ -35,6 +35,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTime } from "../context/time-context";
 import { useAnnotations } from "../context/annotations-context";
+import PlaybackBar from "./playback-bar";
+import {
+  timelineTicks,
+  timelineWindow,
+  visibleSpan,
+} from "../utils/annotationTimeline";
 import {
   classifyVqa,
   isSpeechAtom,
@@ -52,7 +58,7 @@ const TRACK_GROUPS = [
   {
     column: "persistent",
     title: "Persistent",
-    sub: "language_persistent · broadcast across every frame",
+    sub: "Active across frames",
     tracks: [
       // task_aug applies to the whole episode (it's a rephrasing of the task,
       // stored at t0 but persistent across every frame), so it reads as a
@@ -78,7 +84,7 @@ const TRACK_GROUPS = [
   {
     column: "events",
     title: "Events",
-    sub: "language_events · fire on a single frame",
+    sub: "At a single frame",
     tracks: [
       {
         key: "interjection",
@@ -125,7 +131,8 @@ interface PendingCreate {
 }
 
 export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
-  const { atoms, addAtom, updateAtom, snap, selectAtom } = useAnnotations();
+  const { atoms, addAtom, updateAtom, snap, selectAtom, selectedIdx } =
+    useAnnotations();
   const { currentTime, seek, setIsPlaying } = useTime();
   const trackBandRef = useRef<HTMLDivElement | null>(null);
 
@@ -135,6 +142,24 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
     null,
   );
   const [createLabel, setCreateLabel] = useState("");
+  const [zoom, setZoom] = useState<"detail" | "full">("detail");
+  const [windowStart, setWindowStart] = useState(0);
+  const [showEmpty, setShowEmpty] = useState(false);
+  const viewWidth = zoom === "full" ? duration : Math.min(duration, 40);
+  const viewStart =
+    zoom === "full"
+      ? 0
+      : Math.min(windowStart, Math.max(0, duration - viewWidth));
+  const view = { start: viewStart, end: viewStart + viewWidth };
+
+  // Keep the viewport stable while scrubbing/resizing. Follow playback only
+  // when it leaves the visible window, rather than moving the axis every frame.
+  useEffect(() => {
+    if (drag || pendingCreate || zoom === "full") return;
+    if (currentTime < viewStart || currentTime > viewStart + viewWidth) {
+      setWindowStart(timelineWindow(duration, currentTime).start);
+    }
+  }, [currentTime, duration, drag, pendingCreate, zoom, viewStart, viewWidth]);
 
   // Pause + select helper
   const jumpAndSelect = React.useCallback(
@@ -267,13 +292,16 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
 
   // ============ Pixel <-> time mapping ============
   // The full-width track band (no label margin) is `trackBandRef`. Convert
-  // mouse client.x to a 0..duration timestamp.
-  const trackXToTs = (clientX: number): number => {
-    const r = trackBandRef.current?.getBoundingClientRect();
-    if (!r || !duration) return 0;
-    const frac = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
-    return frac * duration;
-  };
+  // mouse client.x to a timestamp inside the visible window.
+  const trackXToTs = React.useCallback(
+    (clientX: number): number => {
+      const r = trackBandRef.current?.getBoundingClientRect();
+      if (!r || !duration) return 0;
+      const frac = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+      return viewStart + frac * viewWidth;
+    },
+    [duration, viewStart, viewWidth],
+  );
 
   // ============ Event-track click → seek + select ============
   const onTickClick = (e: React.MouseEvent, atomIdx: number, t: number) => {
@@ -386,7 +414,7 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
       if (drag.kind === "create") {
         const a = Math.min(drag.startTs ?? 0, drag.endTs ?? 0);
         const b = Math.max(drag.startTs ?? 0, drag.endTs ?? 0);
-        const distFrac = Math.abs(b - a) / Math.max(0.001, duration);
+        const distFrac = Math.abs(b - a) / Math.max(0.001, viewWidth);
         // Need at least a few px of drag to count, otherwise treat as click.
         const trackWidth =
           trackBandRef.current?.getBoundingClientRect().width ?? 1;
@@ -394,7 +422,7 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
           // Anchor the label popup at the upper-right of the new span.
           const r = trackBandRef.current?.getBoundingClientRect();
           if (r) {
-            const xFrac = b / Math.max(0.001, duration);
+            const xFrac = (b - viewStart) / Math.max(0.001, viewWidth);
             setPendingCreate({
               start: a,
               end: b,
@@ -421,7 +449,17 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
-  }, [drag, duration, seek, setIsPlaying, snap, updateAtom]);
+  }, [
+    drag,
+    duration,
+    seek,
+    setIsPlaying,
+    snap,
+    updateAtom,
+    viewStart,
+    viewWidth,
+    trackXToTs,
+  ]);
 
   // ============ Tooltip helpers ============
   const showTip = (e: React.MouseEvent, meta: string, text: string) => {
@@ -466,14 +504,88 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
 
   // ============ Render ============
   if (!duration) return null;
+  const emptyCount = TRACK_GROUPS.reduce(
+    (count, group) =>
+      count +
+      group.tracks.filter(
+        (track) => track.key !== "subtask" && lanes[track.key].length === 0,
+      ).length,
+    0,
+  );
+  const overviewSpans = lanes.subtask.length ? lanes.subtask : lanes.plan;
+  const visibleGroups = TRACK_GROUPS.map((group) => ({
+    ...group,
+    tracks: group.tracks.filter(
+      (track) =>
+        track.key === "subtask" || showEmpty || lanes[track.key].length > 0,
+    ),
+  })).filter((group) => group.tracks.length > 0);
 
   return (
-    <div className="tl">
+    <section className="tl" aria-label="Annotation timeline">
       <div className="tl-head">
-        <span>Annotations timeline</span>
+        <h3>
+          Timeline <span>{atoms.length} annotations</span>
+        </h3>
+        <select
+          aria-label="Timeline zoom"
+          value={zoom}
+          onChange={(e) => {
+            setWindowStart(timelineWindow(duration, currentTime).start);
+            setZoom(e.target.value as "detail" | "full");
+          }}
+        >
+          <option value="detail">40-second window</option>
+          <option value="full">Full episode</option>
+        </select>
+      </div>
+      <div className="tl-transport">
+        <PlaybackBar />
+      </div>
+
+      <div className="tl-overview-head">
+        <span className="section-kicker">Episode overview</span>
         <span className="ts-display">
           {currentTime.toFixed(2)}s / {duration.toFixed(2)}s
         </span>
+      </div>
+      <div
+        className="tl-overview"
+        onClick={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          jumpAndSelect(
+            ((e.clientX - rect.left) / rect.width) * duration,
+            null,
+          );
+        }}
+      >
+        {overviewSpans.map((span, i) => (
+          <button
+            type="button"
+            key={span.atomIdx}
+            aria-label={`Annotation ${i}: ${span.label}`}
+            aria-pressed={selectedIdx === span.atomIdx}
+            style={{
+              left: `${(span.start / duration) * 100}%`,
+              width: `calc(${((span.end - span.start) / duration) * 100}% - 2px)`,
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              jumpAndSelect(span.start, span.atomIdx);
+            }}
+          />
+        ))}
+        <div
+          className="tl-overview-window"
+          style={{
+            left: `${(view.start / duration) * 100}%`,
+            width: `${(viewWidth / duration) * 100}%`,
+          }}
+        />
+        <div
+          className="tl-overview-cursor"
+          style={{ left: `${(currentTime / duration) * 100}%` }}
+        />
       </div>
 
       {/* Time-axis ruler — clicking it scrubs */}
@@ -486,11 +598,10 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
           setIsPlaying(false);
         }}
       >
-        {Array.from({ length: Math.floor(duration / 5) + 1 }).map((_, i) => {
-          const t = i * 5;
-          const left = (t / duration) * 100;
+        {timelineTicks(view).map((t) => {
+          const left = ((t - view.start) / viewWidth) * 100;
           return (
-            <div key={i} className="tick-mark" style={{ left: `${left}%` }}>
+            <div key={t} className="tick-mark" style={{ left: `${left}%` }}>
               {t}s
             </div>
           );
@@ -506,11 +617,13 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
       {(() => {
         const bandLeft = `${LABEL_WIDTH + 10}px`;
         const playheadLeft = `calc(${bandLeft} + ${
-          duration ? currentTime / duration : 0
+          viewWidth
+            ? Math.max(0, Math.min(1, (currentTime - viewStart) / viewWidth))
+            : 0
         } * (100% - ${bandLeft}))`;
         return (
           <div className="tl-tracks" style={{ position: "relative" }}>
-            {TRACK_GROUPS.map((group) => (
+            {visibleGroups.map((group) => (
               <div className="tl-section" key={group.column}>
                 <div className={`tl-section-head ${group.column}`}>
                   <span className="tl-section-title">{group.title}</span>
@@ -519,7 +632,9 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
                 {group.tracks.map((tk) => (
                   <div className="tl-row" key={tk.key}>
                     <div className="label">
-                      <span className={`style-dot dot-${tk.key}`} />
+                      <span
+                        className={`style-dot dot-${tk.key.replace("_", "-")}`}
+                      />
                       {tk.label}
                     </div>
                     <div
@@ -539,15 +654,25 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
                       {/* Editable subtask spans (resize + drag-to-create) */}
                       {tk.render === "span-edit" &&
                         lanes.subtask.map((s, k) => {
-                          const left = (s.start / duration) * 100;
-                          const width = Math.max(
-                            0.3,
-                            ((s.end - s.start) / duration) * 100,
-                          );
+                          const position = visibleSpan(s.start, s.end, view);
+                          if (!position) return null;
+                          const { left, width } = position;
                           return (
                             <div
                               key={k}
-                              className={`tl-seg subtask ${drag?.kind === "edge" && drag.atomIdx === s.atomIdx ? "dragging" : ""}`}
+                              className={`tl-seg subtask ${selectedIdx === s.atomIdx ? "selected" : ""} ${drag?.kind === "edge" && drag.atomIdx === s.atomIdx ? "dragging" : ""}`}
+                              role="button"
+                              tabIndex={0}
+                              aria-pressed={selectedIdx === s.atomIdx}
+                              aria-label={`Subtask ${k}: ${s.label}`}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  jumpAndSelect(s.start, s.atomIdx);
+                                }
+                              }}
                               style={{ left: `${left}%`, width: `${width}%` }}
                               onClick={(e) =>
                                 onSpanBodyClick(e, s.atomIdx, s.start)
@@ -562,28 +687,21 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
                               onMouseMove={moveTip}
                               onMouseLeave={hideTip}
                             >
-                              <span style={{ opacity: 0.7, fontSize: 10 }}>
-                                {k}
-                              </span>
-                              <span
-                                style={{
-                                  whiteSpace: "nowrap",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                }}
-                              >
-                                {s.label}
-                              </span>
-                              <div
-                                className="resize l"
-                                onPointerDown={(e) => onEdgeDown(e, "l", k)}
-                              />
-                              {k + 1 < lanes.subtask.length && (
+                              <span className="tl-seg-number">{k}</span>
+                              <span className="tl-seg-label">{s.label}</span>
+                              {s.start >= view.start && (
                                 <div
-                                  className="resize r"
-                                  onPointerDown={(e) => onEdgeDown(e, "r", k)}
+                                  className="resize l"
+                                  onPointerDown={(e) => onEdgeDown(e, "l", k)}
                                 />
                               )}
+                              {s.end <= view.end &&
+                                k + 1 < lanes.subtask.length && (
+                                  <div
+                                    className="resize r"
+                                    onPointerDown={(e) => onEdgeDown(e, "r", k)}
+                                  />
+                                )}
                             </div>
                           );
                         })}
@@ -593,8 +711,8 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
                         <div
                           className="tl-create-preview"
                           style={{
-                            left: `${(Math.min(drag.startTs ?? 0, drag.endTs ?? 0) / duration) * 100}%`,
-                            width: `${(Math.abs((drag.endTs ?? 0) - (drag.startTs ?? 0)) / duration) * 100}%`,
+                            left: `${((Math.min(drag.startTs ?? 0, drag.endTs ?? 0) - view.start) / viewWidth) * 100}%`,
+                            width: `${(Math.abs((drag.endTs ?? 0) - (drag.startTs ?? 0)) / viewWidth) * 100}%`,
                           }}
                         />
                       )}
@@ -655,15 +773,13 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
                             atomIdx: number;
                           }>
                         ).map((s, k) => {
-                          const left = (s.start / duration) * 100;
-                          const width = Math.max(
-                            0.3,
-                            ((s.end - s.start) / duration) * 100,
-                          );
+                          const position = visibleSpan(s.start, s.end, view);
+                          if (!position) return null;
+                          const { left, width } = position;
                           return (
                             <div
                               key={k}
-                              className={`tl-seg ${tk.key}`}
+                              className={`tl-seg ${tk.key} ${selectedIdx === s.atomIdx ? "selected" : ""}`}
                               style={{ left: `${left}%`, width: `${width}%` }}
                               onClick={(e) =>
                                 onSpanBodyClick(e, s.atomIdx, s.start)
@@ -706,7 +822,8 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
                             subtype?: string;
                           }>
                         ).map((m, i) => {
-                          const left = (m.t / duration) * 100;
+                          if (m.t < view.start || m.t > view.end) return null;
+                          const left = ((m.t - view.start) / viewWidth) * 100;
                           return (
                             <div
                               key={i}
@@ -742,6 +859,20 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
           </div>
         );
       })()}
+
+      <div className="tl-footer">
+        {emptyCount > 0 && (
+          <button
+            type="button"
+            className="btn"
+            aria-expanded={showEmpty}
+            onClick={() => setShowEmpty(!showEmpty)}
+          >
+            {showEmpty ? "Hide empty tracks" : `${emptyCount} empty tracks`}
+          </button>
+        )}
+        <span>Select a span to inspect · Drag its edges to retime</span>
+      </div>
 
       {/* Tooltip */}
       {tooltip && (
@@ -813,6 +944,6 @@ export const AnnotationsTimeline: React.FC<Props> = ({ duration }) => {
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 };
