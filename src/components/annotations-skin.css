@@ -1,11 +1,4 @@
-/* ==========================================================================
-   Annotations tab — dark-mode skin scoped under .annotations-skin.
-   Borrows the *functional* patterns from the Claude Design handoff
-   (per-style pill colors, row layout, timeline shapes) but recolored to
-   match the visualizer's existing dark theme. The complaint we're fixing
-   here is contrast — earlier inputs were near-black on near-black; these
-   are still dark but legible.
-   ========================================================================== */
+/* Annotation roles have their own colours; UI chrome inherits the app theme. */
 
 .annotations-skin {
   /* Brand accents (kept bright; visible on dark) */
@@ -17,20 +10,17 @@
   --hf-green: #34d399;
   --hf-purple: #b78bff;
 
-  /* Dark surface scale */
-  --surface-0: rgba(255, 255, 255, 0.02);
-  --surface-1: rgba(255, 255, 255, 0.06);
-  --surface-2: rgba(255, 255, 255, 0.1);
-  --border-1: rgba(255, 255, 255, 0.12);
-  --border-2: rgba(255, 255, 255, 0.2);
-  --fg-1: #f1f5f9;
-  --fg-2: #cbd5e1;
-  --fg-3: #94a3b8;
+  --border-1: var(--line);
+  --border-2: var(--line-strong);
+  --fg-1: var(--fg);
+  --fg-2: var(--fg-soft);
+  --fg-3: var(--fg-muted);
+  min-width: 0;
 
   --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-lg: 8px;
 }
 
 /* All form controls in the annotations area: brighter than the rest of the
@@ -81,8 +71,8 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid currentColor;
+  border-radius: var(--radius-xs);
+  border: 1px solid transparent;
 }
 .annotations-skin .style-pill.subtask {
   color: var(--hf-yellow);
@@ -267,7 +257,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 14px;
+  padding: 0;
+  border: 0;
 }
 .annotations-skin .annotation-actionbar h3 {
   display: flex;
@@ -293,10 +284,10 @@
   justify-content: flex-end;
 }
 .annotations-skin .dirty-pill {
-  border: 1px solid rgba(251, 146, 60, 0.35);
+  border: 1px solid var(--accent-ring);
   border-radius: 999px;
-  background: rgba(251, 146, 60, 0.12);
-  color: #fdba74;
+  background: var(--accent-soft);
+  color: var(--accent-fg);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -317,11 +308,48 @@
   text-transform: uppercase;
 }
 .annotations-skin .annotation-composer {
+  padding: 10px 14px;
+  font-size: 12px;
+}
+.annotations-skin .annotation-composer summary {
+  cursor: pointer;
+  color: var(--fg-2);
+  font-weight: 600;
+}
+.annotations-skin .composer-content {
   display: grid;
-  grid-template-columns: minmax(180px, 260px) 1fr;
   gap: 12px;
-  padding: 12px;
-  align-items: center;
+  margin-top: 12px;
+}
+.annotations-skin .drawing-hint {
+  color: var(--fg-3);
+}
+.annotations-skin .annotation-task {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-1);
+  border-radius: var(--radius-md);
+}
+.annotations-skin .annotation-task p {
+  margin: 0;
+  font-size: 13px;
+  white-space: pre-line;
+}
+.annotations-skin .annotation-videos > .flex {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 12px;
+}
+.annotations-skin .annotation-videos > .flex > :not(.fixed) {
+  max-width: none;
+  min-width: 0;
+}
+.annotations-skin .annotation-videos > .flex > :not(.fixed) video {
+  aspect-ratio: 4 / 3;
+  max-height: 260px;
+  background: var(--surface-2);
 }
 .annotations-skin .camera-picker {
   display: flex;
@@ -337,17 +365,28 @@
   background: var(--surface-0);
   border: 1px solid var(--border-1);
   border-radius: var(--radius-lg);
-  padding: 10px 12px;
+  padding: 0 16px;
+  overflow: hidden;
 }
 .annotations-skin .tl-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
+  gap: 12px;
+  padding: 12px 0;
+  flex-wrap: wrap;
+}
+.annotations-skin .tl-head h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg-1);
+  margin: 0;
+}
+.annotations-skin .tl-head h3 span {
+  margin-left: 8px;
   color: var(--fg-3);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 400;
 }
 .annotations-skin .tl-head .ts-display {
   font-family: var(--font-mono);
@@ -360,15 +399,14 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 24px;
-  margin-bottom: 4px;
+  min-height: 48px;
+  margin-bottom: 8px;
 }
 .annotations-skin .tl-row .label {
   width: 84px;
   flex: none;
   font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: capitalize;
   color: var(--fg-2);
   font-weight: 600;
   display: flex;
@@ -378,26 +416,27 @@
 .annotations-skin .tl-row .track {
   position: relative;
   flex: 1;
-  height: 20px;
+  min-width: 0;
+  height: 48px;
   background: var(--surface-1);
-  border: 1px solid var(--border-1);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
+  touch-action: none;
 }
 .annotations-skin .tl-seg {
   position: absolute;
-  top: 1px;
-  bottom: 1px;
-  border-radius: 2px;
-  font-size: 10px;
-  line-height: 16px;
-  padding: 0 6px;
+  top: 3px;
+  bottom: 3px;
+  border-radius: var(--radius-xs);
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 6px 8px;
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   display: flex;
-  align-items: center;
-  gap: 4px;
+  align-items: flex-start;
+  gap: 6px;
   user-select: none;
   font-weight: 500;
 }
@@ -407,9 +446,26 @@
   color: #bae6fd;
 }
 .annotations-skin .tl-seg.subtask {
-  background: rgba(255, 210, 30, 0.25);
-  border: 1px solid var(--hf-yellow);
+  background: rgba(255, 210, 30, 0.16);
+  border: 1px solid color-mix(in srgb, var(--hf-yellow) 30%, transparent);
+  color: var(--fg-1);
+}
+.annotations-skin .tl-seg.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.annotations-skin .tl-seg-number {
   color: var(--hf-yellow);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  flex: none;
+}
+.annotations-skin .tl-seg-label {
+  white-space: normal;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .annotations-skin .tl-seg.plan {
   background: rgba(91, 140, 255, 0.25);
@@ -470,20 +526,97 @@
 }
 .annotations-skin .tl-ruler {
   position: relative;
-  height: 16px;
+  height: 22px;
   margin-left: 94px;
-  border-bottom: 1px solid var(--border-1);
-  margin-bottom: 6px;
+  margin-top: 12px;
+  margin-bottom: 4px;
 }
 .annotations-skin .tl-ruler .tick-mark {
   position: absolute;
   top: 0;
   bottom: 0;
-  border-left: 1px solid var(--border-1);
   font-family: var(--font-mono);
   font-size: 10px;
   color: var(--fg-3);
-  padding-left: 3px;
+  transform: translateX(-50%);
+}
+.annotations-skin .tl-transport {
+  margin: 0 -16px 12px;
+  background: var(--surface-1);
+  border-block: 1px solid var(--border-1);
+}
+.annotations-skin .tl-transport > div {
+  position: static;
+  margin: 0;
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+.annotations-skin .tl-overview-head {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--fg-3);
+  font-size: 11px;
+}
+.annotations-skin .ts-display {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.annotations-skin .tl-overview {
+  position: relative;
+  height: 22px;
+  background: var(--surface-1);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+.annotations-skin .tl-overview button {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  padding: 0;
+  background: rgba(255, 210, 30, 0.2);
+  border: 0;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.annotations-skin .tl-overview button[aria-pressed="true"] {
+  background: var(--hf-yellow);
+}
+.annotations-skin .tl-overview-window {
+  position: absolute;
+  inset-block: 0;
+  border: 1px solid var(--fg-3);
+  border-radius: var(--radius-xs);
+  pointer-events: none;
+}
+.annotations-skin .tl-overview-cursor {
+  position: absolute;
+  inset-block: 0;
+  width: 1px;
+  background: var(--playhead);
+  pointer-events: none;
+}
+.annotations-skin .tl-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px -16px 0;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border-1);
+  font-size: 11px;
+  color: var(--fg-3);
+}
+.annotations-skin .tl-footer .btn {
+  background: transparent;
+  border-color: transparent;
+  padding-left: 0;
 }
 
 /* ----- Persistent / Events section banding (timeline + rail) ----- */
@@ -497,7 +630,7 @@
   gap: 8px;
   padding: 4px 0 4px 2px;
   margin-bottom: 4px;
-  border-left: 3px solid var(--border-2, #2a3344);
+  border-left: 0;
   padding-left: 8px;
 }
 .annotations-skin .tl-section-head.persistent,
@@ -519,7 +652,6 @@
 .annotations-skin .tl-section-sub,
 .annotations-skin .rail-column-sub {
   font-size: 10px;
-  font-family: var(--font-mono);
   color: var(--fg-3);
 }
 .annotations-skin .rail-column {
@@ -533,7 +665,7 @@
 .annotations-skin .quick-popup {
   position: absolute;
   z-index: 30;
-  background: rgba(15, 23, 42, 0.96);
+  background: var(--surface-0);
   border: 1px solid var(--border-2);
   border-radius: var(--radius-md);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
@@ -654,12 +786,12 @@
 
 /* ----- Workspace: annotation list + inspector ----- */
 .annotations-skin .workspace.inspector-workspace {
-  grid-template-columns: minmax(300px, 34%) minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
 }
 .annotations-skin .rail.annotation-list {
   padding: 0;
-  max-height: min(60vh, 560px);
+  max-height: 560px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -673,15 +805,25 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  background: rgba(15, 23, 42, 0.96);
-  backdrop-filter: blur(6px);
+  background: var(--surface-0);
+}
+.annotations-skin .list-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.annotations-skin .annotation-count {
+  color: var(--fg-3);
+  font-size: 12px;
+  font-weight: 400;
+  margin-left: 6px;
 }
 .annotations-skin .rail.annotation-list .rail-group {
-  margin: 8px;
+  margin: 0;
 }
 .annotations-skin .rail.annotation-list .rail-row {
   align-items: flex-start;
-  padding: 7px 8px;
+  padding: 12px;
 }
 .annotations-skin .rail.annotation-list .rail-row .body {
   white-space: normal;
@@ -694,12 +836,11 @@
   box-shadow: inset 3px 0 0 var(--accent);
 }
 .annotations-skin .rail.annotation-list .rail-row.active-now:not(.selected) {
-  border-color: var(--playhead-glow);
+  background: var(--fill);
   outline: none;
 }
 .annotations-skin .inspector {
-  position: sticky;
-  top: 8px;
+  min-width: 0;
 }
 .annotations-skin .inspector .editor-empty {
   min-height: 220px;
@@ -714,7 +855,26 @@
 .annotations-skin .inspector-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+}
+.annotations-skin .timestamp-field {
+  order: 1;
+}
+.annotations-skin .annotation-duration {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-1);
+  font-size: 11px;
+  color: var(--fg-3);
+}
+.annotations-skin .annotation-duration strong {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  color: var(--fg-2);
 }
 .annotations-skin .inspector-head {
   align-items: flex-start;
@@ -838,13 +998,29 @@
 .annotations-skin .rail-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
   padding: 5px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   cursor: pointer;
   font-size: 12px;
   color: var(--fg-1);
-  border: 1px solid transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border-1);
+}
+.annotations-skin .annotation-index {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-3);
+  min-width: 22px;
+}
+.annotations-skin .rail-range {
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--fg-3);
+  background: var(--surface-1);
 }
 .annotations-skin .rail-row:hover {
   background: var(--surface-1);
@@ -998,7 +1174,7 @@
   width: 14px;
   height: 14px;
   background: var(--playhead);
-  border: 2px solid #0b0e14;
+  border: 2px solid var(--surface-0);
   border-radius: 999px;
   transform: translate(-7px, 0);
   cursor: ew-resize;
@@ -1008,7 +1184,7 @@
 .annotations-skin .tl-tooltip {
   position: fixed;
   z-index: 1000;
-  background: rgba(15, 23, 42, 0.96);
+  background: var(--surface-0);
   color: var(--fg-1);
   border: 1px solid var(--border-2);
   border-radius: var(--radius-sm);
@@ -1048,25 +1224,16 @@
    dark-on-light and deepen the role colours, which also serve as text (pills,
    segment labels, section markers). */
 :root:not(.dark) .annotations-skin {
-  --hf-yellow: #b45309;
+  --hf-yellow: #836500;
   --hf-orange: #c2410c;
   --hf-blue: #2563eb;
   --hf-cyan: #0284c7;
   --hf-red: #dc2626;
   --hf-green: #059669;
   --hf-purple: #7c3aed;
-
-  --surface-0: rgba(17, 24, 39, 0.02);
-  --surface-1: rgba(17, 24, 39, 0.05);
-  --surface-2: rgba(17, 24, 39, 0.08);
-  --border-1: rgba(17, 24, 39, 0.12);
-  --border-2: rgba(17, 24, 39, 0.2);
-  --fg-1: #111827;
-  --fg-2: #374151;
-  --fg-3: #6b7280;
 }
 :root:not(.dark) .annotations-skin .dirty-pill {
-  color: var(--flag-fg);
+  color: var(--accent-fg);
 }
 :root:not(.dark) .annotations-skin .tl-seg.task_aug,
 :root:not(.dark) .annotations-skin .tl-seg.plan,
