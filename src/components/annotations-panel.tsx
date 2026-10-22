@@ -565,6 +565,11 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys, children }) => {
         .sort((a, b) => a.atom.timestamp - b.atom.timestamp),
     [atoms],
   );
+  // Numbered like the list and the timeline: by position in its group, not
+  // in `atoms`.
+  const selectedNumber = groups
+    .map(({ entries }) => entries.findIndex(({ idx }) => idx === selectedIdx))
+    .find((position) => position >= 0);
   const selectedPosition = chronological.findIndex(
     ({ idx }) => idx === selectedIdx,
   );
@@ -767,7 +772,7 @@ export const AnnotationsPanel: React.FC<Props> = ({ cameraKeys, children }) => {
             <AtomEditor
               key={selectedIdx}
               atom={selectedAtom}
-              index={selectedIdx as number}
+              number={selectedNumber}
               endTimestamp={endTimestamp}
               onPrevious={
                 selectedPosition > 0 ? () => selectAdjacent(-1) : undefined
@@ -845,7 +850,9 @@ const RailGroup: React.FC<{
       })}
       {!showAll && entries.length > 5 && (
         <div className="rail-range">
-          {start + 1}–{Math.min(start + 5, entries.length)} of {entries.length}
+          {String(start).padStart(2, "0")}–
+          {String(start + visible.length - 1).padStart(2, "0")} of{" "}
+          {entries.length}
         </div>
       )}
     </div>
@@ -858,7 +865,7 @@ const RailGroup: React.FC<{
 
 const AtomEditor: React.FC<{
   atom: LanguageAtom;
-  index: number;
+  number?: number;
   endTimestamp?: number;
   onPrevious?: () => void;
   onNext?: () => void;
@@ -867,7 +874,7 @@ const AtomEditor: React.FC<{
   onDelete: () => void;
 }> = ({
   atom,
-  index,
+  number,
   endTimestamp,
   onPrevious,
   onNext,
@@ -917,7 +924,9 @@ const AtomEditor: React.FC<{
         <div className="inspector-title">
           <StylePill style={atom.style} />
           <div>
-            <strong>#{String(index).padStart(2, "0")}</strong>
+            {number != null && (
+              <strong>#{String(number).padStart(2, "0")}</strong>
+            )}
             <span>
               {roleLabel} · {cameraLabel}
             </span>
