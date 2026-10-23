@@ -6,6 +6,7 @@ import { postParentMessageWithParams } from "@/utils/postParentMessage";
 import { SimpleVideosPlayer } from "@/components/simple-videos-player";
 import PlaybackBar from "@/components/playback-bar";
 import { TimeProvider, useTime, useTimeControls } from "@/context/time-context";
+import { useAuth } from "@/context/auth-context";
 import { FlaggedEpisodesProvider } from "@/context/flagged-episodes-context";
 import {
   AnnotationsProvider,
@@ -275,6 +276,8 @@ export default function EpisodeViewer({
   const [error, setError] = useState<string | null>(null);
   const [noEpisodes, setNoEpisodes] = useState(false);
   const requestIdRef = useRef(0);
+  const { oauth } = useAuth();
+  const accessToken = oauth?.accessToken ?? null;
 
   // Opening straight onto 3D Replay: start the robot meshes downloading now,
   // alongside the episode data, rather than once it has loaded and the viewer
@@ -325,7 +328,7 @@ export default function EpisodeViewer({
         setError(message || "Unknown error");
         setData(null);
       });
-  }, [org, dataset, episodeId]);
+  }, [org, dataset, episodeId, accessToken]);
 
   if (noEpisodes) {
     return (
@@ -357,6 +360,9 @@ export default function EpisodeViewer({
           <p className="text-sm font-mono whitespace-pre-wrap text-red-700/90 dark:text-red-200/90">
             {error}
           </p>
+          <div className="mt-4">
+            <HfAuthButton variant="ghost" />
+          </div>
         </div>
       </div>
     );
