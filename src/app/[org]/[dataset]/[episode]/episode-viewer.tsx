@@ -120,6 +120,11 @@ const ADVANCED_TABS: { tab: ActiveTab; label: string; title?: string }[] = [
     title:
       "Edit subtask / plan / memory / interjection / VQA atoms (lerobot v3.1 schema)",
   },
+  {
+    tab: "hands",
+    label: "3D Hands",
+    title: "Synchronized wrists, hands and camera overlays",
+  },
   { tab: "statistics", label: "Statistics" },
   { tab: "filtering", label: "Filtering" },
   { tab: "frames", label: "Frames" },
@@ -134,13 +139,16 @@ const ADVANCED_TABS: { tab: ActiveTab; label: string; title?: string }[] = [
 function AdvancedTabsMenu({
   activeTab,
   onSelect,
+  handsAvailable,
 }: {
   activeTab: ActiveTab;
   onSelect: (tab: ActiveTab) => void;
+  handsAvailable: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const active = ADVANCED_TABS.find((t) => t.tab === activeTab);
+  const tabs = ADVANCED_TABS.filter((t) => t.tab !== "hands" || handsAvailable);
+  const active = tabs.find((t) => t.tab === activeTab);
 
   useEffect(() => {
     if (!open) return;
@@ -195,7 +203,7 @@ function AdvancedTabsMenu({
           role="menu"
           className="absolute left-0 top-full z-50 mt-1 min-w-[12rem] panel-raised bg-[var(--surface-1)] p-1.5 shadow-xl animate-menu-pop [transform-origin:top_left]"
         >
-          {ADVANCED_TABS.map(({ tab, label, title }) => (
+          {tabs.map(({ tab, label, title }) => (
             <button
               key={tab}
               role="menuitem"
@@ -751,8 +759,11 @@ function EpisodeViewerInner({
       <div className="relative z-30 flex items-center border-b border-line-subtle bg-[var(--surface-0)] shrink-0">
         {renderTab("episodes", "Episodes")}
         {urdfSupported && renderTab("urdf", "3D Replay")}
-        {data.handTracking && renderTab("hands", "3D Hands")}
-        <AdvancedTabsMenu activeTab={activeTab} onSelect={handleTabChange} />
+        <AdvancedTabsMenu
+          activeTab={activeTab}
+          onSelect={handleTabChange}
+          handsAvailable={!!data.handTracking}
+        />
         <div className="ml-auto flex shrink-0 items-center gap-1 pl-2">
           <ThemeToggle />
           <HfAuthButton variant="tab" />

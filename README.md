@@ -44,7 +44,8 @@ This tool is designed to help robotics researchers and practitioners quickly ins
 
 ## Hand annotations
 
-Open an annotated episode with `?tab=hands`. Detection requires the 156D
+Choose **Advanced → 3D Hands** (below **Annotations**) or open an annotated
+episode with `?tab=hands`. Detection requires the 156D
 `action` plus `annotation.hand_joints_camera` and `annotation.hand_joints_world`
 (126 values each), `annotation.hand_action_valid`, `annotation.hand_observed`
 (left/right) and `annotation.hand_reference_frame`. No model weights or meshes
