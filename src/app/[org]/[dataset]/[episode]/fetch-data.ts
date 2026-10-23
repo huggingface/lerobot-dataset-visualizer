@@ -1199,7 +1199,7 @@ async function loadEpisodeFrames(
             info.codebase_version,
             "annotation_studio/run.json",
           ),
-          { headers: authHeaders() },
+          { headers: authHeaders(), signal: AbortSignal.timeout(10_000) },
         )
           .then((response) =>
             response.ok ? (response.json() as Promise<unknown>) : null,

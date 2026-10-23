@@ -1,14 +1,16 @@
 import type { DatasetMetadata } from "@/utils/parquetUtils";
 
 export type Point3 = [number, number, number];
+export type HandIndex = 0 | 1;
 export type HandPair = [Point3[] | null, Point3[] | null];
+export type CameraPose = { position: Point3; axes: [Point3, Point3, Point3] };
 export type HandFrame = {
   time: number;
   referenceFrame: number;
   camera: HandPair;
   segment: HandPair;
   recording: HandPair;
-  cameraPose: { position: Point3; axes: [Point3, Point3, Point3] } | null;
+  cameraPose: CameraPose | null;
 };
 export type HandCalibration = {
   model: "pinhole" | "opencv_fisheye";
@@ -36,14 +38,14 @@ type NumericFrames = {
 };
 
 export const HAND_COLORS = ["#59b5ff", "#ffb454"] as const;
-export const HAND_EDGES: [number, number][] = [1, 5, 9, 13, 17].flatMap(
-  (base) =>
-    [
-      [0, base],
-      [base, base + 1],
-      [base + 1, base + 2],
-      [base + 2, base + 3],
-    ] as [number, number][],
+export const HAND_INDICES = [0, 1] as const;
+export const HAND_EDGES = [1, 5, 9, 13, 17].flatMap(
+  (base): [number, number][] => [
+    [0, base],
+    [base, base + 1],
+    [base + 1, base + 2],
+    [base + 2, base + 3],
+  ],
 );
 const HAND_WIDTHS: Record<string, number> = {
   "annotation.hand_joints_camera": 126,
@@ -79,6 +81,10 @@ function record(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 export function parseHandCalibration(value: unknown): HandCalibration | null {
   if (typeof value === "string") {
     try {
@@ -88,32 +94,39 @@ export function parseHandCalibration(value: unknown): HandCalibration | null {
     }
   }
   const c = record(value);
-  const numbers = [c.width, c.height, c.fx, c.fy, c.cx, c.cy];
+  const { width, height, fx, fy, cx, cy } = c;
   if (
-    !numbers.every((n) => typeof n === "number" && Number.isFinite(n)) ||
-    Number(c.width) <= 0 ||
-    Number(c.height) <= 0 ||
-    Number(c.fx) <= 0 ||
-    Number(c.fy) <= 0
+    !isFiniteNumber(width) ||
+    !Number.isInteger(width) ||
+    width <= 0 ||
+    !isFiniteNumber(height) ||
+    !Number.isInteger(height) ||
+    height <= 0 ||
+    !isFiniteNumber(fx) ||
+    fx <= 0 ||
+    !isFiniteNumber(fy) ||
+    fy <= 0 ||
+    !isFiniteNumber(cx) ||
+    !isFiniteNumber(cy)
   )
     return null;
   if (c.model !== "pinhole" && c.model !== "opencv_fisheye") return null;
   const d = c.distortion ?? [];
   if (
     !Array.isArray(d) ||
-    !d.every((n) => typeof n === "number" && Number.isFinite(n)) ||
+    !d.every(isFiniteNumber) ||
     !(c.model === "pinhole" ? [0, 4, 5, 8, 12, 14] : [4]).includes(d.length)
   )
     return null;
   return {
     model: c.model,
-    width: Number(c.width),
-    height: Number(c.height),
-    fx: Number(c.fx),
-    fy: Number(c.fy),
-    cx: Number(c.cx),
-    cy: Number(c.cy),
-    distortion: d as number[],
+    width,
+    height,
+    fx,
+    fy,
+    cx,
+    cy,
+    distortion: d,
     estimated: c.measured === false || c.source === "moge-estimated",
   };
 }
@@ -145,9 +158,10 @@ export function handProjectionMetadata(
   const episodes = Array.isArray(report.episodes)
     ? report.episodes.map(record)
     : [];
-  const sourceEpisode = episodes.find(
-    (entry) => entry.episode_index === sourceId,
-  );
+  const sourceEpisode =
+    isFiniteNumber(sourceId) && Number.isSafeInteger(sourceId) && sourceId >= 0
+      ? episodes.find((entry) => entry.episode_index === sourceId)
+      : undefined;
   const handResult = record(sourceEpisode?.hand_actions);
   const calibration =
     parseHandCalibration(handResult.camera_intrinsics) ??
@@ -178,17 +192,18 @@ export function readHandTracking(
   const points = (
     key: string,
     frame: number,
-    hand: number,
+    hand: HandIndex,
   ): Point3[] | null => {
     const components = frames?.series[key];
     if (components?.length !== 126) return null;
-    const joints = Array.from(
-      { length: 21 },
-      (_, joint) =>
-        [0, 1, 2].map(
-          (axis) => components[hand * 63 + joint * 3 + axis]?.[frame],
-        ) as Point3,
-    );
+    const joints = Array.from({ length: 21 }, (_, joint): Point3 => {
+      const offset = hand * 63 + joint * 3;
+      return [
+        components[offset]?.[frame],
+        components[offset + 1]?.[frame],
+        components[offset + 2]?.[frame],
+      ];
+    });
     return joints.every((p) => p.every(Number.isFinite)) ? joints : null;
   };
   if (
@@ -207,11 +222,11 @@ export function readHandTracking(
         Number.isInteger(reference) &&
         reference >= 0 &&
         reference <= i;
-      const observed = (hand: number) =>
+      const observed = (hand: HandIndex) =>
         valid && frames.series["annotation.hand_observed"]?.[hand]?.[i] === 1;
       const camera: HandPair = [null, null],
         segment: HandPair = [null, null];
-      for (let hand = 0; hand < 2; hand++) {
+      for (const hand of HAND_INDICES) {
         if (!observed(hand)) continue;
         const cameraPoints = points("annotation.hand_joints_camera", i, hand);
         const segmentPoints = points("annotation.hand_joints_world", i, hand);
@@ -258,23 +273,22 @@ export function readHandTracking(
         return [optical[2], -optical[0], -optical[1]];
       };
       const position = relative([0, 0, 0]);
+      const axis = (p: Point3): Point3 => {
+        const end = relative(p);
+        return [
+          end[0] - position[0],
+          end[1] - position[1],
+          end[2] - position[2],
+        ];
+      };
       frame.cameraPose = {
         position,
-        axes: (
-          [
-            [1, 0, 0],
-            [0, 1, 0],
-            [0, 0, 1],
-          ] as Point3[]
-        ).map((p) => relative(p).map((n, a) => n - position[a]) as Point3) as [
-          Point3,
-          Point3,
-          Point3,
-        ],
+        axes: [axis([1, 0, 0]), axis([0, 1, 0]), axis([0, 0, 1])],
       };
-      frame.recording = frame.camera.map(
-        (hand) => hand?.map(relative) ?? null,
-      ) as HandPair;
+      frame.recording = [
+        frame.camera[0]?.map(relative) ?? null,
+        frame.camera[1]?.map(relative) ?? null,
+      ];
     });
   return {
     frames: rows,
@@ -326,7 +340,7 @@ export function fluToScene([forward, left, up]: Point3): Point3 {
 export function wristTrail(
   frames: HandFrame[],
   index: number,
-  hand: number,
+  hand: HandIndex,
   seconds = 2,
   space: "segment" | "recording" = "segment",
 ): Point3[] {

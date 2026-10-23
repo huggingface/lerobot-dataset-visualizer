@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentRef,
+  type RefObject,
+} from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { Bounds, Grid, Html, Line, OrbitControls } from "@react-three/drei";
 import { Vector3 } from "three";
@@ -9,12 +16,14 @@ import { useTheme } from "@/utils/theme";
 import {
   HAND_COLORS,
   HAND_EDGES,
+  HAND_INDICES,
   cameraPathRuns,
   fluToScene,
   handFrameIndex,
   wristTrail,
   type HandTracking,
   type HandFrame,
+  type CameraPose,
   type Point3,
 } from "@/lib/hand-tracking";
 import { SimpleVideosPlayer } from "./simple-videos-player";
@@ -66,7 +75,8 @@ function Hands({
   const frame = tracking.frames[index];
   return (
     <>
-      {frame?.[tracking.coordinateFrame].map((joints, hand) => {
+      {HAND_INDICES.map((hand) => {
+        const joints = frame?.[tracking.coordinateFrame][hand];
         if (!joints) return null;
         const points = joints.map(fluToScene),
           color = HAND_COLORS[hand];
@@ -124,22 +134,20 @@ function RecordedCamera({
   );
   const pose = tracking.frames[index]?.cameraPose;
   const origin = pose ? fluToScene(pose.position) : null;
-  const at = (x: number, y: number, z: number): Point3 =>
-    fluToScene(
-      pose!.position.map(
-        (p, axis) =>
-          p +
-          pose!.axes[0][axis] * x +
-          pose!.axes[1][axis] * y +
-          pose!.axes[2][axis] * z,
-      ) as Point3,
-    );
+  const at = (pose: CameraPose, x: number, y: number, z: number): Point3 => {
+    const coordinate = (axis: 0 | 1 | 2) =>
+      pose.position[axis] +
+      pose.axes[0][axis] * x +
+      pose.axes[1][axis] * y +
+      pose.axes[2][axis] * z;
+    return fluToScene([coordinate(0), coordinate(1), coordinate(2)]);
+  };
   const corners = pose
     ? [
-        at(-0.055, -0.035, 0.08),
-        at(0.055, -0.035, 0.08),
-        at(0.055, 0.035, 0.08),
-        at(-0.055, 0.035, 0.08),
+        at(pose, -0.055, -0.035, 0.08),
+        at(pose, 0.055, -0.035, 0.08),
+        at(pose, 0.055, 0.035, 0.08),
+        at(pose, -0.055, 0.035, 0.08),
       ]
     : [];
   return (
@@ -149,7 +157,7 @@ function RecordedCamera({
         .map((path, i) => (
           <Line key={i} points={path} color="#8391a4" lineWidth={1.5} />
         ))}
-      {origin && (
+      {origin && pose && (
         <>
           <mesh position={origin}>
             <sphereGeometry args={[0.012, 12, 8]} />
@@ -161,7 +169,10 @@ function RecordedCamera({
               points={[
                 origin,
                 at(
-                  ...([0, 1, 2].map((a) => (a === axis ? 0.12 : 0)) as Point3),
+                  pose,
+                  axis === 0 ? 0.12 : 0,
+                  axis === 1 ? 0.12 : 0,
+                  axis === 2 ? 0.12 : 0,
                 ),
               ]}
               color={color}
@@ -189,11 +200,13 @@ function RecordedCamera({
 function FollowCamera({
   frame,
   enabled,
+  orbitRef,
 }: {
   frame: HandFrame | undefined;
   enabled: boolean;
+  orbitRef: RefObject<ComponentRef<typeof OrbitControls> | null>;
 }) {
-  const { camera, controls, invalidate } = useThree();
+  const { camera, invalidate } = useThree();
   const following = useRef(false);
   useEffect(() => {
     if (!enabled) {
@@ -201,14 +214,15 @@ function FollowCamera({
       return;
     }
     if (!frame?.cameraPose) return;
-    const orbit = controls as unknown as {
-      target?: Vector3;
-      update?: () => void;
-    };
-    if (!orbit?.target) return;
+    const orbit = orbitRef.current;
+    if (!orbit) return;
     const { position, axes } = frame.cameraPose;
     const focus = new Vector3(
-      ...fluToScene(position.map((v, a) => v + axes[2][a] * 0.4) as Point3),
+      ...fluToScene([
+        position[0] + axes[2][0] * 0.4,
+        position[1] + axes[2][1] * 0.4,
+        position[2] + axes[2][2] * 0.4,
+      ]),
     );
     if (!following.current) {
       camera.position
@@ -219,9 +233,9 @@ function FollowCamera({
       following.current = true;
     } else camera.position.add(focus.clone().sub(orbit.target));
     orbit.target.copy(focus);
-    orbit.update?.();
+    orbit.update();
     invalidate();
-  }, [camera, controls, enabled, frame, invalidate]);
+  }, [camera, orbitRef, enabled, frame, invalidate]);
   return null;
 }
 
@@ -232,11 +246,8 @@ export default function HandReplay({
   tracking: HandTracking;
   videosInfo: VideoInfo[];
 }) {
-  const { currentTime, seek } = useTime();
-  // This lazy panel can mount after the page's initial ?t= seek. Reapply it when
-  // media is ready so the source camera doesn't replace it with its first frame.
-  const initialTime = useRef(currentTime);
-  const onVideosReady = useCallback(() => seek(initialTime.current), [seek]);
+  const { currentTime } = useTime();
+  const orbitRef = useRef<ComponentRef<typeof OrbitControls>>(null);
   const theme = useTheme();
   const [trails, setTrails] = useState(true);
   const [follow, setFollow] = useState(false);
@@ -303,7 +314,7 @@ export default function HandReplay({
                 attach="background"
                 args={[theme === "dark" ? "#151b24" : "#f3f5f7"]}
               />
-              <OrbitControls makeDefault />
+              <OrbitControls ref={orbitRef} makeDefault />
               <Bounds fit clip margin={1.5}>
                 <RecordingBounds tracking={tracking} />
               </Bounds>
@@ -318,7 +329,11 @@ export default function HandReplay({
               <axesHelper args={[0.15]} />
               <Hands tracking={tracking} index={index} trails={trails} />
               <RecordedCamera tracking={tracking} index={index} />
-              <FollowCamera frame={frame} enabled={follow} />
+              <FollowCamera
+                frame={frame}
+                enabled={follow}
+                orbitRef={orbitRef}
+              />
             </Canvas>
             {!frame?.[tracking.coordinateFrame].some(Boolean) && (
               <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
@@ -349,19 +364,9 @@ export default function HandReplay({
           </div>
         </div>
         <div className="space-y-3">
-          <SimpleVideosPlayer
-            videosInfo={videos}
-            handTracking={tracking}
-            onVideosReady={onVideosReady}
-          />
+          <SimpleVideosPlayer videosInfo={videos} handTracking={tracking} />
           {tracking.overlayIssue && (
             <p className="text-sm text-fg-muted">{tracking.overlayIssue}</p>
-          )}
-          {tracking.calibration?.estimated && (
-            <p className="text-xs text-fg-muted">
-              Camera intrinsics were estimated with MoGe. Metric accuracy is
-              unvalidated.
-            </p>
           )}
         </div>
       </div>

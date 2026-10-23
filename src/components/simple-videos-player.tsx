@@ -10,10 +10,7 @@ import { ColormappedVideo } from "./colormapped-video";
 import { HandOverlayCanvas } from "./hand-overlay-canvas";
 import type { HandTracking } from "@/lib/hand-tracking";
 
-const THRESHOLDS = {
-  VIDEO_SYNC_TOLERANCE: 0.2,
-  VIDEO_SEGMENT_BOUNDARY: 0.05,
-};
+const THRESHOLDS = { VIDEO_SEGMENT_BOUNDARY: 0.05 };
 
 const VIDEO_READY_TIMEOUT_MS = 10_000;
 
@@ -131,6 +128,20 @@ export const SimpleVideosPlayer = ({
   // context's version moves past this, an external seek happened and we
   // need to drive every video to the new position.
   const lastSeekVersionRef = useRef(externalSeekVersion);
+  // Media may take seconds to load. Keep the latest external seek, including
+  // the initial URL timestamp and seeks made while loading, until it is ready.
+  const pendingSeekRef = useRef({
+    version: externalSeekVersion,
+    time: currentTime,
+  });
+  useEffect(() => {
+    if (pendingSeekRef.current.version !== externalSeekVersion) {
+      pendingSeekRef.current = {
+        version: externalSeekVersion,
+        time: currentTime,
+      };
+    }
+  }, [externalSeekVersion, currentTime]);
 
   // Mirror firstVisibleIdx into a ref so the videos-ready effect doesn't have
   // to depend on it. If it did, hiding the first camera would tear the whole
@@ -171,6 +182,7 @@ export const SimpleVideosPlayer = ({
       if (resolved) return;
       resolved = true;
       setVideosReady(true);
+      seek(pendingSeekRef.current.time);
       onVideosReadyRef.current?.();
       setIsPlaying(true);
     };
@@ -431,10 +443,7 @@ export const SimpleVideosPlayer = ({
         targetTime = (info.segmentStart ?? 0) + currentTime;
       }
 
-      if (
-        Math.abs(video.currentTime - targetTime) >
-        THRESHOLDS.VIDEO_SYNC_TOLERANCE
-      ) {
+      if (video.currentTime !== targetTime) {
         video.currentTime = targetTime;
       }
     });
@@ -458,6 +467,11 @@ export const SimpleVideosPlayer = ({
               ? handTracking.cameraKey
               : handTracking.overlayIssue}
           </span>
+          {handTracking.calibration?.estimated && (
+            <span>
+              Estimated camera calibration · metric accuracy unvalidated
+            </span>
+          )}
         </div>
       )}
       {/* Hidden videos menu */}

@@ -206,6 +206,14 @@ describe("recording-wide camera and wrist coordinates", () => {
 });
 
 describe("episode-specific source camera binding", () => {
+  test("an incomplete episode mapping cannot select an unindexed report entry", () => {
+    const selected = handProjectionMetadata(info(), 0, {
+      source_episode_map: [{ episode_index: 1, source_episode_index: 7 }],
+      episodes: [{ hand_actions: { camera_intrinsics: calibration } }],
+    });
+    expect(selected.calibration).toBeNull();
+    expect(selected.overlayIssue).toContain("No camera calibration");
+  });
   test("uses the source episode map, not completion order or output index", () => {
     const report = {
       manifest: { camera: "observation.images.ego" },
@@ -253,6 +261,18 @@ describe("episode-specific source camera binding", () => {
     };
     expect(handProjectionMetadata(data, 0, null).calibration?.fx).toBe(600);
     expect(parseHandCalibration({ ...calibration, fx: Infinity })).toBeNull();
+  });
+  test("rejects malformed calibration at the unknown-data boundary", () => {
+    for (const value of [
+      null,
+      [],
+      "invalid JSON",
+      { ...calibration, width: 640.5 },
+      { ...calibration, fx: "600" },
+      { ...calibration, distortion: [0, 0, 0, "0"] },
+    ]) {
+      expect(parseHandCalibration(value)).toBeNull();
+    }
   });
 });
 

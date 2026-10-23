@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import {
   HAND_COLORS,
   HAND_EDGES,
+  HAND_INDICES,
   handFrameIndex,
   projectHandPoint,
   type HandTracking,
@@ -78,9 +79,10 @@ export function HandOverlayCanvas({
         calibration.height * scale,
       );
       ctx.clip();
-      frame.camera.forEach((joints, hand) => {
+      HAND_INDICES.forEach((hand) => {
+        const joints = frame.camera[hand];
         if (!joints) return;
-        const points = joints.map((p) => {
+        const points = joints.map((p): [number, number] | null => {
           const pixel = projectHandPoint(p, calibration);
           return pixel
             ? [left + pixel[0] * scale, top + pixel[1] * scale]
