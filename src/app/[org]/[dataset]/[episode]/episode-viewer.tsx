@@ -6,6 +6,7 @@ import { postParentMessageWithParams } from "@/utils/postParentMessage";
 import { SimpleVideosPlayer } from "@/components/simple-videos-player";
 import PlaybackBar from "@/components/playback-bar";
 import { TimeProvider, useTime, useTimeControls } from "@/context/time-context";
+import { useAuth } from "@/context/auth-context";
 import { FlaggedEpisodesProvider } from "@/context/flagged-episodes-context";
 import {
   AnnotationsProvider,
@@ -37,6 +38,7 @@ import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
 import type { DatasetMetadata } from "@/utils/parquetUtils";
 
 const URDFViewer = lazy(() => import("@/components/urdf-viewer"));
+const HandReplay = lazy(() => import("@/components/hand-replay"));
 const ActionInsightsPanel = lazy(
   () => import("@/components/action-insights-panel"),
 );
@@ -71,6 +73,7 @@ const TABS = [
   "filtering",
   "doctor",
   "urdf",
+  "hands",
 ] as const;
 type ActiveTab = (typeof TABS)[number];
 
@@ -118,6 +121,11 @@ const ADVANCED_TABS: { tab: ActiveTab; label: string; title?: string }[] = [
     title:
       "Edit subtask / plan / memory / interjection / VQA atoms (lerobot v3.1 schema)",
   },
+  {
+    tab: "hands",
+    label: "3D Hands",
+    title: "Synchronized wrists, hands and camera overlays",
+  },
   { tab: "statistics", label: "Statistics" },
   { tab: "filtering", label: "Filtering" },
   { tab: "frames", label: "Frames" },
@@ -132,13 +140,16 @@ const ADVANCED_TABS: { tab: ActiveTab; label: string; title?: string }[] = [
 function AdvancedTabsMenu({
   activeTab,
   onSelect,
+  handsAvailable,
 }: {
   activeTab: ActiveTab;
   onSelect: (tab: ActiveTab) => void;
+  handsAvailable: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const active = ADVANCED_TABS.find((t) => t.tab === activeTab);
+  const tabs = ADVANCED_TABS.filter((t) => t.tab !== "hands" || handsAvailable);
+  const active = tabs.find((t) => t.tab === activeTab);
 
   useEffect(() => {
     if (!open) return;
@@ -193,7 +204,7 @@ function AdvancedTabsMenu({
           role="menu"
           className="absolute left-0 top-full z-50 mt-1 min-w-[12rem] panel-raised bg-[var(--surface-1)] p-1.5 shadow-xl animate-menu-pop [transform-origin:top_left]"
         >
-          {ADVANCED_TABS.map(({ tab, label, title }) => (
+          {tabs.map(({ tab, label, title }) => (
             <button
               key={tab}
               role="menuitem"
@@ -265,6 +276,8 @@ export default function EpisodeViewer({
   const [error, setError] = useState<string | null>(null);
   const [noEpisodes, setNoEpisodes] = useState(false);
   const requestIdRef = useRef(0);
+  const { oauth } = useAuth();
+  const accessToken = oauth?.accessToken ?? null;
 
   // Opening straight onto 3D Replay: start the robot meshes downloading now,
   // alongside the episode data, rather than once it has loaded and the viewer
@@ -315,7 +328,7 @@ export default function EpisodeViewer({
         setError(message || "Unknown error");
         setData(null);
       });
-  }, [org, dataset, episodeId]);
+  }, [org, dataset, episodeId, accessToken]);
 
   if (noEpisodes) {
     return (
@@ -347,6 +360,9 @@ export default function EpisodeViewer({
           <p className="text-sm font-mono whitespace-pre-wrap text-red-700/90 dark:text-red-200/90">
             {error}
           </p>
+          <div className="mt-4">
+            <HfAuthButton variant="ghost" />
+          </div>
         </div>
       </div>
     );
@@ -426,11 +442,19 @@ function EpisodeViewerInner({
   // Safe because EpisodeViewerInner only mounts client-side (behind a loading gate).
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     if (typeof window !== "undefined") {
+      const requested = new URLSearchParams(window.location.search).get("tab");
+      if (
+        TABS.includes(requested as ActiveTab) &&
+        (requested !== "hands" || data.handTracking) &&
+        (requested !== "urdf" || urdfSupported)
+      )
+        return requested as ActiveTab;
       const stored = sessionStorage.getItem("activeTab");
       /// A tab saved on another dataset may not exist here (3D Replay needs a supported robot).
       if (
         TABS.includes(stored as ActiveTab) &&
-        (stored !== "urdf" || urdfSupported)
+        (stored !== "urdf" || urdfSupported) &&
+        (stored !== "hands" || data.handTracking)
       ) {
         return stored as ActiveTab;
       }
@@ -741,7 +765,11 @@ function EpisodeViewerInner({
       <div className="relative z-30 flex items-center border-b border-line-subtle bg-[var(--surface-0)] shrink-0">
         {renderTab("episodes", "Episodes")}
         {urdfSupported && renderTab("urdf", "3D Replay")}
-        <AdvancedTabsMenu activeTab={activeTab} onSelect={handleTabChange} />
+        <AdvancedTabsMenu
+          activeTab={activeTab}
+          onSelect={handleTabChange}
+          handsAvailable={!!data.handTracking}
+        />
         <div className="ml-auto flex shrink-0 items-center gap-1 pl-2">
           <ThemeToggle />
           <HfAuthButton variant="tab" />
@@ -753,6 +781,7 @@ function EpisodeViewerInner({
         {/* Sidebar — on Episodes and 3D Replay tabs */}
         {(activeTab === "episodes" ||
           activeTab === "annotations" ||
+          activeTab === "hands" ||
           activeTab === "urdf") && (
           <Sidebar
             datasetInfo={datasetInfo}
@@ -795,6 +824,7 @@ function EpisodeViewerInner({
                 <SimpleVideosPlayer
                   videosInfo={videosInfo}
                   onVideosReady={() => setVideosReady(true)}
+                  handTracking={data.handTracking}
                 />
               )}
 
@@ -846,6 +876,7 @@ function EpisodeViewerInner({
                     <SimpleVideosPlayer
                       videosInfo={videosInfo}
                       onVideosReady={() => setVideosReady(true)}
+                      handTracking={data.handTracking}
                     />
                   </div>
                 )}
@@ -941,6 +972,20 @@ function EpisodeViewerInner({
                 playToggleRef={urdfPlayToggleRef}
               />
             </Suspense>
+          )}
+          {activeTab === "hands" && data.handTracking && (
+            <>
+              <EpisodeHeader
+                repoId={datasetInfo.repoId}
+                episodeId={episodeId}
+              />
+              <Suspense fallback={<Loading />}>
+                <HandReplay
+                  tracking={data.handTracking}
+                  videosInfo={videosInfo}
+                />
+              </Suspense>
+            </>
           )}
         </div>
       </div>
