@@ -4,8 +4,19 @@
 
 import { authHeaders } from "./auth";
 
-const DATASET_URL =
-  process.env.DATASET_URL || "https://huggingface.co/datasets";
+export function resolveDatasetUrl(
+  raw = process.env.NEXT_PUBLIC_DATASET_URL ||
+    process.env.DATASET_URL ||
+    "https://huggingface.co/datasets",
+): string {
+  const trimmed = raw.replace(/\/+$/, "");
+  if (trimmed.startsWith("/")) {
+    return typeof window !== "undefined"
+      ? `${window.location.origin}${trimmed}`
+      : `http://localhost:${process.env.PORT || 7860}${trimmed}`;
+  }
+  return trimmed;
+}
 
 /**
  * Dataset information structure from info.json
@@ -75,7 +86,7 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
   console.log(`[perf] getDatasetInfo cache MISS for ${repoId} — fetching`);
 
   try {
-    const testUrl = `${DATASET_URL}/${repoId}/resolve/main/meta/info.json`;
+    const testUrl = `${resolveDatasetUrl()}/${repoId}/resolve/main/meta/info.json`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -135,7 +146,7 @@ export async function getDatasetStats(
 
   let data: Record<string, unknown> | null = null;
   try {
-    const url = `${DATASET_URL}/${repoId}/resolve/main/meta/stats.json`;
+    const url = `${resolveDatasetUrl()}/${repoId}/resolve/main/meta/stats.json`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     const response = await fetch(url, {
@@ -188,5 +199,5 @@ export function buildVersionedUrl(
   version: string,
   path: string,
 ): string {
-  return `${DATASET_URL}/${repoId}/resolve/main/${path}`;
+  return `${resolveDatasetUrl()}/${repoId}/resolve/main/${path}`;
 }
