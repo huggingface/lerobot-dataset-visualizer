@@ -7,6 +7,8 @@ import type { VideoInfo } from "@/types";
 import { proxyHfUrl } from "@/utils/auth";
 import { VideoOverlayCanvas } from "./video-overlay-canvas";
 import { ColormappedVideo } from "./colormapped-video";
+import { HandOverlayCanvas } from "./hand-overlay-canvas";
+import type { HandTracking } from "@/lib/hand-tracking";
 
 const THRESHOLDS = {
   VIDEO_SYNC_TOLERANCE: 0.2,
@@ -32,6 +34,7 @@ const SUPPORTS_RVFC =
 type VideoPlayerProps = {
   videosInfo: VideoInfo[];
   onVideosReady?: () => void;
+  handTracking?: HandTracking;
 };
 
 const videoEventCleanup = new WeakMap<HTMLVideoElement, () => void>();
@@ -39,7 +42,9 @@ const videoEventCleanup = new WeakMap<HTMLVideoElement, () => void>();
 export const SimpleVideosPlayer = ({
   videosInfo,
   onVideosReady,
+  handTracking,
 }: VideoPlayerProps) => {
+  const [showHands, setShowHands] = React.useState(true);
   const { currentTime, seek, externalSeekVersion, isPlaying, setIsPlaying } =
     useTime();
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
@@ -437,6 +442,24 @@ export const SimpleVideosPlayer = ({
 
   return (
     <>
+      {handTracking && (
+        <div className="flex flex-wrap items-center gap-3 text-xs text-fg-muted">
+          <label className="flex items-center gap-2 text-fg-soft">
+            <input
+              type="checkbox"
+              checked={showHands}
+              disabled={!handTracking.cameraKey || !handTracking.calibration}
+              onChange={(e) => setShowHands(e.target.checked)}
+            />
+            Hand overlay
+          </label>
+          <span>
+            {handTracking.calibration && handTracking.cameraKey
+              ? handTracking.cameraKey
+              : handTracking.overlayIssue}
+          </span>
+        </div>
+      )}
       {/* Hidden videos menu */}
       {hiddenVideos.length > 0 && (
         <div className="relative mb-4">
@@ -573,6 +596,15 @@ export const SimpleVideosPlayer = ({
                     videoEl={videoEls[idx] ?? null}
                     cameraKey={info.filename}
                   />
+                  {handTracking && (
+                    <HandOverlayCanvas
+                      video={videoEls[idx] ?? null}
+                      tracking={handTracking}
+                      cameraKey={info.filename}
+                      segmentStart={info.isSegmented ? info.segmentStart : 0}
+                      enabled={showHands}
+                    />
+                  )}
                 </div>
               </div>
             </div>

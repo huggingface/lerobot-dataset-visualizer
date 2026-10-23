@@ -37,6 +37,7 @@ import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
 import type { DatasetMetadata } from "@/utils/parquetUtils";
 
 const URDFViewer = lazy(() => import("@/components/urdf-viewer"));
+const HandReplay = lazy(() => import("@/components/hand-replay"));
 const ActionInsightsPanel = lazy(
   () => import("@/components/action-insights-panel"),
 );
@@ -71,6 +72,7 @@ const TABS = [
   "filtering",
   "doctor",
   "urdf",
+  "hands",
 ] as const;
 type ActiveTab = (typeof TABS)[number];
 
@@ -426,11 +428,19 @@ function EpisodeViewerInner({
   // Safe because EpisodeViewerInner only mounts client-side (behind a loading gate).
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     if (typeof window !== "undefined") {
+      const requested = new URLSearchParams(window.location.search).get("tab");
+      if (
+        TABS.includes(requested as ActiveTab) &&
+        (requested !== "hands" || data.handTracking) &&
+        (requested !== "urdf" || urdfSupported)
+      )
+        return requested as ActiveTab;
       const stored = sessionStorage.getItem("activeTab");
       /// A tab saved on another dataset may not exist here (3D Replay needs a supported robot).
       if (
         TABS.includes(stored as ActiveTab) &&
-        (stored !== "urdf" || urdfSupported)
+        (stored !== "urdf" || urdfSupported) &&
+        (stored !== "hands" || data.handTracking)
       ) {
         return stored as ActiveTab;
       }
@@ -741,6 +751,7 @@ function EpisodeViewerInner({
       <div className="relative z-30 flex items-center border-b border-line-subtle bg-[var(--surface-0)] shrink-0">
         {renderTab("episodes", "Episodes")}
         {urdfSupported && renderTab("urdf", "3D Replay")}
+        {data.handTracking && renderTab("hands", "3D Hands")}
         <AdvancedTabsMenu activeTab={activeTab} onSelect={handleTabChange} />
         <div className="ml-auto flex shrink-0 items-center gap-1 pl-2">
           <ThemeToggle />
@@ -753,6 +764,7 @@ function EpisodeViewerInner({
         {/* Sidebar — on Episodes and 3D Replay tabs */}
         {(activeTab === "episodes" ||
           activeTab === "annotations" ||
+          activeTab === "hands" ||
           activeTab === "urdf") && (
           <Sidebar
             datasetInfo={datasetInfo}
@@ -795,6 +807,7 @@ function EpisodeViewerInner({
                 <SimpleVideosPlayer
                   videosInfo={videosInfo}
                   onVideosReady={() => setVideosReady(true)}
+                  handTracking={data.handTracking}
                 />
               )}
 
@@ -846,6 +859,7 @@ function EpisodeViewerInner({
                     <SimpleVideosPlayer
                       videosInfo={videosInfo}
                       onVideosReady={() => setVideosReady(true)}
+                      handTracking={data.handTracking}
                     />
                   </div>
                 )}
@@ -941,6 +955,20 @@ function EpisodeViewerInner({
                 playToggleRef={urdfPlayToggleRef}
               />
             </Suspense>
+          )}
+          {activeTab === "hands" && data.handTracking && (
+            <>
+              <EpisodeHeader
+                repoId={datasetInfo.repoId}
+                episodeId={episodeId}
+              />
+              <Suspense fallback={<Loading />}>
+                <HandReplay
+                  tracking={data.handTracking}
+                  videosInfo={videosInfo}
+                />
+              </Suspense>
+            </>
           )}
         </div>
       </div>

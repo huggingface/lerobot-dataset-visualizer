@@ -37,9 +37,31 @@ This tool is designed to help robotics researchers and practitioners quickly ins
 - **Action Insights Panel:** Data-driven analysis tools to guide training configuration — includes autocorrelation, state-action alignment, speed distribution, and cross-episode variance heatmap.
 - **Filtering Panel:** Identify and flag problematic episodes (low movement, jerky motion, outlier length) for removal. Exports flagged episode IDs as a ready-to-run LeRobot CLI command.
 - **3D URDF Viewer:** Visualize robot joint poses frame-by-frame in an interactive 3D scene, with end-effector trail rendering. Supports SO-100, SO-101, and OpenArm bimanual robots.
+- **3D Hands:** Automatically detects native SOMA156 hand annotations. Shows wrists, 21-joint hand skeletons, wrist trails and the saved camera trajectory alongside a synchronized camera overlay, with a Follow camera control.
 - **Annotations Panel:** Hand-edit the v3.1 language schema (`language_persistent` + `language_events`) — subtask, plan, memory, interjection + paired speech, and VQA atoms with bounding-box / keypoint / count / attribute / spatial answers. VQA bboxes and keypoints render as overlays on the video player; drag or click on a camera to draw new ones. Backed by an optional FastAPI service (in `backend/`) for parquet rewrites and HF Hub push.
 - **Efficient Data Loading:** Uses parquet and JSON loading for large dataset support, with pagination, chunking, and lazy-loaded panels for fast initial load.
 - **Responsive UI:** Built with React, Next.js, and Tailwind CSS for a fast, modern user experience.
+
+## Hand annotations
+
+Open an annotated episode with `?tab=hands`. Detection requires the 156D
+`action` plus `annotation.hand_joints_camera` and `annotation.hand_joints_world`
+(126 values each), `annotation.hand_action_valid`, `annotation.hand_observed`
+(left/right) and `annotation.hand_reference_frame`. No model weights or meshes
+are required. Missing or masked poses remain gaps in both views.
+
+When `annotation.camera_world_from_optical` contains saved rigid transforms,
+the viewer reconstructs recording-wide hand positions from camera-space joints,
+anchored to the first saved camera pose. The camera path also breaks at missing
+transforms. Without them, it displays the stored segment-start FLU coordinates
+and breaks wrist trails at reference resets. Positions are in meters.
+
+The overlay uses the source camera and per-source-episode calibration saved in
+`annotation_studio/run.json`, resolving exported episodes through
+`source_episode_map`; a video feature's `info["camera.intrinsics"]` is also
+supported. Pinhole and OpenCV fisheye distortion are projected onto the original
+video at its saved resolution. Unknown cameras, missing calibration and mismatched
+video dimensions disable the overlay. Estimated calibration is labeled.
 
 ## Technologies Used
 
