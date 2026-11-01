@@ -7,6 +7,7 @@ import { SimpleVideosPlayer } from "@/components/simple-videos-player";
 import PlaybackBar from "@/components/playback-bar";
 import { TimeProvider, useTime, useTimeControls } from "@/context/time-context";
 import { useAuth } from "@/context/auth-context";
+import { getAuthToken } from "@/utils/auth";
 import { FlaggedEpisodesProvider } from "@/context/flagged-episodes-context";
 import {
   AnnotationsProvider,
@@ -276,6 +277,7 @@ export default function EpisodeViewer({
   const [error, setError] = useState<string | null>(null);
   const [noEpisodes, setNoEpisodes] = useState(false);
   const requestIdRef = useRef(0);
+  const loadedRef = useRef<{ key: string; token: string | null } | null>(null);
   const { oauth } = useAuth();
   const accessToken = oauth?.accessToken ?? null;
 
@@ -304,6 +306,14 @@ export default function EpisodeViewer({
       setData(null);
       return;
     }
+    // Requests read the token from storage, so the first load already uses a
+    // saved sign-in, which AuthProvider restores into `accessToken` only
+    // afterwards. Reload for a new token, not for that one.
+    const key = `${org}/${dataset}/${episodeId}`;
+    const token = getAuthToken();
+    if (loadedRef.current?.key === key && loadedRef.current.token === token)
+      return;
+    loadedRef.current = { key, token };
     const requestId = ++requestIdRef.current;
     setError(null);
     setNoEpisodes(false);
