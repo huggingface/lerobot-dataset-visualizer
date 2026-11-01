@@ -31,6 +31,13 @@ import {
 } from "@huggingface/lerobot";
 import type { LeRobotEpisode, LeRobotFrames } from "@huggingface/lerobot";
 import { authHeaders, getAuthToken } from "@/utils/auth";
+import {
+  hasHandTracking,
+  handProjectionMetadata,
+  isHandGeometryColumn,
+  readHandTracking,
+  type HandTracking,
+} from "@/lib/hand-tracking";
 
 const SERIES_NAME_DELIMITER = CHART_CONFIG.SERIES_NAME_DELIMITER;
 
@@ -279,6 +286,8 @@ export type EpisodeData = {
    * events compatible with the writer in lerobot#3471.
    */
   frameTimestamps?: number[];
+  /** Full-resolution native hand geometry, independent of sampled chart rows. */
+  handTracking?: HandTracking;
 };
 
 type EpisodeMetadataV3 = {
@@ -745,7 +754,11 @@ async function getEpisodeDataV2(
   const videosInfo =
     info.video_path !== null ? toVideosInfo(leRobotEpisode, info, false) : [];
 
-  const { frames, textRows } = await loadEpisodeFrames(repoId, leRobotEpisode);
+  const { frames, textRows, handTracking } = await loadEpisodeFrames(
+    repoId,
+    leRobotEpisode,
+    info,
+  );
   const frameTimestamps = sortedTimestamps(frames);
   const languageAtoms = extractLanguageAtoms(textRows);
 
@@ -842,6 +855,7 @@ async function getEpisodeDataV2(
     task,
     languageAtoms,
     frameTimestamps,
+    handTracking,
   };
 }
 
@@ -877,6 +891,7 @@ async function getEpisodeDataV3(
     task,
     languageAtoms,
     frameTimestamps,
+    handTracking,
   } = await loadEpisodeDataV3(
     repoId,
     version,
@@ -901,6 +916,7 @@ async function getEpisodeDataV3(
     task,
     languageAtoms,
     frameTimestamps,
+    handTracking,
   };
 }
 
@@ -918,9 +934,14 @@ async function loadEpisodeDataV3(
   task?: string;
   languageAtoms?: import("@/types/language.types").LanguageAtom[];
   frameTimestamps?: number[];
+  handTracking?: HandTracking;
 }> {
   try {
-    const { frames, textRows } = await loadEpisodeFrames(repoId, episode);
+    const { frames, textRows, handTracking } = await loadEpisodeFrames(
+      repoId,
+      episode,
+      info,
+    );
     const frameTimestamps = sortedTimestamps(frames);
 
     if (!frames) {
@@ -931,6 +952,7 @@ async function loadEpisodeDataV3(
         task: undefined,
         languageAtoms: extractLanguageAtoms(textRows),
         frameTimestamps,
+        handTracking,
       };
     }
 
@@ -1041,6 +1063,7 @@ async function loadEpisodeDataV3(
       task,
       languageAtoms: extractLanguageAtoms(textRows),
       frameTimestamps,
+      handTracking,
     };
   } catch {
     return {
@@ -1153,13 +1176,15 @@ const TEXT_COLUMNS = [
 async function loadEpisodeFrames(
   repoId: string,
   episode: LeRobotEpisode,
+  info: DatasetMetadata,
 ): Promise<{
   frames: LeRobotFrames | undefined;
   textRows: Record<string, unknown>[];
+  handTracking?: HandTracking;
 }> {
   const data = episode.data;
   if (!data) return { frames: undefined, textRows: [] };
-  const [frames, textRows] = await Promise.all([
+  const [frames, textRows, report] = await Promise.all([
     leRobotDataset(repoId).frames(episode),
     fetchParquetFile(data.url).then((file) =>
       readParquetAsObjects(file, TEXT_COLUMNS, {
@@ -1167,8 +1192,30 @@ async function loadEpisodeFrames(
         rowEnd: data.toRow,
       }),
     ),
+    hasHandTracking(info)
+      ? fetch(
+          buildVersionedUrl(
+            repoId,
+            info.codebase_version,
+            "annotation_studio/run.json",
+          ),
+          { headers: authHeaders(), signal: AbortSignal.timeout(10_000) },
+        )
+          .then((response) =>
+            response.ok ? (response.json() as Promise<unknown>) : null,
+          )
+          .catch(() => null)
+      : Promise.resolve(null),
   ]);
-  return { frames, textRows };
+  return {
+    frames,
+    textRows,
+    handTracking: readHandTracking(
+      info,
+      frames,
+      handProjectionMetadata(info, episode.index, report),
+    ),
+  };
 }
 
 /** Source-frame timestamps, sorted, for the annotations editor to snap to. */
@@ -1192,6 +1239,7 @@ function chartDataFromFrames(
   const series: [string, number[]][] = [];
   for (const [key, components] of Object.entries(frames.series)) {
     if (!info.features[key] || excludedColumns.includes(key)) continue;
+    if (hasHandTracking(info) && isHandGeometryColumn(key)) continue;
     const names =
       frames.names[key]?.length === components.length
         ? frames.names[key]
