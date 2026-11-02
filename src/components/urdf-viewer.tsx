@@ -16,9 +16,7 @@ import {
   Lightformer,
 } from "@react-three/drei";
 import * as THREE from "three";
-import URDFLoader from "urdf-loader";
-import type { URDFRobot } from "urdf-loader";
-import { loadUsd } from "@huggingface/usd-web-viewer";
+import { loadUsd, type LoadResult } from "@huggingface/usd-web-viewer";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
@@ -34,43 +32,11 @@ import { useTheme } from "@/utils/theme";
 const SERIES_DELIM = CHART_CONFIG.SERIES_NAME_DELIMITER;
 const DEG2RAD = Math.PI / 180;
 
-// URDFs are hosted in the Hub bucket at
-// https://huggingface.co/buckets/lerobot/robot-urdfs. Note: buckets don't have
-// branches, so the resolve URL has no "/main" segment.
-const URDF_BASE_URL =
-  process.env.NEXT_PUBLIC_URDF_BASE_URL ??
-  "https://huggingface.co/buckets/lerobot/robot-urdfs/resolve";
-
-const prefetchedUrdfs = new Set<string>();
-
-// The bucket resolve is a 302 with no Cache-Control, to a URL re-signed every second, so the
-// browser downloads the URDF again on every mount unless the text is kept here.
-const urdfTextCache = new Map<string, Promise<string>>();
-
-function loadUrdfText(url: string): Promise<string> {
-  let loading = urdfTextCache.get(url);
-  if (!loading) {
-    loading = fetch(url)
-      .then((res) => {
-        if (!res.ok)
-          throw new Error(`Failed to load URDF ${url} (HTTP ${res.status})`);
-        return res.text();
-      })
-      .catch((err) => {
-        urdfTextCache.delete(url);
-        throw err;
-      });
-    urdfTextCache.set(url, loading);
-  }
-  return loading;
-}
-
-/// USD models of the robots with their URDF's joint and link names, link frames and zero pose: the
-/// URDF moves the robot and the USD draws it.
+/// USD models of the robots: each draws its robot and, through its joints, moves it.
 const USD_BASE_URL =
   "https://huggingface.co/datasets/lerobot/robot-usds/resolve/main";
 
-/// Kept for the session like the URDF text: the viewer remounts on every visit to the 3D Replay tab.
+/// Kept for the session: the viewer remounts on every visit to the 3D Replay tab.
 const usdBlobCache = new Map<string, Promise<Blob>>();
 
 function loadUsdBlob(url: string): Promise<Blob> {
@@ -92,43 +58,15 @@ function loadUsdBlob(url: string): Promise<Blob> {
 }
 
 /**
- * Moves each USD mesh under the URDF link its prim path names, where the URDF's zero pose puts it.
- * USD stage space is the URDF's root frame, so the robot's joints then move the meshes.
- */
-function attachUsdMeshes(robot: URDFRobot, usdRoot: THREE.Object3D) {
-  for (const name of Object.keys(robot.joints)) robot.setJointValue(name, 0);
-  robot.updateMatrixWorld(true);
-  for (const mesh of [...usdRoot.children]) {
-    const segments = mesh.name.split("/");
-    let link: THREE.Object3D = robot;
-    for (let i = segments.length - 1; i >= 0; i--) {
-      if (robot.links[segments[i]]) {
-        link = robot.links[segments[i]];
-        break;
-      }
-    }
-    mesh.matrix
-      .premultiply(robot.matrixWorld)
-      .premultiply(link.matrixWorld.clone().invert());
-    link.add(mesh);
-  }
-}
-
-/**
- * Starts downloading a robot's visual meshes into the caches. The viewer only mounts once the episode
- * data has loaded, and the meshes used to start downloading only then; calling this earlier overlaps
- * the two.
+ * Starts downloading a robot's model into the cache. The viewer only mounts once the episode data has
+ * loaded, and the model used to start downloading only then; calling this earlier overlaps the two.
  */
 export function prefetchRobotModel(
   robotType: string | null,
   columns: string[],
 ) {
-  const { urdfUrl, usdUrl } = getRobotConfig(robotType, columns);
-  if (prefetchedUrdfs.has(urdfUrl)) return;
-  prefetchedUrdfs.add(urdfUrl);
-  Promise.all([loadUrdfText(urdfUrl), loadUsdBlob(usdUrl)]).catch(() =>
-    prefetchedUrdfs.delete(urdfUrl),
-  );
+  /// A failed download leaves the cache, so the viewer tries again and reports it.
+  loadUsdBlob(getRobotConfig(robotType, columns).usdUrl).catch(() => {});
 }
 
 /// Unitree's Dex1-1 grippers record `left_gripper | gripper_pos`, or `kLeftGripper`.
@@ -143,17 +81,17 @@ function getRobotConfig(
   robotType: string | null,
   columns: string[],
 ): {
-  urdfUrl: string;
+  robot: LoaderRobot;
   usdUrl: string;
   scale: number;
-  /** Height of the URDF's root link above the floor when the data has no base pose. */
+  /** Height of the model's root above the floor when the data has no base pose. */
   restHeight: number;
 } {
   const lower = (robotType ?? "").toLowerCase();
   if (lower.includes("g1") || lower.includes("unitree")) {
     if (lower.includes("inspire")) {
       return {
-        urdfUrl: `${URDF_BASE_URL}/g1_inspire/g1_body29_inspire.urdf`,
+        robot: "g1",
         usdUrl: `${USD_BASE_URL}/g1_body29_inspire/simready_usd/g1_body29_inspire.usd`,
         scale: 1,
         restHeight: 0.793,
@@ -161,14 +99,14 @@ function getRobotConfig(
     }
     if (hasDex1Grippers(columns)) {
       return {
-        urdfUrl: `${URDF_BASE_URL}/g1_dex1/g1_body29_dex1.urdf`,
+        robot: "g1",
         usdUrl: `${USD_BASE_URL}/g1_body29_dex1/simready_usd/g1_body29_dex1.usd`,
         scale: 1,
         restHeight: 0.793,
       };
     }
     return {
-      urdfUrl: `${URDF_BASE_URL}/g1/g1_body29_hand14.urdf`,
+      robot: "g1",
       usdUrl: `${USD_BASE_URL}/g1_body29_hand14/simready_usd/g1_body29_hand14.usd`,
       scale: 1,
       /// The pelvis, standing on straight legs.
@@ -177,14 +115,14 @@ function getRobotConfig(
   }
   if (lower.includes("openarm")) {
     return {
-      urdfUrl: `${URDF_BASE_URL}/openarm/openarm_bimanual_web.urdf`,
+      robot: "openarm",
       usdUrl: `${USD_BASE_URL}/openarm_bimanual/simready_usd/openarm_bimanual.usd`,
       scale: 3,
       restHeight: 0,
     };
   }
   return {
-    urdfUrl: `${URDF_BASE_URL}/so101/so101_new_calib_web.urdf`,
+    robot: "so101",
     usdUrl: `${USD_BASE_URL}/so101_new_calib/simready_usd/so101_new_calib.usd`,
     scale: 10,
     restHeight: 0,
@@ -216,8 +154,8 @@ function groupColumnsByPrefix(keys: string[]): Record<string, string[]> {
   return groups;
 }
 
-// Unitree G1 SDK column suffix → URDF joint name. Unitree's own datasets leave out the `.q`.
-const G1_SDK_TO_URDF: Record<string, string> = {
+// Unitree G1 SDK column suffix → joint name. Unitree's own datasets leave out the `.q`.
+const G1_SDK_TO_JOINT: Record<string, string> = {
   "klefthippitch.q": "left_hip_pitch_joint",
   "klefthiproll.q": "left_hip_roll_joint",
   "klefthipyaw.q": "left_hip_yaw_joint",
@@ -264,7 +202,7 @@ const G1_SDK_TO_URDF: Record<string, string> = {
 };
 
 function autoMatchJoints(
-  urdfJointNames: string[],
+  jointNames: string[],
   columnKeys: string[],
 ): Record<string, string> {
   const mapping: Record<string, string> = {};
@@ -280,15 +218,15 @@ function autoMatchJoints(
       : suffixes[i];
   });
 
-  // Build reverse lookup: URDF joint name → column key (for G1 SDK-style columns)
+  // Build reverse lookup: joint name → column key (for G1 SDK-style columns)
   const g1Reverse = new Map<string, string>();
   for (let i = 0; i < suffixes.length; i++) {
-    const urdfName =
-      G1_SDK_TO_URDF[suffixes[i]] ?? G1_SDK_TO_URDF[`${suffixes[i]}.q`];
-    if (urdfName) g1Reverse.set(urdfName, columnKeys[i]);
+    const jointName =
+      G1_SDK_TO_JOINT[suffixes[i]] ?? G1_SDK_TO_JOINT[`${suffixes[i]}.q`];
+    if (jointName) g1Reverse.set(jointName, columnKeys[i]);
   }
 
-  for (const jointName of urdfJointNames) {
+  for (const jointName of jointNames) {
     const lower = jointName.toLowerCase();
 
     // Exact match on column suffix
@@ -372,9 +310,6 @@ function autoMatchJoints(
       }
     }
 
-    // finger_joint2 is a mimic joint — skip
-    if (lower.includes("finger_joint2")) continue;
-
     // Generic fuzzy fallback
     const fuzzy = columnKeys.find((k) => k.toLowerCase().includes(lower));
     if (fuzzy) mapping[jointName] = fuzzy;
@@ -416,12 +351,12 @@ const G1_TIP_NAMES = [
   "R_hand_base_link",
 ];
 /// Unitree's Dex1-1 gripper motor turns 5.4 rad from closed to open, each finger sliding from
-/// -0.02 m to 0.0245 m in the URDF.
+/// -0.02 m to 0.0245 m.
 const DEX1_MOTOR_TRAVEL = 5.4;
 const DEX1_FINGER_CLOSED = -0.02;
 const DEX1_FINGER_OPEN = 0.0245;
 /// The Inspire hands' motors: a finger's proximal joint, or the thumb's yaw or pitch. The other
-/// finger joints follow them (`<mimic>`).
+/// finger joints follow them (mimic joints).
 const INSPIRE_JOINT =
   /^([lr])_(index|middle|ring|pinky|thumb)_proximal(?:_(yaw|pitch))?_joint$/i;
 
@@ -439,8 +374,8 @@ const TRAIL_COLORS = [new THREE.Color("#ff6600"), new THREE.Color("#00aaff")];
 const MAX_TRAIL_POINTS = 300;
 
 /**
- * Frames the robot's world-space bounding box. URDFs can ship world→base offsets (SO-arm does) that
- * put the robot far from origin, so a fixed camera pose crops the arm.
+ * Frames the robot's world-space bounding box. Models can have a world→base offset (SO-arm does) that
+ * puts the robot far from origin, so a fixed camera pose crops the arm.
  */
 function fitCameraToRobot(
   robot: THREE.Object3D,
@@ -470,7 +405,7 @@ const MAX_FIT_WAIT_FRAMES = 30;
 
 // ─── Robot scene (imperative, inside Canvas) ───
 function RobotScene({
-  urdfUrl,
+  robot,
   usdUrl,
   jointValues,
   basePose,
@@ -479,7 +414,7 @@ function RobotScene({
   trailResetKey,
   scale,
 }: {
-  urdfUrl: string;
+  robot: LoaderRobot;
   usdUrl: string;
   jointValues: Record<string, number>;
   basePose: number[];
@@ -488,9 +423,14 @@ function RobotScene({
   trailResetKey: number;
   scale: number;
 }) {
-  const { scene, controls, size, invalidate } = useThree();
-  const robotRef = useRef<URDFRobot | null>(null);
-  const tipLinksRef = useRef<THREE.Object3D[]>([]);
+  const { scene, size, invalidate } = useThree();
+  const modelRef = useRef<LoadResult | null>(null);
+  /// The joints the data drives, by name: a mimic joint follows its joint, so it isn't one.
+  const jointsRef = useRef(
+    new Map<string, { path: string; revolute: boolean }>(),
+  );
+  /// Prim paths whose positions the trails follow.
+  const tipPathsRef = useRef<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   type TrailState = {
@@ -503,9 +443,8 @@ function RobotScene({
   const linesRef = useRef<Line2[]>([]);
   const trailMatsRef = useRef<LineMaterial[]>([]);
   const trailCountRef = useRef(0);
-  /// Set once every mesh is attached; the frame loop fits the camera on the first frame that has
-  /// the episode's pose applied. Fitting in manager.onLoad framed the URDF's zero pose instead
-  /// whenever the meshes were already cached, since the joint values arrive a render later.
+  /// Set once the model loads; the frame loop fits the camera on the first frame that has the
+  /// episode's pose applied, since the joint values arrive a render later.
   const pendingFitRef = useRef(false);
   const pendingFitFramesRef = useRef(0);
   const framesSinceInputRef = useRef(0);
@@ -572,128 +511,94 @@ function RobotScene({
 
   useEffect(() => {
     setError(null);
-    const isOpenArm = urdfUrl.includes("openarm");
-    const isG1 = urdfUrl.includes("g1");
-    const manager = new THREE.LoadingManager();
-    const loader = new URDFLoader(manager);
-    /// itemEnd fires after URDFLoader attaches the URDF or a mesh, so each one paints as it lands.
-    manager.onProgress = () => invalidate();
-    /// The USD draws the robot: its URDF only moves it.
-    loader.loadMeshCb = (_url, _manager, onLoad) =>
-      onLoad(new THREE.Object3D());
-    // Fires once the URDF and its USD are attached (the URDF's itemEnd comes after both), to
-    // enable shadows and fit the camera.
-    manager.onLoad = () => {
-      setTimeout(() => {
-        const robot = robotRef.current;
-        if (!robot) return;
-
-        robot.traverse((c) => {
+    let cancelled = false;
+    let model: LoadResult | undefined;
+    /// Loaded from memory, so the session cache spares a download on every visit to the tab.
+    const name = usdUrl.slice(usdUrl.lastIndexOf("/") + 1);
+    loadUsdBlob(usdUrl)
+      .then((blob) => loadUsd(name, { files: new Map([[name, blob]]) }))
+      .then((loaded) => {
+        if (cancelled) return loaded.dispose();
+        model = loaded;
+        modelRef.current = loaded;
+        const { root, info, joints } = loaded;
+        /// On top of meters per unit, which the loader sets.
+        root.scale.multiplyScalar(scale);
+        root.traverse((c) => {
           c.castShadow = true;
-          if (!isOpenArm) c.receiveShadow = true;
+          if (robot !== "openarm") c.receiveShadow = true;
         });
+        scene.add(root);
+
+        /// Frames are often meshless points, like a gripper's tip; the G1's palms are meshes.
+        const prims = [
+          ...info.physics.bodies.map((b) => b.path),
+          ...info.physics.frames.map((f) => f.path),
+          ...root.children.map((c) => c.name),
+        ];
+        const tips: string[] = [];
+        for (const tipName of robot === "g1"
+          ? G1_TIP_NAMES
+          : robot === "openarm"
+            ? DUAL_ARM_TIP_NAMES
+            : SINGLE_ARM_TIP_NAMES) {
+          const path = prims.find((p) => p.endsWith(`/${tipName}`));
+          if (path) tips.push(path);
+          if (robot === "so101" && tips.length === 1) break;
+        }
+        tipPathsRef.current = tips;
+        ensureTrails(tips.length);
+
+        jointsRef.current = new Map(
+          joints
+            .filter((j) => !j.mimic)
+            .map((j) => [
+              j.path.slice(j.path.lastIndexOf("/") + 1),
+              { path: j.path, revolute: j.kind === "revolute" },
+            ]),
+        );
+        onJointsLoaded([...jointsRef.current.keys()]);
         pendingFitRef.current = true;
         pendingFitFramesRef.current = 0;
         invalidate();
-      }, 0);
-    };
-
-    loader.workingPath = THREE.LoaderUtils.extractUrlBase(urdfUrl);
-    let cancelled = false;
-    let disposeUsd: (() => void) | undefined;
-    manager.itemStart(urdfUrl);
-    loadUrdfText(urdfUrl)
-      .then((text) => {
-        if (cancelled) return;
-        const robot = loader.parse(text);
-        robotRef.current = robot;
-        robot.rotateOnAxis(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-        robot.scale.set(scale, scale, scale);
-        scene.add(robot);
-
-        // Fallback center/frame if manager.onLoad was starved (no async
-        // tracked loads — can happen if meshes are all cached synchronously).
-        const bbox = new THREE.Box3().setFromObject(robot);
-        if (!bbox.isEmpty()) {
-          const center = bbox.getCenter(new THREE.Vector3());
-          const orbit = controls as unknown as {
-            target?: THREE.Vector3;
-            update?: () => void;
-          };
-          if (orbit?.target) {
-            orbit.target.copy(center);
-            orbit.update?.();
-          }
-        }
-
-        const tipNames = isG1
-          ? G1_TIP_NAMES
-          : isOpenArm
-            ? DUAL_ARM_TIP_NAMES
-            : SINGLE_ARM_TIP_NAMES;
-        const tips: THREE.Object3D[] = [];
-        for (const name of tipNames) {
-          if (robot.frames[name]) tips.push(robot.frames[name]);
-          if (!isOpenArm && !isG1 && tips.length === 1) break;
-        }
-        tipLinksRef.current = tips;
-        ensureTrails(tips.length);
-
-        /// A joint a `<mimic>` drives follows its joint, so it isn't mapped on its own.
-        const movable = Object.values(robot.joints)
-          .filter(
-            (j) =>
-              (j.jointType === "revolute" ||
-                j.jointType === "continuous" ||
-                j.jointType === "prismatic") &&
-              j.type !== "URDFMimicJoint",
-          )
-          .map((j) => j.name);
-        /// Loaded from memory, so the session cache spares a download on every visit to the tab.
-        const name = usdUrl.slice(usdUrl.lastIndexOf("/") + 1);
-        return loadUsdBlob(usdUrl)
-          .then((blob) => loadUsd(name, { files: new Map([[name, blob]]) }))
-          .then(({ root, dispose }) => {
-            if (cancelled) return dispose();
-            disposeUsd = dispose;
-            attachUsdMeshes(robot, root);
-            onJointsLoaded(movable);
-          });
       })
       .catch((err) => {
         if (cancelled) return;
         console.error("Error loading the robot model:", err);
         setError(String(err));
-      })
-      .finally(() => {
-        if (!cancelled) manager.itemEnd(urdfUrl);
       });
     return () => {
       cancelled = true;
-      if (robotRef.current) {
-        scene.remove(robotRef.current);
-        robotRef.current = null;
+      if (model) {
+        scene.remove(model.root);
+        model.dispose();
       }
-      disposeUsd?.();
-      tipLinksRef.current = [];
+      modelRef.current = null;
+      tipPathsRef.current = [];
     };
-  }, [urdfUrl, usdUrl, scale, scene, onJointsLoaded, ensureTrails, invalidate]);
+  }, [robot, usdUrl, scale, scene, onJointsLoaded, ensureTrails, invalidate]);
 
   const tipWorldPos = useMemo(() => new THREE.Vector3(), []);
   const baseQuat = useMemo(() => new THREE.Quaternion(), []);
 
   useFrame((state) => {
-    const robot = robotRef.current;
-    if (!robot) return;
+    const model = modelRef.current;
+    if (!model) return;
 
-    /// The robot stays above the origin, where the camera looks, and the floor moves under it.
+    /// The robot stays above the origin, where the camera looks, and the floor moves under it. The
+    /// robots' USDs are Z-up, like the base pose.
     const [, , z, qx, qy, qz, qw] = basePose;
-    robot.position.set(0, z * scale, 0);
-    robot.quaternion.copy(Z_UP_TO_Y_UP).multiply(baseQuat.set(qx, qy, qz, qw));
+    model.root.position.set(0, z * scale, 0);
+    model.root.quaternion
+      .copy(Z_UP_TO_Y_UP)
+      .multiply(baseQuat.set(qx, qy, qz, qw));
+    const positions: Record<string, number> = {};
     for (const [name, value] of Object.entries(jointValues)) {
-      robot.setJointValue(name, value);
+      const joint = jointsRef.current.get(name);
+      if (joint)
+        positions[joint.path] = joint.revolute ? value / DEG2RAD : value;
     }
-    robot.updateMatrixWorld(true);
+    model.setJointPositions(positions);
 
     if (pendingFitRef.current) {
       pendingFitFramesRef.current++;
@@ -702,7 +607,7 @@ function RobotScene({
         pendingFitFramesRef.current > MAX_FIT_WAIT_FRAMES
       ) {
         pendingFitRef.current = false;
-        fitCameraToRobot(robot, state.camera, state.controls);
+        fitCameraToRobot(model.root, state.camera, state.controls);
       }
     }
 
@@ -715,7 +620,7 @@ function RobotScene({
     )
       state.invalidate();
 
-    const tips = tipLinksRef.current;
+    const tips = tipPathsRef.current;
     if (!trailEnabled || tips.length === 0) {
       for (const l of linesRef.current) l.visible = false;
       return;
@@ -723,14 +628,13 @@ function RobotScene({
 
     const now = performance.now() / 1000;
     for (let ti = 0; ti < tips.length; ti++) {
-      const tip = tips[ti];
       const trail = trailsRef.current[ti];
       const line = linesRef.current[ti];
       const mat = trailMatsRef.current[ti];
       if (!trail || !line || !mat) continue;
 
       mat.resolution.set(size.width, size.height);
-      tip.getWorldPosition(tipWorldPos);
+      tipWorldPos.setFromMatrixPosition(model.getWorldMatrix(tips[ti])!);
       const trailColor = TRAIL_COLORS[ti % TRAIL_COLORS.length];
 
       if (trail.count < MAX_TRAIL_POINTS) {
@@ -769,7 +673,7 @@ function RobotScene({
     }
   });
 
-  // Loading state is rendered by the outer overlay (via urdfLoading) so we
+  // Loading state is rendered by the outer overlay (via modelLoading) so we
   // don't show two stacked spinners. The error state still surfaces inline
   // since the overlay doesn't have an error path.
   if (error)
@@ -889,14 +793,9 @@ export default function URDFViewer({
       ),
     [datasetInfo.robot_type, data.flatChartData],
   );
-  const { urdfUrl, usdUrl, scale, restHeight } = robotConfig;
-  const isG1 = urdfUrl.includes("g1");
-  const isOpenArm = urdfUrl.includes("openarm");
-  const loaderRobot: LoaderRobot = isG1
-    ? "g1"
-    : isOpenArm
-      ? "openarm"
-      : "so101";
+  const { robot, usdUrl, scale, restHeight } = robotConfig;
+  const isG1 = robot === "g1";
+  const isOpenArm = robot === "openarm";
   const repoId = org && dataset ? `${org}/${dataset}` : null;
   const datasetInfoRef = useRef<{
     version: string;
@@ -967,10 +866,10 @@ export default function URDFViewer({
 
   const totalFrames = chartData.length;
 
-  // URDF joint names
-  const [urdfJointNames, setUrdfJointNames] = useState<string[]>([]);
+  // The model's joint names
+  const [jointNames, setJointNames] = useState<string[]>([]);
   const onJointsLoaded = useCallback(
-    (names: string[]) => setUrdfJointNames(names),
+    (names: string[]) => setJointNames(names),
     [],
   );
 
@@ -999,8 +898,8 @@ export default function URDFViewer({
 
   // Joint mapping
   const autoMapping = useMemo(
-    () => autoMatchJoints(urdfJointNames, selectedColumns),
-    [urdfJointNames, selectedColumns],
+    () => autoMatchJoints(jointNames, selectedColumns),
+    [jointNames, selectedColumns],
   );
   const [mapping, setMapping] = useState<Record<string, string>>(autoMapping);
   useEffect(() => setMapping(autoMapping), [autoMapping]);
@@ -1027,38 +926,31 @@ export default function URDFViewer({
     [],
   );
 
-  // URDF meshes download async from the Hub bucket. Until joints are reported
-  // back from URDFLoader, playback/scrub inputs would drive an empty scene, so
-  // we gate interactions (and pause if already playing).
-  const urdfLoading = urdfJointNames.length === 0;
+  // The model downloads async from the Hub. Until its joints are reported
+  // back, playback/scrub inputs would drive an empty scene, so we gate
+  // interactions (and pause if already playing).
+  const modelLoading = jointNames.length === 0;
 
   useEffect(() => {
-    if (urdfLoading) setPlaying(false);
-  }, [urdfLoading]);
+    if (modelLoading) setPlaying(false);
+  }, [modelLoading]);
 
   const handlePlayPause = useCallback(() => {
-    if (urdfLoading) return;
+    if (modelLoading) return;
     setPlaying((prev) => {
       if (!prev) frameRef.current = frame;
       return !prev;
     });
-  }, [frame, urdfLoading]);
+  }, [frame, modelLoading]);
 
   useEffect(() => {
     if (playToggleRef) playToggleRef.current = handlePlayPause;
   }, [playToggleRef, handlePlayPause]);
 
-  // Filter out mimic joints (finger_joint2) from the UI list
-  const displayJointNames = useMemo(
-    () =>
-      urdfJointNames.filter((n) => !n.toLowerCase().includes("finger_joint2")),
-    [urdfJointNames],
-  );
-
   // Auto-detect gripper column range for linear mapping to 0-0.044m
   const gripperRanges = useMemo(() => {
     const ranges: Record<string, { min: number; max: number }> = {};
-    for (const jn of urdfJointNames) {
+    for (const jn of jointNames) {
       if (!jn.toLowerCase().includes("finger_joint1")) continue;
       const col = mapping[jn];
       if (!col) continue;
@@ -1074,20 +966,20 @@ export default function URDFViewer({
       if (min < max) ranges[jn] = { min, max };
     }
     return ranges;
-  }, [chartData, mapping, urdfJointNames]);
+  }, [chartData, mapping, jointNames]);
 
   // Compute joint values for current frame
   const jointValues = useMemo(() => {
-    if (totalFrames === 0 || urdfJointNames.length === 0) return {};
+    if (totalFrames === 0 || jointNames.length === 0) return {};
     const row = chartData[Math.min(frame, totalFrames - 1)];
     const revoluteValues: number[] = [];
     const revoluteNames: string[] = [];
     const values: Record<string, number> = {};
 
-    for (const jn of urdfJointNames) {
-      if (jn.toLowerCase().includes("finger_joint2")) continue;
+    for (const jn of jointNames) {
       const col = mapping[jn];
-      if (!col || typeof row[col] !== "number") continue;
+      /// The model refuses a value that isn't a finite number.
+      if (!col || !Number.isFinite(row[col])) continue;
       const raw = row[col];
 
       if (jn.toLowerCase().includes("finger_joint1")) {
@@ -1115,16 +1007,8 @@ export default function URDFViewer({
     revoluteNames.forEach((n, i) => {
       values[n] = converted[i];
     });
-
-    // Copy finger_joint1 → finger_joint2 (mimic joints)
-    for (const jn of urdfJointNames) {
-      if (jn.toLowerCase().includes("finger_joint2")) {
-        const j1 = jn.replace(/finger_joint2/, "finger_joint1");
-        if (values[j1] !== undefined) values[jn] = values[j1];
-      }
-    }
     return values;
-  }, [chartData, frame, gripperRanges, mapping, totalFrames, urdfJointNames]);
+  }, [chartData, frame, gripperRanges, mapping, totalFrames, jointNames]);
 
   const basePose = useMemo(() => {
     if (!basePoseColumns || totalFrames === 0)
@@ -1145,11 +1029,11 @@ export default function URDFViewer({
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* 3D Viewport */}
       <div className="flex-1 min-h-0 bg-[var(--surface-0)] rounded-lg overflow-hidden border border-line relative">
-        {(episodeLoading || urdfLoading) && (
+        {(episodeLoading || modelLoading) && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-[var(--bg)]/80">
-            {urdfLoading ? (
+            {modelLoading ? (
               <RobotLoader
-                robot={loaderRobot}
+                robot={robot}
                 caption={datasetInfo.robot_type ?? undefined}
               />
             ) : (
@@ -1216,7 +1100,7 @@ export default function URDFViewer({
             <shadowMaterial opacity={0.35} />
           </mesh>
           <RobotScene
-            urdfUrl={urdfUrl}
+            robot={robot}
             usdUrl={usdUrl}
             jointValues={jointValues}
             basePose={basePose}
@@ -1262,7 +1146,7 @@ export default function URDFViewer({
           trailEnabled={trailEnabled}
           onTrailToggle={() => setTrailEnabled((v) => !v)}
           onFrameChange={handleFrameChange}
-          disabled={urdfLoading}
+          disabled={modelLoading}
         />
 
         {/* Collapsible joint mapping */}
@@ -1278,7 +1162,7 @@ export default function URDFViewer({
           Joint Mapping
           <span className="text-fg-faint">
             ({Object.keys(mapping).filter((k) => mapping[k]).length}/
-            {displayJointNames.length} mapped)
+            {jointNames.length} mapped)
           </span>
         </button>
 
@@ -1303,7 +1187,7 @@ export default function URDFViewer({
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-[var(--surface-1)]">
                   <tr className="text-fg-faint">
-                    <th className="text-left font-normal px-1">URDF Joint</th>
+                    <th className="text-left font-normal px-1">Joint</th>
                     <th className="text-left font-normal px-1">→</th>
                     <th className="text-left font-normal px-1">
                       Dataset Column
@@ -1312,7 +1196,7 @@ export default function URDFViewer({
                   </tr>
                 </thead>
                 <tbody>
-                  {displayJointNames.map((jointName) => (
+                  {jointNames.map((jointName) => (
                     <tr key={jointName} className="border-t border-line">
                       <td className="px-1 py-0.5 text-fg-soft font-mono">
                         {jointName}
