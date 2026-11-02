@@ -119,8 +119,11 @@ function attachUsdMeshes(robot: URDFRobot, usdRoot: THREE.Object3D) {
  * data has loaded, and the meshes used to start downloading only then; calling this earlier overlaps
  * the two.
  */
-export function prefetchRobotModel(robotType: string | null) {
-  const { urdfUrl, usdUrl } = getRobotConfig(robotType);
+export function prefetchRobotModel(
+  robotType: string | null,
+  columns: string[],
+) {
+  const { urdfUrl, usdUrl } = getRobotConfig(robotType, columns);
   if (prefetchedUrdfs.has(urdfUrl)) return;
   prefetchedUrdfs.add(urdfUrl);
   Promise.all([loadUrdfText(urdfUrl), loadUsdBlob(usdUrl)]).catch(() =>
@@ -128,7 +131,18 @@ export function prefetchRobotModel(robotType: string | null) {
   );
 }
 
-function getRobotConfig(robotType: string | null): {
+/// Unitree's Dex1-1 grippers record `left_gripper | gripper_pos`, or `kLeftGripper`.
+function hasDex1Grippers(columns: string[]): boolean {
+  return columns.some((c) =>
+    /\.(left|right)_gripper \||\| k(left|right)gripper$/i.test(c),
+  );
+}
+
+/// `columns` as in the episode's chart data (`feature | name`), to tell the G1's hands apart.
+function getRobotConfig(
+  robotType: string | null,
+  columns: string[],
+): {
   urdfUrl: string;
   usdUrl: string;
   scale: number;
@@ -137,6 +151,14 @@ function getRobotConfig(robotType: string | null): {
 } {
   const lower = (robotType ?? "").toLowerCase();
   if (lower.includes("g1") || lower.includes("unitree")) {
+    if (hasDex1Grippers(columns)) {
+      return {
+        urdfUrl: `${URDF_BASE_URL}/g1_dex1/g1_body29_dex1.urdf`,
+        usdUrl: `${USD_BASE_URL}/g1_body29_dex1/simready_usd/g1_body29_dex1.usd`,
+        scale: 1,
+        restHeight: 0.793,
+      };
+    }
     return {
       urdfUrl: `${URDF_BASE_URL}/g1/g1_body29_hand14.urdf`,
       usdUrl: `${USD_BASE_URL}/g1_body29_hand14/simready_usd/g1_body29_hand14.usd`,
@@ -307,6 +329,21 @@ function autoMatchJoints(
       }
     }
 
+    // Dex1: both fingers of (left|right)_dex1 → `left_gripper | gripper_pos` or `kLeftGripper`
+    const dex1Match = lower.match(/^(left|right)_dex1_finger_joint_[12]$/);
+    if (dex1Match) {
+      const idx = sided.findIndex((s) =>
+        s
+          .replace(/^k/, "")
+          .replace(/_/g, "")
+          .startsWith(`${dex1Match[1]}gripper`),
+      );
+      if (idx >= 0) {
+        mapping[jointName] = columnKeys[idx];
+        continue;
+      }
+    }
+
     // finger_joint2 is a mimic joint — skip
     if (lower.includes("finger_joint2")) continue;
 
@@ -341,7 +378,18 @@ const SINGLE_ARM_TIP_NAMES = [
   "gripper",
 ];
 const DUAL_ARM_TIP_NAMES = ["openarm_left_hand_tcp", "openarm_right_hand_tcp"];
-const G1_TIP_NAMES = ["left_hand_palm_link", "right_hand_palm_link"];
+/// The Dex3 hands' palms, or the Dex1 grippers' bases: both on the wrist's flange.
+const G1_TIP_NAMES = [
+  "left_hand_palm_link",
+  "right_hand_palm_link",
+  "left_dex1_base_link",
+  "right_dex1_base_link",
+];
+/// Unitree's Dex1-1 gripper motor turns 5.4 rad from closed to open, each finger sliding from
+/// -0.02 m to 0.0245 m in the URDF.
+const DEX1_MOTOR_TRAVEL = 5.4;
+const DEX1_FINGER_CLOSED = -0.02;
+const DEX1_FINGER_OPEN = 0.0245;
 const TRAIL_DURATION = 1.0;
 const TRAIL_COLORS = [new THREE.Color("#ff6600"), new THREE.Color("#00aaff")];
 const MAX_TRAIL_POINTS = 300;
@@ -788,8 +836,12 @@ export default function URDFViewer({
   /// Three.js needs real colours, so the scene reads the theme instead of CSS variables.
   const dark = useTheme() === "dark";
   const robotConfig = useMemo(
-    () => getRobotConfig(datasetInfo.robot_type),
-    [datasetInfo.robot_type],
+    () =>
+      getRobotConfig(
+        datasetInfo.robot_type,
+        Object.keys(data.flatChartData[0] ?? {}),
+      ),
+    [datasetInfo.robot_type, data.flatChartData],
   );
   const { urdfUrl, usdUrl, scale, restHeight } = robotConfig;
   const isG1 = urdfUrl.includes("g1");
@@ -1001,6 +1053,10 @@ export default function URDFViewer({
         } else {
           values[jn] = (raw / 100) * 0.044; // fallback: assume 0-100
         }
+      } else if (jn.includes("_dex1_finger_joint_")) {
+        values[jn] =
+          DEX1_FINGER_CLOSED +
+          (raw / DEX1_MOTOR_TRAVEL) * (DEX1_FINGER_OPEN - DEX1_FINGER_CLOSED);
       } else {
         revoluteValues.push(raw);
         revoluteNames.push(jn);
