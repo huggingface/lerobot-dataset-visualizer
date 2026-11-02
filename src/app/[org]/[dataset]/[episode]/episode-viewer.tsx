@@ -36,6 +36,8 @@ import {
   type CrossEpisodeVarianceData,
 } from "./fetch-data";
 import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
+import { CHART_CONFIG } from "@/utils/constants";
+import { parseInfo } from "@huggingface/lerobot";
 import type { DatasetMetadata } from "@/utils/parquetUtils";
 
 const URDFViewer = lazy(() => import("@/components/urdf-viewer"));
@@ -292,8 +294,14 @@ export default function EpisodeViewer({
           hasURDFSupport(info.robot_type ?? null) &&
           info.codebase_version >= "v3.0"
         ) {
+          const { joints } = parseInfo(JSON.stringify(info));
+          const columns = Object.entries(joints).flatMap(([feature, names]) =>
+            names.map(
+              (n) => `${feature}${CHART_CONFIG.SERIES_NAME_DELIMITER}${n}`,
+            ),
+          );
           return import("@/components/urdf-viewer").then((m) =>
-            m.prefetchRobotModel(info.robot_type ?? null),
+            m.prefetchRobotModel(info.robot_type ?? null, columns),
           );
         }
       })
@@ -761,7 +769,10 @@ function EpisodeViewerInner({
         tab === "urdf"
           ? () =>
               void import("@/components/urdf-viewer").then((m) =>
-                m.prefetchRobotModel(datasetInfo.robot_type),
+                m.prefetchRobotModel(
+                  datasetInfo.robot_type,
+                  Object.keys(data.flatChartData[0] ?? {}),
+                ),
               )
           : undefined
       }
