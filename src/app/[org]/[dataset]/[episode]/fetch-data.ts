@@ -1262,10 +1262,12 @@ function chartDataFromFrames(
   for (const [key, components] of Object.entries(frames.series)) {
     if (!info.features[key] || excludedColumns.includes(key)) continue;
     if (hasHandTracking(info) && isHandGeometryColumn(key)) continue;
-    const names =
-      frames.names[key]?.length === components.length
-        ? frames.names[key]
-        : undefined;
+    /// The reader skips names nested in one more list, like Unitree's `[["kLeftShoulderPitch", ...]]`.
+    const nested = (info.features[key].names as unknown[] | null)?.[0];
+    const declared =
+      frames.names[key] ??
+      (Array.isArray(nested) ? (nested as string[]) : undefined);
+    const names = declared?.length === components.length ? declared : undefined;
     components.forEach((values, i) => {
       const suffix = names?.[i] ?? (components.length > 1 ? i : undefined);
       series.push([
