@@ -26,6 +26,7 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import type { EpisodeData } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import { loadEpisodeFlatChartData } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import UrdfPlaybackBar from "@/components/urdf-playback-bar";
+import RobotLoader, { type LoaderRobot } from "@/components/robot-loader";
 import { CHART_CONFIG } from "@/utils/constants";
 import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
 import type { DatasetMetadata } from "@/utils/parquetUtils";
@@ -829,6 +830,11 @@ export default function URDFViewer({
   const { urdfUrl, usdUrl, scale } = robotConfig;
   const isG1 = urdfUrl.includes("g1");
   const isOpenArm = urdfUrl.includes("openarm");
+  const loaderRobot: LoaderRobot | null = isG1
+    ? null
+    : isOpenArm
+      ? "openarm"
+      : "so101";
   const repoId = org && dataset ? `${org}/${dataset}` : null;
   const datasetInfoRef = useRef<{
     version: string;
@@ -1062,11 +1068,18 @@ export default function URDFViewer({
       <div className="flex-1 min-h-0 bg-[var(--surface-0)] rounded-lg overflow-hidden border border-line relative">
         {(episodeLoading || urdfLoading) && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-[var(--bg)]/80">
-            <span className="text-fg text-lg animate-pulse">
-              {urdfLoading
-                ? "Loading 3D model…"
-                : `Loading episode ${selectedEpisode}…`}
-            </span>
+            {urdfLoading && loaderRobot ? (
+              <RobotLoader
+                robot={loaderRobot}
+                caption={datasetInfo.robot_type ?? undefined}
+              />
+            ) : (
+              <span className="text-fg text-lg animate-pulse">
+                {urdfLoading
+                  ? "Loading 3D model…"
+                  : `Loading episode ${selectedEpisode}…`}
+              </span>
+            )}
           </div>
         )}
         <Canvas
