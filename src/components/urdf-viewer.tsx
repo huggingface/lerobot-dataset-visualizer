@@ -169,7 +169,11 @@ function groupColumnsByPrefix(keys: string[]): Record<string, string[]> {
   for (const key of keys) {
     if (key === "timestamp") continue;
     const parts = key.split(SERIES_DELIM);
-    const prefix = parts.length > 1 ? parts[0].trim() : "other";
+    const feature = parts.length > 1 ? parts[0].trim() : "other";
+    /// Features split under observation.state or action (Unitree's left_arm, lower_body...) are one
+    /// source, so a robot's joints map from all of them.
+    const prefix =
+      feature.match(/^(observation\.state|action)\./)?.[1] ?? feature;
     if (!groups[prefix]) groups[prefix] = [];
     groups[prefix].push(key);
   }
@@ -232,6 +236,14 @@ function autoMatchJoints(
     (k.split(SERIES_DELIM).pop()?.trim() ?? k).toLowerCase(),
   );
 
+  /// A side named by the feature rather than the column (`left_arm | shoulder_pitch`) joins the name.
+  const sided = columnKeys.map((k, i) => {
+    const side = k.split(SERIES_DELIM)[0].match(/\.(left|right)_[^.]*$/)?.[1];
+    return side && !suffixes[i].startsWith(`${side}_`)
+      ? `${side}_${suffixes[i]}`
+      : suffixes[i];
+  });
+
   // Build reverse lookup: URDF joint name → column key (for G1 SDK-style columns)
   const g1Reverse = new Map<string, string>();
   for (let i = 0; i < suffixes.length; i++) {
@@ -254,6 +266,13 @@ function autoMatchJoints(
     const g1Col = g1Reverse.get(lower);
     if (g1Col) {
       mapping[jointName] = g1Col;
+      continue;
+    }
+
+    // Without the `_joint` suffix: left_hip_pitch_joint → `left_hip_pitch`, or `hip_pitch` in left_leg
+    const sidedIdx = sided.indexOf(lower.replace(/_joint$/, ""));
+    if (sidedIdx >= 0) {
+      mapping[jointName] = columnKeys[sidedIdx];
       continue;
     }
 
