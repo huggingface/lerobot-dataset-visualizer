@@ -176,7 +176,7 @@ function groupColumnsByPrefix(keys: string[]): Record<string, string[]> {
   return groups;
 }
 
-// Unitree G1 SDK column suffix → URDF joint name
+// Unitree G1 SDK column suffix → URDF joint name. Unitree's own datasets leave out the `.q`.
 const G1_SDK_TO_URDF: Record<string, string> = {
   "klefthippitch.q": "left_hip_pitch_joint",
   "klefthiproll.q": "left_hip_roll_joint",
@@ -207,6 +207,20 @@ const G1_SDK_TO_URDF: Record<string, string> = {
   "krightwristroll.q": "right_wrist_roll_joint",
   "krightwristpitch.q": "right_wrist_pitch_joint",
   "krightwristyaw.q": "right_wrist_yaw_joint",
+  "klefthandthumb0.q": "left_hand_thumb_0_joint",
+  "klefthandthumb1.q": "left_hand_thumb_1_joint",
+  "klefthandthumb2.q": "left_hand_thumb_2_joint",
+  "klefthandmiddle0.q": "left_hand_middle_0_joint",
+  "klefthandmiddle1.q": "left_hand_middle_1_joint",
+  "klefthandindex0.q": "left_hand_index_0_joint",
+  "klefthandindex1.q": "left_hand_index_1_joint",
+  "krighthandthumb0.q": "right_hand_thumb_0_joint",
+  "krighthandthumb1.q": "right_hand_thumb_1_joint",
+  "krighthandthumb2.q": "right_hand_thumb_2_joint",
+  "krighthandmiddle0.q": "right_hand_middle_0_joint",
+  "krighthandmiddle1.q": "right_hand_middle_1_joint",
+  "krighthandindex0.q": "right_hand_index_0_joint",
+  "krighthandindex1.q": "right_hand_index_1_joint",
 };
 
 function autoMatchJoints(
@@ -221,7 +235,8 @@ function autoMatchJoints(
   // Build reverse lookup: URDF joint name → column key (for G1 SDK-style columns)
   const g1Reverse = new Map<string, string>();
   for (let i = 0; i < suffixes.length; i++) {
-    const urdfName = G1_SDK_TO_URDF[suffixes[i]];
+    const urdfName =
+      G1_SDK_TO_URDF[suffixes[i]] ?? G1_SDK_TO_URDF[`${suffixes[i]}.q`];
     if (urdfName) g1Reverse.set(urdfName, columnKeys[i]);
   }
 
