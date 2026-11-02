@@ -45,7 +45,7 @@ const EXAMPLE_DATASETS = [
   "lerobot/svla_so101_pickplace",
   "lerobot/high_quality_folding",
   "lerobot/aloha_static_cups_open",
-  "imstevenpmwork/thanos_picking_power_gem",
+  "unitreerobotics/G1_WBT_Inspire_Push_Wheelchair",
 ];
 
 function HomeInner() {
