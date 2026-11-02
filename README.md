@@ -25,7 +25,7 @@ This tool is designed to help robotics researchers and practitioners quickly ins
 - Watching episode videos
 - Exploring synchronized time-series data with interactive charts
 - Analyzing action quality and identifying problematic episodes
-- Visualizing robot poses in 3D using URDF models
+- Visualizing robot poses in 3D using USD models
 - Paginating through large datasets efficiently
 
 ## Key Features
@@ -36,7 +36,7 @@ This tool is designed to help robotics researchers and practitioners quickly ins
 - **Statistics Panel:** Dataset-level statistics including episode count, total recording time, frames-per-second, and an episode-length histogram.
 - **Action Insights Panel:** Data-driven analysis tools to guide training configuration — includes autocorrelation, state-action alignment, speed distribution, and cross-episode variance heatmap.
 - **Filtering Panel:** Identify and flag problematic episodes (low movement, jerky motion, outlier length) for removal. Exports flagged episode IDs as a ready-to-run LeRobot CLI command.
-- **3D URDF Viewer:** Visualize robot joint poses frame-by-frame in an interactive 3D scene, with end-effector trail rendering. Supports SO-100, SO-101, and OpenArm bimanual robots.
+- **3D Replay:** Visualize robot joint poses frame-by-frame in an interactive 3D scene, with end-effector trail rendering. Supports SO-100, SO-101, OpenArm bimanual, and Unitree G1 (Dex3, Dex1 and Inspire hands) robots.
 - **3D Hands:** Automatically detects native SOMA156 hand annotations. Shows wrists, 21-joint hand skeletons, wrist trails and the saved camera trajectory alongside a synchronized camera overlay, with a Follow camera control.
 - **Annotations Panel:** Hand-edit the v3.1 language schema (`language_persistent` + `language_events`) — subtask, plan, memory, interjection + paired speech, and VQA atoms with bounding-box / keypoint / count / attribute / spatial answers. VQA bboxes and keypoints render as overlays on the video player; drag or click on a camera to draw new ones. Backed by an optional FastAPI service (in `backend/`) for parquet rewrites and HF Hub push.
 - **Efficient Data Loading:** Uses parquet and JSON loading for large dataset support, with pagination, chunking, and lazy-loaded panels for fast initial load.
@@ -69,9 +69,8 @@ video dimensions disable the overlay. Estimated calibration is labeled.
 - **Next.js** (App Router)
 - **React**
 - **Recharts** (for data visualization)
-- **Three.js** + **@react-three/fiber** + **@react-three/drei** (for 3D URDF visualization)
-- **urdf-loader** (for parsing URDF robot models)
-- **@huggingface/usd-web-viewer** (for the robot USD models in [lerobot/robot-usds](https://huggingface.co/datasets/lerobot/robot-usds))
+- **Three.js** + **@react-three/fiber** + **@react-three/drei** (for the 3D scene)
+- **@huggingface/usd-web-viewer** (loads and poses the robot USD models in [lerobot/robot-usds](https://huggingface.co/datasets/lerobot/robot-usds))
 - **hyparquet** (for reading Parquet files)
 - **Tailwind CSS** (styling)
 

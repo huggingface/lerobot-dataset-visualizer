@@ -18,7 +18,6 @@ package-lock.json
 /.next/
 /out/
 /public/*
-!/public/urdf/
 
 # production
 /build

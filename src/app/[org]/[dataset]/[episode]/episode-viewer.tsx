@@ -529,8 +529,8 @@ function EpisodeViewerInner({
     setCrossEpData(null);
   }, [datasetInfo.repoId]);
 
-  // Eagerly load the URDFViewer bundle + warm the STL geometry cache while
-  // the user is on the Episodes tab, so the 3D Replay tab opens faster.
+  // Eagerly load the URDFViewer bundle while the user is on the Episodes tab,
+  // so the 3D Replay tab opens faster.
   useEffect(() => {
     if (urdfSupported) {
       void import("@/components/urdf-viewer");
