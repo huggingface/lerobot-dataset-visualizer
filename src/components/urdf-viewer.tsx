@@ -19,7 +19,6 @@ import * as THREE from "three";
 import URDFLoader from "urdf-loader";
 import type { URDFRobot } from "urdf-loader";
 import { loadUsd } from "@huggingface/usd-web-viewer";
-import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
@@ -35,34 +34,9 @@ import { useTheme } from "@/utils/theme";
 const SERIES_DELIM = CHART_CONFIG.SERIES_NAME_DELIMITER;
 const DEG2RAD = Math.PI / 180;
 
-// Module-level geometry cache — survives component remounts (tab switches,
-// episode navigations). Avoids re-fetching and re-parsing STL files.
-const stlGeometryCache = new Map<string, THREE.BufferGeometry>();
-// In-flight promise cache — prevents duplicate simultaneous fetches
-const stlGeometryLoading = new Map<string, Promise<THREE.BufferGeometry>>();
-
-function loadStlGeometry(url: string): Promise<THREE.BufferGeometry> {
-  const cached = stlGeometryCache.get(url);
-  if (cached) return Promise.resolve(cached);
-  let loading = stlGeometryLoading.get(url);
-  if (!loading) {
-    loading = new STLLoader()
-      .loadAsync(url)
-      .then((geometry) => {
-        stlGeometryCache.set(url, geometry);
-        return geometry;
-      })
-      .finally(() => stlGeometryLoading.delete(url));
-    stlGeometryLoading.set(url, loading);
-  }
-  return loading;
-}
-
-// URDFs + meshes are hosted in the Hub bucket at
-// https://huggingface.co/buckets/lerobot/robot-urdfs. URDFLoader resolves
-// relative mesh paths against the URDF's own URL, so the bucket layout
-// mirrors the upstream directory tree. Note: buckets don't have branches,
-// so the resolve URL has no "/main" segment.
+// URDFs are hosted in the Hub bucket at
+// https://huggingface.co/buckets/lerobot/robot-urdfs. Note: buckets don't have
+// branches, so the resolve URL has no "/main" segment.
 const URDF_BASE_URL =
   process.env.NEXT_PUBLIC_URDF_BASE_URL ??
   "https://huggingface.co/buckets/lerobot/robot-urdfs/resolve";
@@ -149,35 +123,23 @@ export function prefetchRobotModel(robotType: string | null) {
   const { urdfUrl, usdUrl } = getRobotConfig(robotType);
   if (prefetchedUrdfs.has(urdfUrl)) return;
   prefetchedUrdfs.add(urdfUrl);
-  if (usdUrl) {
-    Promise.all([loadUrdfText(urdfUrl), loadUsdBlob(usdUrl)]).catch(() =>
-      prefetchedUrdfs.delete(urdfUrl),
-    );
-    return;
-  }
-  const base = THREE.LoaderUtils.extractUrlBase(urdfUrl);
-  loadUrdfText(urdfUrl)
-    .then((text) => {
-      const doc = new DOMParser().parseFromString(text, "application/xml");
-      for (const mesh of doc.querySelectorAll("visual mesh")) {
-        const filename = mesh.getAttribute("filename");
-        /// Same resolution URDFLoader applies to relative paths; package:// meshes are left to it.
-        if (!filename || filename.startsWith("package://")) continue;
-        if (filename.toLowerCase().endsWith(".stl"))
-          loadStlGeometry(base + filename).catch(() => {});
-      }
-    })
-    .catch(() => prefetchedUrdfs.delete(urdfUrl));
+  Promise.all([loadUrdfText(urdfUrl), loadUsdBlob(usdUrl)]).catch(() =>
+    prefetchedUrdfs.delete(urdfUrl),
+  );
 }
 
 function getRobotConfig(robotType: string | null): {
   urdfUrl: string;
-  usdUrl?: string;
+  usdUrl: string;
   scale: number;
 } {
   const lower = (robotType ?? "").toLowerCase();
   if (lower.includes("g1") || lower.includes("unitree")) {
-    return { urdfUrl: `${URDF_BASE_URL}/g1/g1_body29_hand14.urdf`, scale: 1 };
+    return {
+      urdfUrl: `${URDF_BASE_URL}/g1/g1_body29_hand14.urdf`,
+      usdUrl: `${USD_BASE_URL}/g1_body29_hand14/simready_usd/g1_body29_hand14.usd`,
+      scale: 1,
+    };
   }
   if (lower.includes("openarm")) {
     return {
@@ -368,7 +330,7 @@ function RobotScene({
   scale,
 }: {
   urdfUrl: string;
-  usdUrl?: string;
+  usdUrl: string;
   jointValues: Record<string, number>;
   onJointsLoaded: (names: string[]) => void;
   trailEnabled: boolean;
@@ -465,69 +427,11 @@ function RobotScene({
     const loader = new URDFLoader(manager);
     /// itemEnd fires after URDFLoader attaches the URDF or a mesh, so each one paints as it lands.
     manager.onProgress = () => invalidate();
-    // URDFLoader (node_modules/urdf-loader/src/URDFLoader.js ~line 556) does
-    //   `if (obj instanceof THREE.Mesh) obj.material = material;`
-    // on every mesh we hand back — overwriting our PBR material with the
-    // URDF's <material rgba="...">-derived MeshPhongMaterial. Wrapping the
-    // returned mesh in a Group dodges that check so our materials survive.
-    const wrapForUrdf = (obj: THREE.Object3D): THREE.Object3D => {
-      const group = new THREE.Group();
-      group.add(obj);
-      return group;
-    };
-    loader.loadMeshCb = (url, mgr, onLoad) => {
-      /// The USD draws these robots: their URDF only moves it.
-      if (usdUrl) {
-        onLoad(new THREE.Object3D());
-        return;
-      }
-      const makeMaterial = () => {
-        let color = "#9ba1ab";
-        let metalness = 0.1;
-        let roughness = 0.5;
-        if (isG1) {
-          const lower = url.toLowerCase();
-          const isWhitePart =
-            lower.includes("contour") ||
-            lower.includes("roll_link") ||
-            lower.includes("logo") ||
-            lower.includes("rubber") ||
-            lower.includes("constraint") ||
-            lower.includes("support");
-          color = isWhitePart ? "#9ca3af" : "#1f2937";
-          metalness = 0.25;
-          roughness = 0.6;
-        }
-        return new THREE.MeshStandardMaterial({ color, metalness, roughness });
-      };
-      // STL files — apply final PBR materials directly here. We used to do a
-      // post-load archetype rebuild in manager.onLoad, but STLLoader calls
-      // `manager.itemEnd` *before* our Promise resolves — so when the last
-      // STL completes, manager.onLoad fires synchronously, our traverse runs,
-      // and THEN URDFLoader's inner `group.add(obj)` + `obj.material = urdf`
-      // runs in a microtask. Last-batch meshes ended up gold/green because
-      // they were added to the robot after our rebuild passed.
-      //
-      // Fix: pick the archetype color here, wrap the mesh in a Group so
-      // URDFLoader won't override our material (its override only triggers
-      // for direct `THREE.Mesh` instances), and skip the onLoad rebuild.
-
-      /// Tracked on this manager even when the geometry is cached or a prefetch already started
-      /// the download: manager.onLoad (shadows, camera fit) only fires for tracked loads, and
-      /// with every mesh prefetched it would otherwise never fire.
-      mgr.itemStart(url);
-      loadStlGeometry(url)
-        .then((geometry) =>
-          onLoad(wrapForUrdf(new THREE.Mesh(geometry, makeMaterial()))),
-        )
-        .catch((err) => onLoad(new THREE.Object3D(), err as Error))
-        .finally(() => mgr.itemEnd(url));
-    };
-    // Materials are now set directly in loadMeshCb, so manager.onLoad only
-    // needs to (a) enable shadows, (b) auto-fit the camera. We defer the
-    // whole block one macrotask because STLLoader fires `manager.itemEnd`
-    // before the user callback runs, so if we worked synchronously here the
-    // last batch of meshes wouldn't yet be attached to the robot tree.
+    /// The USD draws the robot: its URDF only moves it.
+    loader.loadMeshCb = (_url, _manager, onLoad) =>
+      onLoad(new THREE.Object3D());
+    // Fires once the URDF and its USD are attached (the URDF's itemEnd comes after both), to
+    // enable shadows and fit the camera.
     manager.onLoad = () => {
       setTimeout(() => {
         const robot = robotRef.current;
@@ -592,10 +496,6 @@ function RobotScene({
               j.jointType === "prismatic",
           )
           .map((j) => j.name);
-        if (!usdUrl) {
-          onJointsLoaded(movable);
-          return;
-        }
         /// Loaded from memory, so the session cache spares a download on every visit to the tab.
         const name = usdUrl.slice(usdUrl.lastIndexOf("/") + 1);
         return loadUsdBlob(usdUrl)
@@ -830,8 +730,8 @@ export default function URDFViewer({
   const { urdfUrl, usdUrl, scale } = robotConfig;
   const isG1 = urdfUrl.includes("g1");
   const isOpenArm = urdfUrl.includes("openarm");
-  const loaderRobot: LoaderRobot | null = isG1
-    ? null
+  const loaderRobot: LoaderRobot = isG1
+    ? "g1"
     : isOpenArm
       ? "openarm"
       : "so101";
@@ -1068,16 +968,14 @@ export default function URDFViewer({
       <div className="flex-1 min-h-0 bg-[var(--surface-0)] rounded-lg overflow-hidden border border-line relative">
         {(episodeLoading || urdfLoading) && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-[var(--bg)]/80">
-            {urdfLoading && loaderRobot ? (
+            {urdfLoading ? (
               <RobotLoader
                 robot={loaderRobot}
                 caption={datasetInfo.robot_type ?? undefined}
               />
             ) : (
               <span className="text-fg text-lg animate-pulse">
-                {urdfLoading
-                  ? "Loading 3D model…"
-                  : `Loading episode ${selectedEpisode}…`}
+                Loading episode {selectedEpisode}…
               </span>
             )}
           </div>
