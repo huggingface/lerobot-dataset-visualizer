@@ -44,7 +44,7 @@ const FEATURES = [
 const EXAMPLE_DATASETS = [
   "lerobot/svla_so101_pickplace",
   "lerobot/high_quality_folding",
-  "lerobot/aloha_static_cups_open",
+  "unitreerobotics/G1_WBT_Inspire_Pick_Up_Fruit",
   "unitreerobotics/G1_Dex1_Store_Hexagonal_Wrenches",
 ];
 
