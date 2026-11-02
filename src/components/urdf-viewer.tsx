@@ -151,6 +151,14 @@ function getRobotConfig(
 } {
   const lower = (robotType ?? "").toLowerCase();
   if (lower.includes("g1") || lower.includes("unitree")) {
+    if (lower.includes("inspire")) {
+      return {
+        urdfUrl: `${URDF_BASE_URL}/g1_inspire/g1_body29_inspire.urdf`,
+        usdUrl: `${USD_BASE_URL}/g1_body29_inspire/simready_usd/g1_body29_inspire.usd`,
+        scale: 1,
+        restHeight: 0.793,
+      };
+    }
     if (hasDex1Grippers(columns)) {
       return {
         urdfUrl: `${URDF_BASE_URL}/g1_dex1/g1_body29_dex1.urdf`,
@@ -344,6 +352,26 @@ function autoMatchJoints(
       }
     }
 
+    // Inspire: (L|R)_<finger>_proximal_joint and the thumb's yaw and pitch → `left_fig6d | index`,
+    // `little`, `thumb_lat` and `thumb_oc`
+    const inspireMatch = lower.match(INSPIRE_JOINT);
+    if (inspireMatch) {
+      const [, side, finger, thumbAxis] = inspireMatch;
+      const name =
+        finger === "pinky"
+          ? "little"
+          : thumbAxis === "yaw"
+            ? "thumb_lat"
+            : thumbAxis === "pitch"
+              ? "thumb_oc"
+              : finger;
+      const idx = sided.indexOf(`${side === "l" ? "left" : "right"}_${name}`);
+      if (idx >= 0) {
+        mapping[jointName] = columnKeys[idx];
+        continue;
+      }
+    }
+
     // finger_joint2 is a mimic joint — skip
     if (lower.includes("finger_joint2")) continue;
 
@@ -384,12 +412,28 @@ const G1_TIP_NAMES = [
   "right_hand_palm_link",
   "left_dex1_base_link",
   "right_dex1_base_link",
+  "L_hand_base_link",
+  "R_hand_base_link",
 ];
 /// Unitree's Dex1-1 gripper motor turns 5.4 rad from closed to open, each finger sliding from
 /// -0.02 m to 0.0245 m in the URDF.
 const DEX1_MOTOR_TRAVEL = 5.4;
 const DEX1_FINGER_CLOSED = -0.02;
 const DEX1_FINGER_OPEN = 0.0245;
+/// The Inspire hands' motors: a finger's proximal joint, or the thumb's yaw or pitch. The other
+/// finger joints follow them (`<mimic>`).
+const INSPIRE_JOINT =
+  /^([lr])_(index|middle|ring|pinky|thumb)_proximal(?:_(yaw|pitch))?_joint$/i;
+
+/**
+ * An Inspire motor's joint angle from its recorded value, 1 open to 0 closed (Unitree's
+ * xr_teleoperate): fingers curl to 1.7 rad, the thumb bends to 0.5 rad and turns from 1.3 to -0.1 rad.
+ */
+function inspireJointValue(joint: string, open: number): number {
+  if (joint.endsWith("_yaw_joint")) return 1.3 - 1.4 * open;
+  if (joint.endsWith("_pitch_joint")) return 0.5 * (1 - open);
+  return 1.7 * (1 - open);
+}
 const TRAIL_DURATION = 1.0;
 const TRAIL_COLORS = [new THREE.Color("#ff6600"), new THREE.Color("#00aaff")];
 const MAX_TRAIL_POINTS = 300;
@@ -595,12 +639,14 @@ function RobotScene({
         tipLinksRef.current = tips;
         ensureTrails(tips.length);
 
+        /// A joint a `<mimic>` drives follows its joint, so it isn't mapped on its own.
         const movable = Object.values(robot.joints)
           .filter(
             (j) =>
-              j.jointType === "revolute" ||
-              j.jointType === "continuous" ||
-              j.jointType === "prismatic",
+              (j.jointType === "revolute" ||
+                j.jointType === "continuous" ||
+                j.jointType === "prismatic") &&
+              j.type !== "URDFMimicJoint",
           )
           .map((j) => j.name);
         /// Loaded from memory, so the session cache spares a download on every visit to the tab.
@@ -1053,6 +1099,8 @@ export default function URDFViewer({
         } else {
           values[jn] = (raw / 100) * 0.044; // fallback: assume 0-100
         }
+      } else if (INSPIRE_JOINT.test(jn)) {
+        values[jn] = inspireJointValue(jn, raw);
       } else if (jn.includes("_dex1_finger_joint_")) {
         values[jn] =
           DEX1_FINGER_CLOSED +
