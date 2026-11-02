@@ -132,6 +132,8 @@ function getRobotConfig(robotType: string | null): {
   urdfUrl: string;
   usdUrl: string;
   scale: number;
+  /** Height of the URDF's root link above the floor when the data has no base pose. */
+  restHeight: number;
 } {
   const lower = (robotType ?? "").toLowerCase();
   if (lower.includes("g1") || lower.includes("unitree")) {
@@ -139,6 +141,8 @@ function getRobotConfig(robotType: string | null): {
       urdfUrl: `${URDF_BASE_URL}/g1/g1_body29_hand14.urdf`,
       usdUrl: `${USD_BASE_URL}/g1_body29_hand14/simready_usd/g1_body29_hand14.usd`,
       scale: 1,
+      /// The pelvis, standing on straight legs.
+      restHeight: 0.793,
     };
   }
   if (lower.includes("openarm")) {
@@ -146,12 +150,14 @@ function getRobotConfig(robotType: string | null): {
       urdfUrl: `${URDF_BASE_URL}/openarm/openarm_bimanual_web.urdf`,
       usdUrl: `${USD_BASE_URL}/openarm_bimanual/simready_usd/openarm_bimanual.usd`,
       scale: 3,
+      restHeight: 0,
     };
   }
   return {
     urdfUrl: `${URDF_BASE_URL}/so101/so101_new_calib_web.urdf`,
     usdUrl: `${USD_BASE_URL}/so101_new_calib/simready_usd/so101_new_calib.usd`,
     scale: 10,
+    restHeight: 0,
   };
 }
 
@@ -311,6 +317,23 @@ function autoMatchJoints(
   return mapping;
 }
 
+const BASE_POSE_NAMES = ["x", "y", "z", "qx", "qy", "qz", "qw"];
+const Z_UP_TO_Y_UP = new THREE.Quaternion().setFromAxisAngle(
+  new THREE.Vector3(1, 0, 0),
+  -Math.PI / 2,
+);
+
+/// The columns of a floating base's pose in the world (x, y, z, qx, qy, qz, qw), such as Unitree's
+/// `state_base_pose`.
+function findBasePoseColumns(columnKeys: string[]): string[] | null {
+  const feature = columnKeys
+    .map((k) => k.split(SERIES_DELIM)[0])
+    .find((f) => f.endsWith("base_pose"));
+  if (!feature) return null;
+  const columns = BASE_POSE_NAMES.map((n) => `${feature}${SERIES_DELIM}${n}`);
+  return columns.every((c) => columnKeys.includes(c)) ? columns : null;
+}
+
 const SINGLE_ARM_TIP_NAMES = [
   "gripper_frame_link",
   "gripperframe",
@@ -358,6 +381,7 @@ function RobotScene({
   urdfUrl,
   usdUrl,
   jointValues,
+  basePose,
   onJointsLoaded,
   trailEnabled,
   trailResetKey,
@@ -366,6 +390,7 @@ function RobotScene({
   urdfUrl: string;
   usdUrl: string;
   jointValues: Record<string, number>;
+  basePose: number[];
   onJointsLoaded: (names: string[]) => void;
   trailEnabled: boolean;
   trailResetKey: number;
@@ -407,7 +432,7 @@ function RobotScene({
   useEffect(() => {
     framesSinceInputRef.current = 0;
     invalidate();
-  }, [jointValues, trailEnabled, trailResetKey, invalidate]);
+  }, [jointValues, basePose, trailEnabled, trailResetKey, invalidate]);
 
   // Create/destroy trail Line2 objects when tip count changes
   const ensureTrails = useCallback(
@@ -561,11 +586,16 @@ function RobotScene({
   }, [urdfUrl, usdUrl, scale, scene, onJointsLoaded, ensureTrails, invalidate]);
 
   const tipWorldPos = useMemo(() => new THREE.Vector3(), []);
+  const baseQuat = useMemo(() => new THREE.Quaternion(), []);
 
   useFrame((state) => {
     const robot = robotRef.current;
     if (!robot) return;
 
+    /// The robot stays above the origin, where the camera looks, and the floor moves under it.
+    const [, , z, qx, qy, qz, qw] = basePose;
+    robot.position.set(0, z * scale, 0);
+    robot.quaternion.copy(Z_UP_TO_Y_UP).multiply(baseQuat.set(qx, qy, qz, qw));
     for (const [name, value] of Object.entries(jointValues)) {
       robot.setJointValue(name, value);
     }
@@ -761,7 +791,7 @@ export default function URDFViewer({
     () => getRobotConfig(datasetInfo.robot_type),
     [datasetInfo.robot_type],
   );
-  const { urdfUrl, usdUrl, scale } = robotConfig;
+  const { urdfUrl, usdUrl, scale, restHeight } = robotConfig;
   const isG1 = urdfUrl.includes("g1");
   const isOpenArm = urdfUrl.includes("openarm");
   const loaderRobot: LoaderRobot = isG1
@@ -876,6 +906,10 @@ export default function URDFViewer({
   );
   const [mapping, setMapping] = useState<Record<string, string>>(autoMapping);
   useEffect(() => setMapping(autoMapping), [autoMapping]);
+  const basePoseColumns = useMemo(
+    () => findBasePoseColumns(selectedColumns),
+    [selectedColumns],
+  );
 
   // Trail
   const [trailEnabled, setTrailEnabled] = useState(true);
@@ -988,6 +1022,13 @@ export default function URDFViewer({
     return values;
   }, [chartData, frame, gripperRanges, mapping, totalFrames, urdfJointNames]);
 
+  const basePose = useMemo(() => {
+    if (!basePoseColumns || totalFrames === 0)
+      return [0, 0, restHeight, 0, 0, 0, 1];
+    const row = chartData[Math.min(frame, totalFrames - 1)];
+    return basePoseColumns.map((c) => row[c]);
+  }, [basePoseColumns, chartData, frame, restHeight, totalFrames]);
+
   if (data.flatChartData.length === 0) {
     return (
       <div className="text-fg-muted p-8 text-center">
@@ -1074,6 +1115,7 @@ export default function URDFViewer({
             urdfUrl={urdfUrl}
             usdUrl={usdUrl}
             jointValues={jointValues}
+            basePose={basePose}
             onJointsLoaded={onJointsLoaded}
             trailEnabled={trailEnabled}
             trailResetKey={selectedEpisode}
@@ -1088,7 +1130,8 @@ export default function URDFViewer({
             sectionThickness={1}
             sectionColor={dark ? "#475569" : "#9ca3af"}
             fadeDistance={isG1 ? 20 : 10}
-            position={[0, 0, 0]}
+            infiniteGrid={basePoseColumns !== null}
+            position={[-basePose[0] * scale, 0, basePose[1] * scale]}
           />
           <OrbitControls
             makeDefault
