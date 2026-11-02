@@ -17,6 +17,7 @@
   "dependencies": {
     "@huggingface/hub": "^2.11.0",
     "@huggingface/lerobot": "^0.0.13",
+    "@huggingface/usd-web-viewer": "0.2.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "fzstd": "0.1.1",

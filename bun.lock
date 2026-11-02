@@ -7,6 +7,7 @@
       "dependencies": {
         "@huggingface/hub": "^2.11.0",
         "@huggingface/lerobot": "^0.0.13",
+        "@huggingface/usd-web-viewer": "0.2.0",
         "@react-three/drei": "^10.7.7",
         "@react-three/fiber": "^9.5.0",
         "fzstd": "0.1.1",
@@ -72,6 +73,8 @@
     "@huggingface/lerobot": ["@huggingface/lerobot@0.0.13", "", { "dependencies": { "fzstd": "0.1.1", "hyparquet": "^1.31.2" } }, "sha512-FWjICnB9ndm4eRWH52xAybT4bDhK+JQZCMJrF3ivVYtG/b8H81I+vcZ5Yw22NNCQVZ2Ib7FgOLYo0rmyxJrUoQ=="],
 
     "@huggingface/tasks": ["@huggingface/tasks@0.19.90", "", {}, "sha512-nfV9luJbvwGQ/5oKXkKhCV9h4X7mwh1YaGG3ORd6UMLDSwr1OFSSatcBX0O9OtBtmNK19aGSjbLFqqgcIR6+IA=="],
+
+    "@huggingface/usd-web-viewer": ["@huggingface/usd-web-viewer@0.2.0", "", { "peerDependencies": { "@types/three": ">=0.162.0 <0.187.0", "three": ">=0.162.0 <0.187.0" }, "optionalPeers": ["@types/three"] }, "sha512-2VpC0Gwbq0n7cl4/Lb5YpxQeUdFg6rvM2ZpIkU/Hc5eYaM5nsHqcDgwy2RVaZ/DOJcgDpmwkxWAlrVXhq3rpqg=="],
 
     "@humanfs/core": ["@humanfs/core@0.19.1", "", {}, "sha512-5DyQ4+1JEUzejeK1JGICcideyfUbGixgS9jNgex5nqkW+cY7WZhxBigmieN5Qnw9ZosSNVC9KQKyb+GUaGyKUA=="],
 
