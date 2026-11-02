@@ -3,12 +3,13 @@
 import { useId, type CSSProperties, type ReactNode } from "react";
 import "./robot-loader.css";
 import {
+  G1_LINKS,
   OPENARM_LINKS,
   SO101_LINKS,
   type LoaderLink,
 } from "@/components/robot-loader-shapes";
 
-export type LoaderRobot = "so101" | "openarm";
+export type LoaderRobot = "so101" | "openarm" | "g1";
 
 interface Motion {
   from: string;
@@ -20,6 +21,7 @@ interface Motion {
 const LINKS: Record<LoaderRobot, LoaderLink[]> = {
   so101: SO101_LINKS,
   openarm: OPENARM_LINKS,
+  g1: G1_LINKS,
 };
 
 /// The joints that turn (or slide) within the drawing's plane, so they can move about their pivots.
@@ -98,6 +100,50 @@ const MOTIONS: Record<LoaderRobot, Record<string, Motion>> = {
       to: "translateX(1.6px)",
       duration: 1.4,
       delay: -0.7,
+    },
+  },
+  g1: {
+    waist_roll_link: {
+      from: "rotate(-4deg)",
+      to: "rotate(4deg)",
+      duration: 3.2,
+      delay: 0,
+    },
+    left_shoulder_roll_link: {
+      from: "rotate(-4deg)",
+      to: "rotate(-40deg)",
+      duration: 3.2,
+      delay: 0,
+    },
+    right_shoulder_roll_link: {
+      from: "rotate(40deg)",
+      to: "rotate(4deg)",
+      duration: 3.2,
+      delay: 0,
+    },
+    left_hip_roll_link: {
+      from: "rotate(0deg)",
+      to: "rotate(-5deg)",
+      duration: 3.2,
+      delay: 0,
+    },
+    right_hip_roll_link: {
+      from: "rotate(5deg)",
+      to: "rotate(0deg)",
+      duration: 3.2,
+      delay: 0,
+    },
+    left_ankle_roll_link: {
+      from: "rotate(0deg)",
+      to: "rotate(5deg)",
+      duration: 3.2,
+      delay: 0,
+    },
+    right_ankle_roll_link: {
+      from: "rotate(-5deg)",
+      to: "rotate(0deg)",
+      duration: 3.2,
+      delay: 0,
     },
   },
 };
