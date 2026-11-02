@@ -3,7 +3,9 @@ import {
   formatStringWithVars,
   arrayToCSV,
   getRows,
+  nestedColumnValues,
 } from "@/utils/parquetUtils";
+import type { FileMetaData } from "hyparquet";
 import { PADDING } from "@/utils/constants";
 
 // ---------------------------------------------------------------------------
@@ -143,5 +145,49 @@ describe("getRows", () => {
     const rows = getRows(flat, cols);
     expect(rows.length).toBe(1);
     expect(rows[0]).toEqual([0.75]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// nestedColumnValues — what decoding a nested column costs for a row range
+// ---------------------------------------------------------------------------
+describe("nestedColumnValues", () => {
+  const chunk = (path: string[], values: number) => ({
+    meta_data: { path_in_schema: path, num_values: BigInt(values) },
+  });
+  // Two row groups of 100 rows: a flat column, a list column and a list of
+  // structs whose leaves are counted together.
+  const metadata = {
+    row_groups: [0, 1].map((group) => ({
+      num_rows: 100n,
+      columns: [
+        chunk(["timestamp"], 100),
+        chunk(["language_events", "list", "element"], 10 + group),
+        chunk(["language_persistent", "list", "element", "role"], 1000),
+        chunk(["language_persistent", "list", "element", "content"], 1000),
+      ],
+    })),
+  } as unknown as FileMetaData;
+
+  test("counts the whole row group, however few rows are read", () => {
+    expect(nestedColumnValues(metadata, 10, 20)).toEqual(
+      new Map([
+        ["language_events", 10],
+        ["language_persistent", 2000],
+      ]),
+    );
+  });
+
+  test("sums every row group the range overlaps", () => {
+    expect(nestedColumnValues(metadata, 90, 110).get("language_events")).toBe(
+      21,
+    );
+    expect(nestedColumnValues(metadata, 100, 200).get("language_events")).toBe(
+      11,
+    );
+  });
+
+  test("leaves flat columns out", () => {
+    expect(nestedColumnValues(metadata, 0, 200).has("timestamp")).toBe(false);
   });
 });

@@ -4,7 +4,9 @@ import {
   parquetRead,
   parquetReadObjects,
   type AsyncBuffer,
+  type FileMetaData,
 } from "hyparquet";
+import { decompress } from "fzstd";
 import { authHeaders } from "./auth";
 
 export interface DatasetMetadata {
@@ -43,6 +45,10 @@ type ParquetFile = ArrayBuffer | AsyncBuffer;
 
 const parquetFileCache = new Map<string, AsyncBuffer>();
 
+// hyparquet only decodes SNAPPY. No output buffer: fzstd throws on a page of
+// several zstd frames.
+const compressors = { ZSTD: (input: Uint8Array) => decompress(input) };
+
 export async function fetchParquetFile(url: string): Promise<ParquetFile> {
   const cached = parquetFileCache.get(url);
   if (cached) return cached;
@@ -69,6 +75,7 @@ export async function readParquetColumn(
         columns: columns.length > 0 ? columns : undefined,
         rowStart: options?.rowStart,
         rowEnd: options?.rowEnd,
+        compressors,
         onComplete: (data: unknown[][]) => {
           resolve(data);
         },
@@ -89,7 +96,36 @@ export async function readParquetAsObjects(
     columns: columns.length > 0 ? columns : undefined,
     rowStart: options?.rowStart,
     rowEnd: options?.rowEnd,
+    compressors,
   }) as Promise<Record<string, unknown>[]>;
+}
+
+/**
+ * Leaf values per nested column in the row groups overlapping
+ * [rowStart, rowEnd). hyparquet decodes a nested column across its whole row
+ * group, so this is what reading it costs, however few rows are asked for.
+ */
+export function nestedColumnValues(
+  metadata: FileMetaData,
+  rowStart: number,
+  rowEnd: number,
+): Map<string, number> {
+  const values = new Map<string, number>();
+  let groupEnd = 0;
+  for (const group of metadata.row_groups) {
+    const groupStart = groupEnd;
+    groupEnd += Number(group.num_rows);
+    if (groupStart >= rowEnd || groupEnd <= rowStart) continue;
+    for (const { meta_data } of group.columns) {
+      if (!meta_data || meta_data.path_in_schema.length === 1) continue;
+      const [column] = meta_data.path_in_schema;
+      values.set(
+        column,
+        (values.get(column) ?? 0) + Number(meta_data.num_values),
+      );
+    }
+  }
+  return values;
 }
 
 // Convert a 2D array to a CSV string
