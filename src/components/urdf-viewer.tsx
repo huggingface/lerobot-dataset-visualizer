@@ -279,11 +279,14 @@ function autoMatchJoints(
       continue;
     }
 
-    // OpenArm: openarm_(left|right)_joint(\d+) → (left|right)_joint_(\d+)
+    // OpenArm: openarm_(left|right)_joint(\d+) → (left|right)_joint_(\d+) or (left|right)_joint(\d+),
+    // whole words so joint1 doesn't take joint10
     const armMatch = lower.match(/^openarm_(left|right)_joint(\d+)$/);
     if (armMatch) {
-      const pattern = `${armMatch[1]}_joint_${armMatch[2]}`;
-      const idx = suffixes.findIndex((s) => s.includes(pattern));
+      const pattern = new RegExp(
+        `(^|_)${armMatch[1]}_joint_?${armMatch[2]}(\\D|$)`,
+      );
+      const idx = suffixes.findIndex((s) => pattern.test(s));
       if (idx >= 0) {
         mapping[jointName] = columnKeys[idx];
         continue;
