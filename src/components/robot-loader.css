@@ -1,0 +1,144 @@
+/* The 3D Replay tab's loading illustration (robot-loader.tsx). */
+
+.robot-loader .rl-part {
+  fill: var(--accent);
+  fill-opacity: 0.07;
+  stroke: var(--accent-fg);
+  stroke-width: 0.9;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: rl-draw 1.4s cubic-bezier(0.22, 1, 0.36, 1)
+    calc(var(--rl-i) * 12ms) forwards;
+}
+
+@keyframes rl-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Each moving link turns (or slides) about its joint, given per link as --rl-from / --rl-to. */
+.robot-loader .rl-joint {
+  transform-box: view-box;
+  animation: rl-move var(--rl-duration) ease-in-out var(--rl-delay) infinite
+    alternate;
+}
+
+@keyframes rl-move {
+  from {
+    transform: var(--rl-from);
+  }
+  to {
+    transform: var(--rl-to);
+  }
+}
+
+.robot-loader .rl-node {
+  fill: var(--accent-fg);
+}
+
+.robot-loader .rl-ping {
+  fill: none;
+  stroke: var(--accent-fg);
+  stroke-width: 0.6;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: rl-ping 2.2s ease-out infinite;
+}
+
+@keyframes rl-ping {
+  from {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+
+.robot-loader .rl-robot {
+  animation: rl-flicker 4.5s steps(1) infinite;
+}
+
+@keyframes rl-flicker {
+  0%,
+  46%,
+  48%,
+  82%,
+  84%,
+  100% {
+    opacity: 1;
+  }
+  47% {
+    opacity: 0.7;
+  }
+  83% {
+    opacity: 0.85;
+  }
+}
+
+.robot-loader .rl-scan {
+  animation: rl-scan 2.8s linear infinite;
+}
+
+@keyframes rl-scan {
+  from {
+    transform: translateY(-40px);
+  }
+  to {
+    transform: translateY(240px);
+  }
+}
+
+.robot-loader .rl-grid {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 0.3;
+}
+
+.robot-loader .rl-hud {
+  fill: none;
+  stroke: var(--fg-faint);
+  stroke-width: 0.8;
+}
+
+.robot-loader .rl-dots::after {
+  content: "";
+  animation: rl-dots 1.2s steps(1) infinite;
+}
+
+@keyframes rl-dots {
+  0% {
+    content: "";
+  }
+  25% {
+    content: ".";
+  }
+  50% {
+    content: "..";
+  }
+  75% {
+    content: "...";
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .robot-loader .rl-part {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+  .robot-loader .rl-joint,
+  .robot-loader .rl-robot,
+  .robot-loader .rl-dots::after {
+    animation: none;
+  }
+  .robot-loader .rl-ping,
+  .robot-loader .rl-scan {
+    display: none;
+  }
+  .robot-loader .rl-dots::after {
+    content: "…";
+  }
+}
