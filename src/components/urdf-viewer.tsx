@@ -18,10 +18,8 @@ import {
 import * as THREE from "three";
 import URDFLoader from "urdf-loader";
 import type { URDFRobot } from "urdf-loader";
+import { loadUsd } from "@huggingface/usd-web-viewer";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import { ColladaLoader } from "three/examples/jsm/loaders/ColladaLoader.js";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
@@ -59,136 +57,6 @@ function loadStlGeometry(url: string): Promise<THREE.BufferGeometry> {
   return loading;
 }
 
-/**
- * Rebuilds every mesh with a MeshStandardMaterial bucketed into one of three archetypes (carbon-black,
- * brushed metal, off-white paint) by the original base-colour lightness. `flatShading` is for the GLB
- * meshes, which carry no normals.
- */
-function applyOpenArmMaterials(root: THREE.Object3D, flatShading: boolean) {
-  root.traverse((child) => {
-    if (!(child instanceof THREE.Mesh) || !child.material) return;
-
-    const originals = Array.isArray(child.material)
-      ? child.material
-      : [child.material];
-
-    const rebuilt = originals.map((orig) => {
-      const srcColor =
-        (orig as THREE.MeshStandardMaterial).color ??
-        new THREE.Color("#c0c4cc");
-      const hsl = { h: 0, s: 0, l: 0 };
-      srcColor.getHSL(hsl);
-
-      // Archetype classification by original lightness.
-      let color: THREE.Color;
-      let metalness: number;
-      let roughness: number;
-      let envMapIntensity: number;
-      if (hsl.l < 0.3) {
-        // Carbon / anodised structural parts
-        color = new THREE.Color().setHSL(hsl.h, 0.02, 0.09);
-        metalness = 0.15;
-        roughness = 0.75;
-        envMapIntensity = 0.6;
-      } else if (hsl.l < 0.7) {
-        // Brushed metal joint collars / accents
-        color = new THREE.Color().setHSL(hsl.h, 0.04, 0.42);
-        metalness = 0.75;
-        roughness = 0.35;
-        envMapIntensity = 1.1;
-      } else {
-        // Off-white painted plates
-        color = new THREE.Color().setHSL(hsl.h, 0.03, 0.6);
-        metalness = 0.1;
-        roughness = 0.5;
-        envMapIntensity = 0.9;
-      }
-
-      const mat = new THREE.MeshStandardMaterial({
-        color,
-        metalness,
-        roughness,
-        envMapIntensity,
-        side: THREE.DoubleSide,
-        flatShading,
-      });
-      orig.dispose?.();
-      return mat;
-    });
-
-    child.material = Array.isArray(child.material) ? rebuilt : rebuilt[0];
-    child.castShadow = true;
-    child.receiveShadow = true;
-  });
-}
-
-/// One download and parse per DAE file per session: the OpenArm URDF references finger.dae 4 times
-/// and each arm link twice, and the viewer remounts on every visit to the 3D Replay tab.
-const daeSceneCache = new Map<string, Promise<THREE.Object3D>>();
-
-function loadDaeScene(url: string): Promise<THREE.Object3D> {
-  let loading = daeSceneCache.get(url);
-  if (!loading) {
-    loading = new ColladaLoader()
-      .loadAsync(url)
-      .then((collada) => {
-        // DAE (Collada) files — ColladaLoader yields whatever the .dae author
-        // baked in: flat MeshPhongMaterial/MeshBasicMaterial colors plus, in
-        // OpenArm's case, ~23 per-file PointLight/SpotLight nodes. The stray
-        // lights caused the scene to look pure-white everywhere regardless of
-        // our own lighting, and the flat materials looked cartoonish. We strip
-        // both and rebuild every mesh with a MeshStandardMaterial bucketed into
-        // one of three archetypes (carbon-black, brushed metal, off-white paint)
-        // based on the original base-color lightness.
-        if (url.includes("openarm")) {
-          const strayLights: THREE.Object3D[] = [];
-          collada.scene.traverse((child) => {
-            if (
-              (child as THREE.Light).isLight &&
-              !(child instanceof THREE.AmbientLight)
-            ) {
-              strayLights.push(child);
-            }
-          });
-          for (const l of strayLights) l.parent?.remove(l);
-
-          applyOpenArmMaterials(collada.scene, false);
-        }
-        return collada.scene;
-      })
-      .catch((err) => {
-        daeSceneCache.delete(url);
-        throw err;
-      });
-    daeSceneCache.set(url, loading);
-  }
-  return loading;
-}
-
-/// The bucket holds meshopt-compressed GLB copies of the SO-101 and OpenArm meshes, about 16x and 20x
-/// smaller than the STL/DAE originals. They carry no normals: the originals' are flat per face, and
-/// flatShading derives the same ones.
-const glbSceneCache = new Map<string, Promise<THREE.Object3D>>();
-
-function loadGlbScene(url: string): Promise<THREE.Object3D> {
-  let loading = glbSceneCache.get(url);
-  if (!loading) {
-    loading = new GLTFLoader()
-      .setMeshoptDecoder(MeshoptDecoder)
-      .loadAsync(url)
-      .then((gltf) => {
-        if (url.includes("openarm")) applyOpenArmMaterials(gltf.scene, true);
-        return gltf.scene;
-      })
-      .catch((err) => {
-        glbSceneCache.delete(url);
-        throw err;
-      });
-    glbSceneCache.set(url, loading);
-  }
-  return loading;
-}
-
 // URDFs + meshes are hosted in the Hub bucket at
 // https://huggingface.co/buckets/lerobot/robot-urdfs. URDFLoader resolves
 // relative mesh paths against the URDF's own URL, so the bucket layout
@@ -222,34 +90,90 @@ function loadUrdfText(url: string): Promise<string> {
   return loading;
 }
 
+/// USD models of the robots with their URDF's joint and link names, link frames and zero pose: the
+/// URDF moves the robot and the USD draws it.
+const USD_BASE_URL =
+  "https://huggingface.co/datasets/lerobot/robot-usds/resolve/main";
+
+/// Kept for the session like the URDF text: the viewer remounts on every visit to the 3D Replay tab.
+const usdBlobCache = new Map<string, Promise<Blob>>();
+
+function loadUsdBlob(url: string): Promise<Blob> {
+  let loading = usdBlobCache.get(url);
+  if (!loading) {
+    loading = fetch(url)
+      .then((res) => {
+        if (!res.ok)
+          throw new Error(`Failed to load USD ${url} (HTTP ${res.status})`);
+        return res.blob();
+      })
+      .catch((err) => {
+        usdBlobCache.delete(url);
+        throw err;
+      });
+    usdBlobCache.set(url, loading);
+  }
+  return loading;
+}
+
+/**
+ * Moves each USD mesh under the URDF link its prim path names, where the URDF's zero pose puts it.
+ * USD stage space is the URDF's root frame, so the robot's joints then move the meshes.
+ */
+function attachUsdMeshes(robot: URDFRobot, usdRoot: THREE.Object3D) {
+  for (const name of Object.keys(robot.joints)) robot.setJointValue(name, 0);
+  robot.updateMatrixWorld(true);
+  for (const mesh of [...usdRoot.children]) {
+    const segments = mesh.name.split("/");
+    let link: THREE.Object3D = robot;
+    for (let i = segments.length - 1; i >= 0; i--) {
+      if (robot.links[segments[i]]) {
+        link = robot.links[segments[i]];
+        break;
+      }
+    }
+    mesh.matrix
+      .premultiply(robot.matrixWorld)
+      .premultiply(link.matrixWorld.clone().invert());
+    link.add(mesh);
+  }
+}
+
 /**
  * Starts downloading a robot's visual meshes into the caches. The viewer only mounts once the episode
  * data has loaded, and the meshes used to start downloading only then; calling this earlier overlaps
  * the two.
  */
 export function prefetchRobotModel(robotType: string | null) {
-  const { urdfUrl } = getRobotConfig(robotType);
+  const { urdfUrl, usdUrl } = getRobotConfig(robotType);
   if (prefetchedUrdfs.has(urdfUrl)) return;
   prefetchedUrdfs.add(urdfUrl);
+  if (usdUrl) {
+    Promise.all([loadUrdfText(urdfUrl), loadUsdBlob(usdUrl)]).catch(() =>
+      prefetchedUrdfs.delete(urdfUrl),
+    );
+    return;
+  }
   const base = THREE.LoaderUtils.extractUrlBase(urdfUrl);
   loadUrdfText(urdfUrl)
     .then((text) => {
       const doc = new DOMParser().parseFromString(text, "application/xml");
       for (const mesh of doc.querySelectorAll("visual mesh")) {
         const filename = mesh.getAttribute("filename");
-        /// Same resolution URDFLoader applies to relative paths; package:// and DAE meshes are left to it.
+        /// Same resolution URDFLoader applies to relative paths; package:// meshes are left to it.
         if (!filename || filename.startsWith("package://")) continue;
-        const lower = filename.toLowerCase();
-        if (lower.endsWith(".glb"))
-          loadGlbScene(base + filename).catch(() => {});
-        else if (lower.endsWith(".stl"))
+        if (filename.toLowerCase().endsWith(".stl"))
           loadStlGeometry(base + filename).catch(() => {});
       }
     })
     .catch(() => prefetchedUrdfs.delete(urdfUrl));
 }
 
-function getRobotConfig(robotType: string | null) {
+function getRobotConfig(robotType: string | null): {
+  urdfUrl: string;
+  usdUrl?: string;
+  scale: number;
+} {
   const lower = (robotType ?? "").toLowerCase();
   if (lower.includes("g1") || lower.includes("unitree")) {
     return { urdfUrl: `${URDF_BASE_URL}/g1/g1_body29_hand14.urdf`, scale: 1 };
@@ -257,11 +181,13 @@ function getRobotConfig(robotType: string | null) {
   if (lower.includes("openarm")) {
     return {
       urdfUrl: `${URDF_BASE_URL}/openarm/openarm_bimanual_web.urdf`,
+      usdUrl: `${USD_BASE_URL}/openarm_bimanual/simready_usd/openarm_bimanual.usd`,
       scale: 3,
     };
   }
   return {
     urdfUrl: `${URDF_BASE_URL}/so101/so101_new_calib_web.urdf`,
+    usdUrl: `${USD_BASE_URL}/so101_new_calib/simready_usd/so101_new_calib.usd`,
     scale: 10,
   };
 }
@@ -430,6 +356,7 @@ const MAX_FIT_WAIT_FRAMES = 30;
 // ─── Robot scene (imperative, inside Canvas) ───
 function RobotScene({
   urdfUrl,
+  usdUrl,
   jointValues,
   onJointsLoaded,
   trailEnabled,
@@ -437,6 +364,7 @@ function RobotScene({
   scale,
 }: {
   urdfUrl: string;
+  usdUrl?: string;
   jointValues: Record<string, number>;
   onJointsLoaded: (names: string[]) => void;
   trailEnabled: boolean;
@@ -537,20 +465,22 @@ function RobotScene({
     //   `if (obj instanceof THREE.Mesh) obj.material = material;`
     // on every mesh we hand back — overwriting our PBR material with the
     // URDF's <material rgba="...">-derived MeshPhongMaterial. Wrapping the
-    // returned mesh in a Group dodges that check (same way DAE's collada.scene
-    // already avoids it) so our carefully-tuned materials survive.
+    // returned mesh in a Group dodges that check so our materials survive.
     const wrapForUrdf = (obj: THREE.Object3D): THREE.Object3D => {
       const group = new THREE.Group();
       group.add(obj);
       return group;
     };
     loader.loadMeshCb = (url, mgr, onLoad) => {
-      const makeMaterial = (flatShading: boolean) => {
-        // Defaults: neutral off-white plastic, matches OpenArm "light" archetype
+      /// The USD draws these robots: their URDF only moves it.
+      if (usdUrl) {
+        onLoad(new THREE.Object3D());
+        return;
+      }
+      const makeMaterial = () => {
         let color = "#9ba1ab";
         let metalness = 0.1;
         let roughness = 0.5;
-        let side: THREE.Side = THREE.FrontSide;
         if (isG1) {
           const lower = url.toLowerCase();
           const isWhitePart =
@@ -563,54 +493,9 @@ function RobotScene({
           color = isWhitePart ? "#9ca3af" : "#1f2937";
           metalness = 0.25;
           roughness = 0.6;
-        } else if (url.includes("sts3215")) {
-          // SO-arm / any STL servo housing — carbon-black archetype
-          color = "#171a20";
-          metalness = 0.15;
-          roughness = 0.75;
-        } else if (isOpenArm) {
-          color = url.includes("body_link0") ? "#3a3a4a" : "#f5f5f5";
-          metalness = 0.15;
-          roughness = 0.6;
-          side = THREE.DoubleSide;
         }
-        return new THREE.MeshStandardMaterial({
-          color,
-          metalness,
-          roughness,
-          side,
-          flatShading,
-        });
+        return new THREE.MeshStandardMaterial({ color, metalness, roughness });
       };
-      const makeMesh = (geometry: THREE.BufferGeometry) =>
-        new THREE.Mesh(geometry, makeMaterial(false));
-      if (url.endsWith(".glb")) {
-        mgr.itemStart(url);
-        loadGlbScene(url)
-          .then((glbScene) => {
-            const obj = glbScene.clone();
-            if (!isOpenArm) {
-              obj.traverse((child) => {
-                if (child instanceof THREE.Mesh)
-                  child.material = makeMaterial(true);
-              });
-            }
-            onLoad(obj);
-          })
-          .catch((err) => onLoad(new THREE.Object3D(), err as Error))
-          .finally(() => mgr.itemEnd(url));
-        return;
-      }
-      if (url.endsWith(".dae")) {
-        /// URDFLoader re-parents and re-orients what it is handed, so it gets a clone (sharing
-        /// geometry and materials) and the cached scene stays intact.
-        mgr.itemStart(url);
-        loadDaeScene(url)
-          .then((daeScene) => onLoad(daeScene.clone()))
-          .catch((err) => onLoad(new THREE.Object3D(), err as Error))
-          .finally(() => mgr.itemEnd(url));
-        return;
-      }
       // STL files — apply final PBR materials directly here. We used to do a
       // post-load archetype rebuild in manager.onLoad, but STLLoader calls
       // `manager.itemEnd` *before* our Promise resolves — so when the last
@@ -628,7 +513,9 @@ function RobotScene({
       /// with every mesh prefetched it would otherwise never fire.
       mgr.itemStart(url);
       loadStlGeometry(url)
-        .then((geometry) => onLoad(wrapForUrdf(makeMesh(geometry))))
+        .then((geometry) =>
+          onLoad(wrapForUrdf(new THREE.Mesh(geometry, makeMaterial()))),
+        )
         .catch((err) => onLoad(new THREE.Object3D(), err as Error))
         .finally(() => mgr.itemEnd(url));
     };
@@ -654,6 +541,7 @@ function RobotScene({
 
     loader.workingPath = THREE.LoaderUtils.extractUrlBase(urdfUrl);
     let cancelled = false;
+    let disposeUsd: (() => void) | undefined;
     manager.itemStart(urdfUrl);
     loadUrdfText(urdfUrl)
       .then((text) => {
@@ -700,11 +588,24 @@ function RobotScene({
               j.jointType === "prismatic",
           )
           .map((j) => j.name);
-        onJointsLoaded(movable);
+        if (!usdUrl) {
+          onJointsLoaded(movable);
+          return;
+        }
+        /// Loaded from memory, so the session cache spares a download on every visit to the tab.
+        const name = usdUrl.slice(usdUrl.lastIndexOf("/") + 1);
+        return loadUsdBlob(usdUrl)
+          .then((blob) => loadUsd(name, { files: new Map([[name, blob]]) }))
+          .then(({ root, dispose }) => {
+            if (cancelled) return dispose();
+            disposeUsd = dispose;
+            attachUsdMeshes(robot, root);
+            onJointsLoaded(movable);
+          });
       })
       .catch((err) => {
         if (cancelled) return;
-        console.error("Error loading URDF:", err);
+        console.error("Error loading the robot model:", err);
         setError(String(err));
       })
       .finally(() => {
@@ -716,9 +617,10 @@ function RobotScene({
         scene.remove(robotRef.current);
         robotRef.current = null;
       }
+      disposeUsd?.();
       tipLinksRef.current = [];
     };
-  }, [urdfUrl, scale, scene, onJointsLoaded, ensureTrails, invalidate]);
+  }, [urdfUrl, usdUrl, scale, scene, onJointsLoaded, ensureTrails, invalidate]);
 
   const tipWorldPos = useMemo(() => new THREE.Vector3(), []);
 
@@ -811,7 +713,7 @@ function RobotScene({
   if (error)
     return (
       <Html center>
-        <span className="text-red-400">Failed to load URDF</span>
+        <span className="text-red-400">Failed to load the 3D model</span>
       </Html>
     );
   return null;
@@ -921,7 +823,7 @@ export default function URDFViewer({
     () => getRobotConfig(datasetInfo.robot_type),
     [datasetInfo.robot_type],
   );
-  const { urdfUrl, scale } = robotConfig;
+  const { urdfUrl, usdUrl, scale } = robotConfig;
   const isG1 = urdfUrl.includes("g1");
   const isOpenArm = urdfUrl.includes("openarm");
   const repoId = org && dataset ? `${org}/${dataset}` : null;
@@ -1222,6 +1124,7 @@ export default function URDFViewer({
           </mesh>
           <RobotScene
             urdfUrl={urdfUrl}
+            usdUrl={usdUrl}
             jointValues={jointValues}
             onJointsLoaded={onJointsLoaded}
             trailEnabled={trailEnabled}

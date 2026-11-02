@@ -71,6 +71,7 @@ video dimensions disable the overlay. Estimated calibration is labeled.
 - **Recharts** (for data visualization)
 - **Three.js** + **@react-three/fiber** + **@react-three/drei** (for 3D URDF visualization)
 - **urdf-loader** (for parsing URDF robot models)
+- **@huggingface/usd-web-viewer** (for the robot USD models in [lerobot/robot-usds](https://huggingface.co/datasets/lerobot/robot-usds))
 - **hyparquet** (for reading Parquet files)
 - **Tailwind CSS** (styling)
 
