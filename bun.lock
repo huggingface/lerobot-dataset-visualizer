@@ -9,6 +9,7 @@
         "@huggingface/lerobot": "^0.0.13",
         "@react-three/drei": "^10.7.7",
         "@react-three/fiber": "^9.5.0",
+        "fzstd": "0.1.1",
         "hyparquet": "^1.12.1",
         "next": "15.3.6",
         "react": "^19.0.0",

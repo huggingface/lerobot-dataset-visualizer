@@ -59,7 +59,7 @@ Locating an episode (its video URLs and offsets, its data file and row range) an
 - Create datasets with `leRobotDataset(repoId)` in `fetch-data.ts`: it passes the `DATASET_URL` endpoint and `authHeaders()`.
 - `episodes({ offset, limit })` reads the v3 episode index across every metadata chunk. `offset` is a position in the listing, not an `episode_index`.
 - `episode.data.fromRow` / `toRow` are row offsets **inside `episode.data.url`**, not dataset-wide frame indexes. Pass them straight to `rowStart` / `rowEnd`; never subtract the file's first `index`. `episode.data` is optional: it is absent when the data file can't be read.
-- Episode charts come from `frames()` (numeric and boolean series, bookkeeping columns left out). `loadEpisodeFrames` reads the task and language columns (`TEXT_COLUMNS`) from the same file alongside it, since `frames()` returns numbers only.
+- Episode charts come from `frames()` (numeric and boolean series, bookkeeping columns left out). `loadEpisodeFrames` reads the task and language columns (`TEXT_COLUMNS`) from the same file alongside it, since `frames()` returns numbers only. hyparquet decodes a nested column for its whole row group, so a nested language column is left out past `MAX_NESTED_TEXT_VALUES` values.
 - Camera sizes come from `parseInfo(...).cameras`. Never read them from `shape[0]` / `shape[1]`: some datasets declare channel-first shapes (`[3, H, W]`).
 - To upgrade, bump the version in `package.json` and run `bun install`. Read the package's changes first: 0.0.4 changed what `fromRow` / `toRow` mean.
 

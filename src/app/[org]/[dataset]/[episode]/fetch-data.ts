@@ -2,8 +2,10 @@ import {
   DatasetMetadata,
   fetchParquetFile,
   formatStringWithVars,
+  nestedColumnValues,
   readParquetAsObjects,
 } from "@/utils/parquetUtils";
+import { parquetMetadataAsync } from "hyparquet";
 import { pick } from "@/utils/pick";
 import {
   getDatasetVersionAndInfo,
@@ -1172,6 +1174,13 @@ const TEXT_COLUMNS = [
   "language_events",
 ];
 
+/**
+ * Past this many values in its row groups, a nested text column is left out: hyparquet decodes it
+ * for the whole row group, and a file written as one row group can hold millions of atoms. 22M
+ * took 2-3 GB of heap; 44M (MinhDuk/final_dataset_annotated) and 66M crashed the tab.
+ */
+const MAX_NESTED_TEXT_VALUES = 25_000_000;
+
 /** The episode's numeric series from `@huggingface/lerobot`, plus its text columns read alongside. */
 async function loadEpisodeFrames(
   repoId: string,
@@ -1186,12 +1195,25 @@ async function loadEpisodeFrames(
   if (!data) return { frames: undefined, textRows: [] };
   const [frames, textRows, report] = await Promise.all([
     leRobotDataset(repoId).frames(episode),
-    fetchParquetFile(data.url).then((file) =>
-      readParquetAsObjects(file, TEXT_COLUMNS, {
-        rowStart: data.fromRow,
-        rowEnd: data.toRow,
-      }),
-    ),
+    fetchParquetFile(data.url).then(async (file) => {
+      const values = nestedColumnValues(
+        await parquetMetadataAsync(file),
+        data.fromRow,
+        data.toRow,
+      );
+      const skipped = TEXT_COLUMNS.filter(
+        (column) => (values.get(column) ?? 0) > MAX_NESTED_TEXT_VALUES,
+      );
+      if (skipped.length > 0)
+        console.warn(
+          `[language] ${skipped.join(", ")} left out: its row group is too large to decode`,
+        );
+      return readParquetAsObjects(
+        file,
+        TEXT_COLUMNS.filter((column) => !skipped.includes(column)),
+        { rowStart: data.fromRow, rowEnd: data.toRow },
+      );
+    }),
     hasHandTracking(info)
       ? fetch(
           buildVersionedUrl(
