@@ -97,6 +97,14 @@ function getRobotConfig(
         restHeight: 0.793,
       };
     }
+    if (lower.includes("brainco")) {
+      return {
+        robot: "g1",
+        usdUrl: `${USD_BASE_URL}/g1_body29_brainco/simready_usd/g1_body29_brainco.usd`,
+        scale: 1,
+        restHeight: 0.793,
+      };
+    }
     if (hasDex1Grippers(columns)) {
       return {
         robot: "g1",
@@ -310,6 +318,26 @@ function autoMatchJoints(
       }
     }
 
+    // BrainCo: <side>_<finger>_proximal_joint and the thumb's metacarpal (sideways) and proximal
+    // (bending) joints → `left_fig6d | index`, `little`, `thumb_lat` and `thumb_oc`
+    const braincoMatch = lower.match(BRAINCO_JOINT);
+    if (braincoMatch) {
+      const [, side, finger, thumbJoint] = braincoMatch;
+      const name =
+        finger === "pinky"
+          ? "little"
+          : thumbJoint === "metacarpal"
+            ? "thumb_lat"
+            : thumbJoint === "proximal"
+              ? "thumb_oc"
+              : finger;
+      const idx = sided.indexOf(`${side}_${name}`);
+      if (idx >= 0) {
+        mapping[jointName] = columnKeys[idx];
+        continue;
+      }
+    }
+
     // Generic fuzzy fallback
     const fuzzy = columnKeys.find((k) => k.toLowerCase().includes(lower));
     if (fuzzy) mapping[jointName] = fuzzy;
@@ -341,7 +369,8 @@ const SINGLE_ARM_TIP_NAMES = [
   "gripper",
 ];
 const DUAL_ARM_TIP_NAMES = ["openarm_left_hand_tcp", "openarm_right_hand_tcp"];
-/// The Dex3 hands' palms, or the Dex1 grippers' bases: both on the wrist's flange.
+/// The hands' palms (Dex3) or bases (Inspire, BrainCo), or the Dex1 grippers' bases: all on the
+/// wrist's flange.
 const G1_TIP_NAMES = [
   "left_hand_palm_link",
   "right_hand_palm_link",
@@ -349,6 +378,8 @@ const G1_TIP_NAMES = [
   "right_dex1_base_link",
   "L_hand_base_link",
   "R_hand_base_link",
+  "left_base_link",
+  "right_base_link",
 ];
 /// Unitree's Dex1-1 gripper motor turns 5.4 rad from closed to open, each finger sliding from
 /// -0.02 m to 0.0245 m.
@@ -368,6 +399,31 @@ function inspireJointValue(joint: string, open: number): number {
   if (joint.endsWith("_yaw_joint")) return 1.3 - 1.4 * open;
   if (joint.endsWith("_pitch_joint")) return 0.5 * (1 - open);
   return 1.7 * (1 - open);
+}
+
+/// The BrainCo hands' motors: a finger's proximal joint, or the thumb's metacarpal or proximal
+/// joint. The distal joints follow them (mimic joints).
+const BRAINCO_JOINT =
+  /^(left|right)_(?:(index|middle|ring|pinky)_proximal|thumb_(metacarpal|proximal))_joint$/i;
+
+/**
+ * A BrainCo motor's joint angle from its recorded value, 1 open to 0 closed: Unitree records one
+ * minus the hand's closure, which spans each joint's range (1.52 rad for the thumb's metacarpal
+ * joint, 1.05 for its proximal joint, 1.47 for the fingers).
+ */
+function braincoJointValue(joint: string, open: number): number {
+  if (joint.endsWith("_thumb_metacarpal_joint")) return 1.5184 * (1 - open);
+  if (joint.endsWith("_thumb_proximal_joint")) return 1.0472 * (1 - open);
+  return 1.4661 * (1 - open);
+}
+
+/// A joint whose limits are equal, like the BrainCo fingertips', stays where they put it.
+function isLocked(joint: LoadResult["joints"][number]): boolean {
+  return (
+    (joint.kind === "revolute" || joint.kind === "prismatic") &&
+    joint.lower !== null &&
+    joint.lower === joint.upper
+  );
 }
 const TRAIL_DURATION = 1.0;
 const TRAIL_COLORS = [new THREE.Color("#ff6600"), new THREE.Color("#00aaff")];
@@ -425,7 +481,8 @@ function RobotScene({
 }) {
   const { scene, size, invalidate } = useThree();
   const modelRef = useRef<LoadResult | null>(null);
-  /// The joints the data drives, by name: a mimic joint follows its joint, so it isn't one.
+  /// The joints the data drives, by name: a mimic joint follows its joint and a locked one doesn't
+  /// move, so neither is one.
   const jointsRef = useRef(
     new Map<string, { path: string; revolute: boolean }>(),
   );
@@ -551,7 +608,7 @@ function RobotScene({
 
         jointsRef.current = new Map(
           joints
-            .filter((j) => !j.mimic)
+            .filter((j) => !j.mimic && !isLocked(j))
             .map((j) => [
               j.path.slice(j.path.lastIndexOf("/") + 1),
               { path: j.path, revolute: j.kind === "revolute" },
@@ -993,6 +1050,8 @@ export default function ReplayViewer({
         }
       } else if (INSPIRE_JOINT.test(jn)) {
         values[jn] = inspireJointValue(jn, raw);
+      } else if (BRAINCO_JOINT.test(jn)) {
+        values[jn] = braincoJointValue(jn, raw);
       } else if (jn.includes("_dex1_finger_joint_")) {
         values[jn] =
           DEX1_FINGER_CLOSED +
