@@ -2263,7 +2263,7 @@ export async function loadCrossEpisodeActionVariance(
   };
 }
 
-// Load only flatChartData for a specific episode (used by URDF viewer episode switching)
+// Load only flatChartData for a specific episode (used by the 3D Replay viewer's episode switching)
 export async function loadEpisodeFlatChartData(
   repoId: string,
   version: string,
