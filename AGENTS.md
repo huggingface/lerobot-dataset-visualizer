@@ -127,7 +127,7 @@ Reserved/bookkeeping columns from lerobot — see `EXCLUDED_COLUMNS` in `src/uti
 - v2.x: `timestamp`, `frame_index`, `episode_index`, `index`, `task_index`, `next.reward`, `next.done`, `next.truncated`
 - v3.0: `index`, `task_index`, `episode_index`, `frame_index`, `next.reward`, `next.done`, `next.truncated`, `subtask_index`
 
-## 3D Replay viewer (`src/components/urdf-viewer.tsx`)
+## 3D Replay viewer (`src/components/replay-viewer.tsx`)
 
 - Every robot is a USD from the dataset [`lerobot/robot-usds`](https://huggingface.co/datasets/lerobot/robot-usds) (SO-100 uses SO-101's), loaded with `@huggingface/usd-web-viewer`; no URDF is involved. `getRobotConfig` picks it from `robot_type` and, for the G1's hands, the columns.
 - The USD's UsdPhysics joints move it: `setJointPositions` takes them by prim path, in degrees for revolute joints and meters for prismatic ones (the joint values here are radians), and throws on a value that isn't finite. Mimic joints (OpenArm's second finger, the Inspire fingers' outer joints) follow their joint, so they are left out of the mapping.

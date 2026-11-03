@@ -22,7 +22,7 @@ import Loading from "@/components/loading-component";
 import HfAuthButton from "@/components/hf-auth-button";
 import { EpisodeHeader, ThemeToggle } from "@/components/ui";
 import { useTheme } from "@/utils/theme";
-import { hasURDFSupport } from "@/lib/so101-robot";
+import { hasRobotModel } from "@/lib/so101-robot";
 import {
   computeColumnMinMax,
   getEpisodeDataSafe,
@@ -40,7 +40,7 @@ import { CHART_CONFIG } from "@/utils/constants";
 import { parseInfo } from "@huggingface/lerobot";
 import type { DatasetMetadata } from "@/utils/parquetUtils";
 
-const URDFViewer = lazy(() => import("@/components/urdf-viewer"));
+const ReplayViewer = lazy(() => import("@/components/replay-viewer"));
 const HandReplay = lazy(() => import("@/components/hand-replay"));
 const ActionInsightsPanel = lazy(
   () => import("@/components/action-insights-panel"),
@@ -75,10 +75,15 @@ const TABS = [
   "insights",
   "filtering",
   "doctor",
-  "urdf",
+  "replay",
   "hands",
 ] as const;
 type ActiveTab = (typeof TABS)[number];
+
+/// 3D Replay's id was `urdf`, which links shared before still carry.
+function tabId(tab: string | null): string | null {
+  return tab === "urdf" ? "replay" : tab;
+}
 
 // Subscribes to `currentTime` so its parent doesn't have to. Keeping this
 // in a leaf component means the throttled time ticks (~12.5/s during
@@ -287,11 +292,11 @@ export default function EpisodeViewer({
   // alongside the episode data, rather than once it has loaded and the viewer
   // mounts. info.json is all it needs, and the episode load fetches it anyway.
   useEffect(() => {
-    if (sessionStorage.getItem("activeTab") !== "urdf") return;
+    if (tabId(sessionStorage.getItem("activeTab")) !== "replay") return;
     getDatasetVersionAndInfo(`${org}/${dataset}`)
       .then(({ info }) => {
         if (
-          hasURDFSupport(info.robot_type ?? null) &&
+          hasRobotModel(info.robot_type ?? null) &&
           info.codebase_version >= "v3.0"
         ) {
           const { joints } = parseInfo(JSON.stringify(info));
@@ -300,7 +305,7 @@ export default function EpisodeViewer({
               (n) => `${feature}${CHART_CONFIG.SERIES_NAME_DELIMITER}${n}`,
             ),
           );
-          return import("@/components/urdf-viewer").then((m) =>
+          return import("@/components/replay-viewer").then((m) =>
             m.prefetchRobotModel(info.robot_type ?? null, columns),
           );
         }
@@ -451,8 +456,8 @@ function EpisodeViewerInner({
 
   const router = useRouter();
 
-  const urdfSupported =
-    hasURDFSupport(datasetInfo.robot_type) &&
+  const replaySupported =
+    hasRobotModel(datasetInfo.robot_type) &&
     datasetInfo.codebase_version >= "v3.0";
 
   // Tab state & lazy stats — read sessionStorage in the initializer so the
@@ -460,18 +465,20 @@ function EpisodeViewerInner({
   // Safe because EpisodeViewerInner only mounts client-side (behind a loading gate).
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     if (typeof window !== "undefined") {
-      const requested = new URLSearchParams(window.location.search).get("tab");
+      const requested = tabId(
+        new URLSearchParams(window.location.search).get("tab"),
+      );
       if (
         TABS.includes(requested as ActiveTab) &&
         (requested !== "hands" || data.handTracking) &&
-        (requested !== "urdf" || urdfSupported)
+        (requested !== "replay" || replaySupported)
       )
         return requested as ActiveTab;
-      const stored = sessionStorage.getItem("activeTab");
+      const stored = tabId(sessionStorage.getItem("activeTab"));
       /// A tab saved on another dataset may not exist here (3D Replay needs a supported robot).
       if (
         TABS.includes(stored as ActiveTab) &&
-        (stored !== "urdf" || urdfSupported) &&
+        (stored !== "replay" || replaySupported) &&
         (stored !== "hands" || data.handTracking)
       ) {
         return stored as ActiveTab;
@@ -529,13 +536,13 @@ function EpisodeViewerInner({
     setCrossEpData(null);
   }, [datasetInfo.repoId]);
 
-  // Eagerly load the URDFViewer bundle while the user is on the Episodes tab,
+  // Eagerly load the ReplayViewer bundle while the user is on the Episodes tab,
   // so the 3D Replay tab opens faster.
   useEffect(() => {
-    if (urdfSupported) {
-      void import("@/components/urdf-viewer");
+    if (replaySupported) {
+      void import("@/components/replay-viewer");
     }
-  }, [urdfSupported]);
+  }, [replaySupported]);
 
   // Persist UI state across episode navigations. One effect instead of
   // three near-identical writes — fewer commit hooks per render and the
@@ -648,11 +655,13 @@ function EpisodeViewerInner({
   /// Passed to the embedded lerobot-doctor Space, which follows `__theme` like any HF Space.
   const theme = useTheme();
 
-  // URDFViewer episode changer and play toggle — populated by URDFViewer on mount
-  const urdfChangerRef = useRef<((ep: number) => void) | undefined>(undefined);
-  const urdfPlayToggleRef = useRef<(() => void) | undefined>(undefined);
-  const [urdfEpisode, setUrdfEpisode] = useState(episodeId);
-  useEffect(() => setUrdfEpisode(episodeId), [episodeId]);
+  // ReplayViewer episode changer and play toggle — populated by ReplayViewer on mount
+  const replayChangerRef = useRef<((ep: number) => void) | undefined>(
+    undefined,
+  );
+  const replayPlayToggleRef = useRef<(() => void) | undefined>(undefined);
+  const [replayEpisode, setReplayEpisode] = useState(episodeId);
+  useEffect(() => setReplayEpisode(episodeId), [episodeId]);
 
   // Pagination state
   const pageSize = 100;
@@ -692,12 +701,12 @@ function EpisodeViewerInner({
 
   // Mirror the values the keydown handler needs into a ref. Without this,
   // `useCallback` would produce a new handler whenever `activeTab` /
-  // `episodeId` / `urdfEpisode` changed, and the keydown effect would
+  // `episodeId` / `replayEpisode` changed, and the keydown effect would
   // detach + reattach the listener each time. Now the listener attaches
   // once and reads the latest state via the ref.
   // Vercel rule: advanced-event-handler-refs.
-  const keyStateRef = useRef({ activeTab, episodeId, episodes, urdfEpisode });
-  keyStateRef.current = { activeTab, episodeId, episodes, urdfEpisode };
+  const keyStateRef = useRef({ activeTab, episodeId, episodes, replayEpisode });
+  keyStateRef.current = { activeTab, episodeId, episodes, replayEpisode };
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -708,22 +717,22 @@ function EpisodeViewerInner({
       if (key === " ") {
         if (inTextEntry) return;
         e.preventDefault();
-        if (s.activeTab === "urdf") {
-          urdfPlayToggleRef.current?.();
+        if (s.activeTab === "replay") {
+          replayPlayToggleRef.current?.();
         } else {
           setIsPlaying((prev: boolean) => !prev);
         }
       } else if (key === "ArrowDown" || key === "ArrowUp") {
         if (inTextEntry) return;
         e.preventDefault();
-        if (s.activeTab === "urdf") {
+        if (s.activeTab === "replay") {
           const nextEp =
-            key === "ArrowDown" ? s.urdfEpisode + 1 : s.urdfEpisode - 1;
+            key === "ArrowDown" ? s.replayEpisode + 1 : s.replayEpisode - 1;
           const lowest = s.episodes[0];
           const highest = s.episodes[s.episodes.length - 1];
           if (nextEp >= lowest && nextEp <= highest) {
-            setUrdfEpisode(nextEp);
-            urdfChangerRef.current?.(nextEp);
+            setReplayEpisode(nextEp);
+            replayChangerRef.current?.(nextEp);
           }
         } else {
           const nextEpisodeId =
@@ -766,9 +775,9 @@ function EpisodeViewerInner({
       title={title}
       /// Hovering 3D Replay is a strong hint it's next; get the meshes going.
       onPointerEnter={
-        tab === "urdf"
+        tab === "replay"
           ? () =>
-              void import("@/components/urdf-viewer").then((m) =>
+              void import("@/components/replay-viewer").then((m) =>
                 m.prefetchRobotModel(
                   datasetInfo.robot_type,
                   Object.keys(data.flatChartData[0] ?? {}),
@@ -785,7 +794,7 @@ function EpisodeViewerInner({
       {/* Top tab bar */}
       <div className="relative z-30 flex items-center border-b border-line-subtle bg-[var(--surface-0)] shrink-0">
         {renderTab("episodes", "Episodes")}
-        {urdfSupported && renderTab("urdf", "3D Replay")}
+        {replaySupported && renderTab("replay", "3D Replay")}
         <AdvancedTabsMenu
           activeTab={activeTab}
           onSelect={handleTabChange}
@@ -803,11 +812,11 @@ function EpisodeViewerInner({
         {(activeTab === "episodes" ||
           activeTab === "annotations" ||
           activeTab === "hands" ||
-          activeTab === "urdf") && (
+          activeTab === "replay") && (
           <Sidebar
             datasetInfo={datasetInfo}
             paginatedEpisodes={paginatedEpisodes}
-            episodeId={activeTab === "urdf" ? urdfEpisode : episodeId}
+            episodeId={activeTab === "replay" ? replayEpisode : episodeId}
             totalPages={totalPages}
             currentPage={currentPage}
             prevPage={prevPage}
@@ -815,10 +824,10 @@ function EpisodeViewerInner({
             showFlaggedOnly={sidebarFlaggedOnly}
             onShowFlaggedOnlyChange={setSidebarFlaggedOnly}
             onEpisodeSelect={
-              activeTab === "urdf"
+              activeTab === "replay"
                 ? (ep) => {
-                    setUrdfEpisode(ep);
-                    urdfChangerRef.current?.(ep);
+                    setReplayEpisode(ep);
+                    replayChangerRef.current?.(ep);
                   }
                 : activeTab === "annotations"
                   ? (ep) => router.push(`./episode_${ep}`)
@@ -983,14 +992,14 @@ function EpisodeViewerInner({
             </div>
           )}
 
-          {activeTab === "urdf" && (
+          {activeTab === "replay" && (
             <Suspense fallback={<Loading />}>
-              <URDFViewer
+              <ReplayViewer
                 data={data}
                 org={org}
                 dataset={dataset}
-                episodeChangerRef={urdfChangerRef}
-                playToggleRef={urdfPlayToggleRef}
+                episodeChangerRef={replayChangerRef}
+                playToggleRef={replayPlayToggleRef}
               />
             </Suspense>
           )}

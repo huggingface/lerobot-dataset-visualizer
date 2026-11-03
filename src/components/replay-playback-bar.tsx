@@ -3,7 +3,7 @@
 import React from "react";
 import { FaPlay, FaPause, FaArrowDown, FaArrowUp } from "react-icons/fa";
 
-interface UrdfPlaybackBarProps {
+interface ReplayPlaybackBarProps {
   frame: number;
   totalFrames: number;
   fps: number;
@@ -15,7 +15,7 @@ interface UrdfPlaybackBarProps {
   disabled?: boolean;
 }
 
-export default function UrdfPlaybackBar({
+export default function ReplayPlaybackBar({
   frame,
   totalFrames,
   fps,
@@ -25,7 +25,7 @@ export default function UrdfPlaybackBar({
   onTrailToggle,
   onFrameChange,
   disabled = false,
-}: UrdfPlaybackBarProps) {
+}: ReplayPlaybackBarProps) {
   const currentTime = totalFrames > 0 ? (frame / fps).toFixed(2) : "0.00";
   const totalTime = (totalFrames / fps).toFixed(2);
 

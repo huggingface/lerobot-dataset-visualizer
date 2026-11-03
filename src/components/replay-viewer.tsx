@@ -22,7 +22,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import type { EpisodeData } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import { loadEpisodeFlatChartData } from "@/app/[org]/[dataset]/[episode]/fetch-data";
-import UrdfPlaybackBar from "@/components/urdf-playback-bar";
+import ReplayPlaybackBar from "@/components/replay-playback-bar";
 import RobotLoader, { type LoaderRobot } from "@/components/robot-loader";
 import { CHART_CONFIG } from "@/utils/constants";
 import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
@@ -730,7 +730,7 @@ function PlaybackDriver({
 // IBL: procedural studio softboxes give mesh highlights somewhere to bounce.
 // Not preset="studio": drei downloads that 1.6 MB HDR from raw.githack.com and
 // suspends the canvas until it arrives. Module scope keeps the element's
-// identity across URDFViewer renders (one per playback frame): drei re-captures
+// identity across ReplayViewer renders (one per playback frame): drei re-captures
 // the cube map and three re-runs PMREM whenever Environment's children change.
 const STUDIO_ENVIRONMENT = (
   <Environment resolution={256} background={false}>
@@ -766,9 +766,9 @@ const STUDIO_ENVIRONMENT = (
 );
 
 // ═══════════════════════════════════════
-// ─── Main URDF Viewer ───
+// ─── Main 3D Replay viewer ───
 // ═══════════════════════════════════════
-export default function URDFViewer({
+export default function ReplayViewer({
   data,
   org,
   dataset,
@@ -1137,7 +1137,7 @@ export default function URDFViewer({
 
       {/* Controls */}
       <div className="bg-[var(--surface-1)]/90 border-t border-line p-3 space-y-3 shrink-0">
-        <UrdfPlaybackBar
+        <ReplayPlaybackBar
           frame={frame}
           totalFrames={totalFrames}
           fps={fps}
