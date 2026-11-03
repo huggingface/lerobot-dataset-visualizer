@@ -549,6 +549,8 @@ function RobotScene({
           vertexColors: true,
           transparent: true,
           worldUnits: false,
+          // Like the background, so a faded point matches it.
+          toneMapped: false,
         });
         mat.resolution.set(window.innerWidth, window.innerHeight);
         mats.push(mat);
@@ -636,6 +638,9 @@ function RobotScene({
   }, [robot, usdUrl, scale, scene, onJointsLoaded, ensureTrails, invalidate]);
 
   const tipWorldPos = useMemo(() => new THREE.Vector3(), []);
+  const fadeFrom = useMemo(() => new THREE.Color(), []);
+  const fadeTo = useMemo(() => new THREE.Color(), []);
+  const fadedColor = useMemo(() => new THREE.Color(), []);
   const baseQuat = useMemo(() => new THREE.Quaternion(), []);
 
   useFrame((state) => {
@@ -707,11 +712,29 @@ function RobotScene({
       trail.positions[idx * 3 + 2] = tipWorldPos.z;
       trail.times.push(now);
 
+      /// Line2 has no per-vertex alpha: points fade into the background color, mixed in sRGB as
+      /// alpha blending would, and are dropped once faded, so no dark tail is left behind the tip.
+      const expired = trail.times.findIndex((t) => now - t < TRAIL_DURATION);
+      if (expired > 0) {
+        trail.positions.copyWithin(0, expired * 3, trail.count * 3);
+        trail.times.splice(0, expired);
+        trail.count -= expired;
+      }
+      fadeFrom
+        .copy(state.scene.background as THREE.Color)
+        .convertLinearToSRGB();
+      fadeTo.copy(trailColor).convertLinearToSRGB();
       for (let i = 0; i < trail.count; i++) {
-        const t = Math.max(0, 1 - (now - trail.times[i]) / TRAIL_DURATION);
-        trail.colors[i * 3] = trailColor.r * t;
-        trail.colors[i * 3 + 1] = trailColor.g * t;
-        trail.colors[i * 3 + 2] = trailColor.b * t;
+        fadedColor
+          .lerpColors(
+            fadeFrom,
+            fadeTo,
+            1 - (now - trail.times[i]) / TRAIL_DURATION,
+          )
+          .convertSRGBToLinear();
+        trail.colors[i * 3] = fadedColor.r;
+        trail.colors[i * 3 + 1] = fadedColor.g;
+        trail.colors[i * 3 + 2] = fadedColor.b;
       }
 
       if (trail.count < 2) {
