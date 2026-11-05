@@ -5,6 +5,18 @@ import { buildVersionedUrl } from "@/utils/versionUtils";
 // buildVersionedUrl — pure function, no mocking needed
 // ---------------------------------------------------------------------------
 describe("buildVersionedUrl", () => {
+  const origNextPublicDatasetUrl = process.env.NEXT_PUBLIC_DATASET_URL;
+  const origWindow = globalThis.window;
+
+  afterEach(() => {
+    if (origNextPublicDatasetUrl === undefined) {
+      delete process.env.NEXT_PUBLIC_DATASET_URL;
+    } else {
+      process.env.NEXT_PUBLIC_DATASET_URL = origNextPublicDatasetUrl;
+    }
+    globalThis.window = origWindow;
+  });
+
   test("builds URL for v2.0 dataset data path", () => {
     const url = buildVersionedUrl(
       "rabhishek100/so100_train_dataset",
@@ -53,6 +65,35 @@ describe("buildVersionedUrl", () => {
     const url = buildVersionedUrl("myorg/mydataset", "v3.0", "meta/info.json");
     expect(url).toBe(
       "https://huggingface.co/datasets/myorg/mydataset/resolve/main/meta/info.json",
+    );
+  });
+
+  test("respects NEXT_PUBLIC_DATASET_URL when set to a custom origin", () => {
+    process.env.NEXT_PUBLIC_DATASET_URL = "https://mirror.example.com/datasets/";
+    const url = buildVersionedUrl("myorg/mydataset", "v3.0", "meta/info.json");
+    expect(url).toBe(
+      "https://mirror.example.com/datasets/myorg/mydataset/resolve/main/meta/info.json",
+    );
+  });
+
+  test("resolves relative NEXT_PUBLIC_DATASET_URL against window.location.origin in browser", () => {
+    process.env.NEXT_PUBLIC_DATASET_URL = "/api/hf-storage/datasets/";
+    globalThis.window = {
+      location: { origin: "https://viz.example.com" },
+    } as unknown as Window & typeof globalThis;
+    const url = buildVersionedUrl("myorg/mydataset", "v3.0", "meta/info.json");
+    expect(url).toBe(
+      "https://viz.example.com/api/hf-storage/datasets/myorg/mydataset/resolve/main/meta/info.json",
+    );
+  });
+
+  test("resolves relative NEXT_PUBLIC_DATASET_URL to localhost on server", () => {
+    process.env.NEXT_PUBLIC_DATASET_URL = "/api/hf-storage/datasets";
+    // @ts-expect-error testing SSR environment without window
+    delete globalThis.window;
+    const url = buildVersionedUrl("myorg/mydataset", "v3.0", "meta/info.json");
+    expect(url).toBe(
+      "http://localhost:7860/api/hf-storage/datasets/myorg/mydataset/resolve/main/meta/info.json",
     );
   });
 });
@@ -228,5 +269,41 @@ describe("getDatasetVersionAndInfo", () => {
     await expect(
       getDatasetVersionAndInfo("nonexistent/repo"),
     ).rejects.toThrow();
+  });
+
+  test("fetches info.json from NEXT_PUBLIC_DATASET_URL when set", async () => {
+    const origNextPublicDatasetUrl = process.env.NEXT_PUBLIC_DATASET_URL;
+    process.env.NEXT_PUBLIC_DATASET_URL =
+      "https://custom-proxy.example.com/datasets";
+    let requestedUrl = "";
+    globalThis.fetch = mock((input: string | URL | Request) => {
+      requestedUrl = String(input);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            codebase_version: "v3.0",
+            total_episodes: 10,
+            features: {
+              action: { dtype: "float32", shape: [1, 6], names: null },
+            },
+          }),
+          { status: 200 },
+        ),
+      );
+    }) as unknown as typeof fetch;
+
+    try {
+      const { getDatasetVersionAndInfo } = await import("@/utils/versionUtils");
+      await getDatasetVersionAndInfo("custom-org/custom-repo");
+      expect(requestedUrl).toBe(
+        "https://custom-proxy.example.com/datasets/custom-org/custom-repo/resolve/main/meta/info.json",
+      );
+    } finally {
+      if (origNextPublicDatasetUrl === undefined) {
+        delete process.env.NEXT_PUBLIC_DATASET_URL;
+      } else {
+        process.env.NEXT_PUBLIC_DATASET_URL = origNextPublicDatasetUrl;
+      }
+    }
   });
 });

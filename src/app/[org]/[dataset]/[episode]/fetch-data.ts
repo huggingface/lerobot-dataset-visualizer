@@ -8,6 +8,7 @@ import {
 import { parquetMetadataAsync } from "hyparquet";
 import { pick } from "@/utils/pick";
 import {
+  resolveDatasetUrl,
   getDatasetVersionAndInfo,
   buildVersionedUrl,
   getDatasetStats,
@@ -42,11 +43,6 @@ import {
 } from "@/lib/hand-tracking";
 
 const SERIES_NAME_DELIMITER = CHART_CONFIG.SERIES_NAME_DELIMITER;
-
-/** `DATASET_URL` points at `<endpoint>/datasets`; the package wants the endpoint. */
-const HUB_ENDPOINT = (
-  process.env.DATASET_URL || "https://huggingface.co/datasets"
-).replace(/\/datasets\/?$/, "");
 
 type RangeEntry =
   | { ok: true; body: ArrayBuffer; status: number; contentRange: string | null }
@@ -134,11 +130,13 @@ const leRobotDatasets = new Map<string, LeRobotDataset>();
  * are fixed at construction and signing in must take effect.
  */
 function leRobotDataset(repoId: string): LeRobotDataset {
-  const key = `${repoId}\n${getAuthToken() ?? ""}`;
+  /** `DATASET_URL` points at `<endpoint>/datasets`; the package wants the endpoint. */
+  const endpoint = resolveDatasetUrl().replace(/\/datasets\/?$/, "");
+  const key = `${endpoint}\n${repoId}\n${getAuthToken() ?? ""}`;
   let dataset = leRobotDatasets.get(key);
   if (!dataset) {
     dataset = new LeRobotDataset(repoId, {
-      endpoint: HUB_ENDPOINT,
+      endpoint,
       additionalFetchHeaders: authHeaders(),
       fetch: rangeCachedFetch,
     });
