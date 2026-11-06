@@ -48,9 +48,6 @@ Open `/lerobot/community_dataset_v3?path=00ri/so100_battery`, or enter a directo
 in the viewer. Omitting `path` selects the repo root. For the HF Space, use
 `?path=/lerobot/community_dataset_v3/episode_0&datasetPath=00ri/so100_battery`.
 
-See the [Hub integration note](docs/hub-integration.md) for implementation status
-and the remaining work on dataset discovery and the preview selector.
-
 ## Hand annotations
 
 Choose **Advanced → 3D Hands** (below **Annotations**) or open an annotated
