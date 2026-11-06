@@ -62,6 +62,7 @@ export type DrawMode = "off" | "auto" | "bbox" | "keypoint";
 
 interface DatasetIdent {
   repoId?: string | null;
+  path?: string;
   localPath?: string | null;
   revision?: string | null;
 }
@@ -135,7 +136,8 @@ export function useAnnotations(): AnnotationsContextType {
 }
 
 function identKey(ident: DatasetIdent): string {
-  return ident.localPath || ident.repoId || "unknown";
+  const root = ident.localPath || ident.repoId || "unknown";
+  return ident.path ? `${root}::${ident.path}` : root;
 }
 
 export const AnnotationsProvider: React.FC<{ children: React.ReactNode }> = ({
@@ -154,7 +156,7 @@ export const AnnotationsProvider: React.FC<{ children: React.ReactNode }> = ({
   const [selectedIdx, setSelectedIdxState] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const backendEnabled = isAnnotateBackendEnabled();
+  const backendEnabled = isAnnotateBackendEnabled() && !ident.path;
 
   // Track the last saved snapshot to detect dirtiness honestly.
   const savedSnapshotRef = useRef<string>("[]");
@@ -195,7 +197,7 @@ export const AnnotationsProvider: React.FC<{ children: React.ReactNode }> = ({
       setFrameTimestamps(initialFrameTimestamps ?? []);
 
       // Fetch from backend if available.
-      if (isAnnotateBackendEnabled()) {
+      if (isAnnotateBackendEnabled() && !newIdent.path) {
         fetchEpisodeAtoms(newEpisodeId, newIdent)
           .then((remoteAtoms) => {
             // Prefer backend if it has anything; otherwise keep session-cached
@@ -309,7 +311,7 @@ export const AnnotationsProvider: React.FC<{ children: React.ReactNode }> = ({
     path?: string | null;
   }> => {
     if (episodeId == null) return { ok: false, error: "no episode" };
-    if (!isAnnotateBackendEnabled()) {
+    if (!backendEnabled) {
       // Persistence is sessionStorage-only — that already happened in the
       // effect above. Report the storage key as the location so the UI can
       // show a concrete "path" instead of a vague offline message.
@@ -331,7 +333,7 @@ export const AnnotationsProvider: React.FC<{ children: React.ReactNode }> = ({
     } finally {
       setSaving(false);
     }
-  }, [atoms, episodeId, ident]);
+  }, [atoms, episodeId, ident, backendEnabled]);
 
   const value = useMemo<AnnotationsContextType>(
     () => ({

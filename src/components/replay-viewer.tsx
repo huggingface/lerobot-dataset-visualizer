@@ -876,7 +876,13 @@ export default function ReplayViewer({
   const { robot, usdUrl, scale, restHeight } = robotConfig;
   const isG1 = robot === "g1";
   const isOpenArm = robot === "openarm";
-  const repoId = org && dataset ? `${org}/${dataset}` : null;
+  const repoId = useMemo(
+    () =>
+      org && dataset
+        ? { repoId: `${org}/${dataset}`, path: datasetInfo.path }
+        : null,
+    [org, dataset, datasetInfo.path],
+  );
   const datasetInfoRef = useRef<{
     version: string;
     info: DatasetMetadata;

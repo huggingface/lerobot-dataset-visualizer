@@ -2,6 +2,14 @@
  * Utility functions for checking dataset version compatibility
  */
 
+import {
+  datasetSourceKey,
+  datasetSource,
+  datasetFilePath,
+  type DatasetSource,
+} from "./datasetSource";
+import { getAuthToken } from "./auth";
+import { resolveUrl } from "@huggingface/lerobot";
 import { authHeaders } from "./auth";
 
 const DATASET_URL =
@@ -60,22 +68,26 @@ function pruneDatasetInfoCache(now: number) {
   }
 }
 
-export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
+export async function getDatasetInfo(
+  source: DatasetSource,
+): Promise<DatasetInfo> {
+  const repoId = datasetSourceKey(source);
+  const cacheKey = `${repoId}\n${getAuthToken() ?? ""}`;
   const now = Date.now();
   pruneDatasetInfoCache(now);
 
-  const cached = datasetInfoCache.get(repoId);
+  const cached = datasetInfoCache.get(cacheKey);
   if (cached && now < cached.expiry) {
     // Keep insertion order fresh so the cache behaves closer to LRU.
-    datasetInfoCache.delete(repoId);
-    datasetInfoCache.set(repoId, cached);
+    datasetInfoCache.delete(cacheKey);
+    datasetInfoCache.set(cacheKey, cached);
     console.log(`[perf] getDatasetInfo cache HIT for ${repoId}`);
     return cached.data;
   }
   console.log(`[perf] getDatasetInfo cache MISS for ${repoId} — fetching`);
 
   try {
-    const testUrl = `${DATASET_URL}/${repoId}/resolve/main/meta/info.json`;
+    const testUrl = buildVersionedUrl(source, "", "meta/info.json");
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -101,7 +113,7 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
       );
     }
 
-    datasetInfoCache.set(repoId, {
+    datasetInfoCache.set(cacheKey, {
       data: data as DatasetInfo,
       expiry: Date.now() + CACHE_TTL_MS,
     });
@@ -127,15 +139,17 @@ const datasetStatsCache = new Map<
 >();
 
 export async function getDatasetStats(
-  repoId: string,
+  source: DatasetSource,
 ): Promise<Record<string, unknown> | null> {
+  const repoId = datasetSourceKey(source);
+  const cacheKey = `${repoId}\n${getAuthToken() ?? ""}`;
   const now = Date.now();
-  const cached = datasetStatsCache.get(repoId);
+  const cached = datasetStatsCache.get(cacheKey);
   if (cached && now < cached.expiry) return cached.data;
 
   let data: Record<string, unknown> | null = null;
   try {
-    const url = `${DATASET_URL}/${repoId}/resolve/main/meta/stats.json`;
+    const url = buildVersionedUrl(source, "", "meta/stats.json");
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     const response = await fetch(url, {
@@ -155,7 +169,7 @@ export async function getDatasetStats(
     data = null;
   }
 
-  datasetStatsCache.set(repoId, { data, expiry: Date.now() + CACHE_TTL_MS });
+  datasetStatsCache.set(cacheKey, { data, expiry: Date.now() + CACHE_TTL_MS });
   return data;
 }
 
@@ -166,16 +180,16 @@ const SUPPORTED_VERSIONS = ["v3.0", "v2.1", "v2.0"];
  * avoiding a duplicate info.json fetch.
  */
 export async function getDatasetVersionAndInfo(
-  repoId: string,
+  source: DatasetSource,
 ): Promise<{ version: string; info: DatasetInfo }> {
-  const info = await getDatasetInfo(repoId);
+  const info = await getDatasetInfo(source);
   const version = info.codebase_version;
   if (!version) {
     throw new Error("Dataset info.json does not contain codebase_version");
   }
   if (!SUPPORTED_VERSIONS.includes(version)) {
     throw new Error(
-      `Dataset ${repoId} has codebase version ${version}, which is not supported. ` +
+      `Dataset ${datasetSourceKey(source)} has codebase version ${version}, which is not supported. ` +
         "This tool only works with dataset versions 3.0, 2.1, or 2.0. " +
         "Please use a compatible dataset version.",
     );
@@ -184,9 +198,14 @@ export async function getDatasetVersionAndInfo(
 }
 
 export function buildVersionedUrl(
-  repoId: string,
+  source: DatasetSource,
   version: string,
   path: string,
 ): string {
-  return `${DATASET_URL}/${repoId}/resolve/main/${path}`;
+  return resolveUrl(
+    DATASET_URL.replace(/\/datasets\/?$/, ""),
+    datasetSource(source).repoId,
+    "main",
+    datasetFilePath(source, path),
+  );
 }

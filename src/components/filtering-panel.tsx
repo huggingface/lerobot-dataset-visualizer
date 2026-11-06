@@ -225,6 +225,7 @@ function EpisodeLengthFilter({ episodes }: { episodes: EpisodeLengthInfo[] }) {
 
 interface FilteringPanelProps {
   repoId: string;
+  datasetPath?: string;
   crossEpisodeData: CrossEpisodeVarianceData | null;
   crossEpisodeLoading: boolean;
   episodeLengthStats: EpisodeLengthStats | null;
@@ -234,9 +235,11 @@ interface FilteringPanelProps {
 
 function FlaggedIdsCopyBar({
   repoId,
+  datasetPath,
   onViewEpisodes,
 }: {
   repoId: string;
+  datasetPath?: string;
   onViewEpisodes?: () => void;
 }) {
   const { flagged, count, clear } = useFlaggedEpisodes();
@@ -327,27 +330,36 @@ function FlaggedIdsCopyBar({
           View flagged episodes
         </button>
       )}
-      <div className="bg-[var(--surface-0)]/60 rounded-md px-3 py-2 border border-line space-y-2.5">
+      {datasetPath ? (
         <p className="text-xs text-fg-muted">
-          <a
-            href="https://github.com/huggingface/lerobot"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-accent-fg underline"
-          >
-            LeRobot CLI
-          </a>{" "}
-          — delete flagged episodes:
+          Download <code>{datasetPath}</code> and use its local directory with
+          the LeRobot CLI to remove these episodes. Repository-root CLI commands
+          are unavailable for subdirectory datasets.
         </p>
-        <pre className="text-xs text-fg-soft bg-[var(--bg)]/50 rounded px-2 py-1.5 overflow-x-auto select-all">{`# Delete episodes (modifies original dataset)\nlerobot-edit-dataset \\\n    --repo_id ${repoId} \\\n    --operation.type delete_episodes \\\n    --operation.episode_indices "[${ids.join(", ")}]"`}</pre>
-        <pre className="text-xs text-fg-soft bg-[var(--bg)]/50 rounded px-2 py-1.5 overflow-x-auto select-all">{`# Delete episodes and save to a new dataset (preserves original)\nlerobot-edit-dataset \\\n    --repo_id ${repoId} \\\n    --new_repo_id ${repoId}_filtered \\\n    --operation.type delete_episodes \\\n    --operation.episode_indices "[${ids.join(", ")}]"`}</pre>
-      </div>
+      ) : (
+        <div className="bg-[var(--surface-0)]/60 rounded-md px-3 py-2 border border-line space-y-2.5">
+          <p className="text-xs text-fg-muted">
+            <a
+              href="https://github.com/huggingface/lerobot"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent-fg underline"
+            >
+              LeRobot CLI
+            </a>{" "}
+            — delete flagged episodes:
+          </p>
+          <pre className="text-xs text-fg-soft bg-[var(--bg)]/50 rounded px-2 py-1.5 overflow-x-auto select-all">{`# Delete episodes (modifies original dataset)\nlerobot-edit-dataset \\\n    --repo_id ${repoId} \\\n    --operation.type delete_episodes \\\n    --operation.episode_indices "[${ids.join(", ")}]"`}</pre>
+          <pre className="text-xs text-fg-soft bg-[var(--bg)]/50 rounded px-2 py-1.5 overflow-x-auto select-all">{`# Delete episodes and save to a new dataset (preserves original)\nlerobot-edit-dataset \\\n    --repo_id ${repoId} \\\n    --new_repo_id ${repoId}_filtered \\\n    --operation.type delete_episodes \\\n    --operation.episode_indices "[${ids.join(", ")}]"`}</pre>
+        </div>
+      )}
     </div>
   );
 }
 
 function FilteringPanel({
   repoId,
+  datasetPath,
   crossEpisodeData,
   crossEpisodeLoading,
   episodeLengthStats,
@@ -362,6 +374,7 @@ function FilteringPanel({
       />
 
       <FlaggedIdsCopyBar
+        datasetPath={datasetPath}
         repoId={repoId}
         onViewEpisodes={onViewFlaggedEpisodes}
       />
