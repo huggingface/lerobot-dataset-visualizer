@@ -1,4 +1,6 @@
 "use client";
+import DatasetPathPicker from "@/components/dataset-path-picker";
+import { episodeHref } from "@/utils/datasetSource";
 
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useRouter } from "next/navigation";
@@ -272,6 +274,7 @@ function TabButton({
 }
 
 export default function EpisodeViewer({
+  path = "",
   org,
   dataset,
   episodeId,
@@ -279,6 +282,7 @@ export default function EpisodeViewer({
   org: string;
   dataset: string;
   episodeId: number;
+  path?: string;
 }) {
   const [data, setData] = useState<EpisodeData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -293,7 +297,7 @@ export default function EpisodeViewer({
   // mounts. info.json is all it needs, and the episode load fetches it anyway.
   useEffect(() => {
     if (tabId(sessionStorage.getItem("activeTab")) !== "replay") return;
-    getDatasetVersionAndInfo(`${org}/${dataset}`)
+    getDatasetVersionAndInfo({ repoId: `${org}/${dataset}`, path })
       .then(({ info }) => {
         if (
           hasRobotModel(info.robot_type ?? null) &&
@@ -311,7 +315,7 @@ export default function EpisodeViewer({
         }
       })
       .catch(() => {});
-  }, [org, dataset]);
+  }, [org, dataset, path]);
 
   useEffect(() => {
     if (Number.isNaN(episodeId)) {
@@ -322,7 +326,7 @@ export default function EpisodeViewer({
     // Requests read the token from storage, so the first load already uses a
     // saved sign-in, which AuthProvider restores into `accessToken` only
     // afterwards. Reload for a new token, not for that one.
-    const key = `${org}/${dataset}/${episodeId}`;
+    const key = JSON.stringify([org, dataset, path, episodeId]);
     const token = getAuthToken();
     if (loadedRef.current?.key === key && loadedRef.current.token === token)
       return;
@@ -331,7 +335,7 @@ export default function EpisodeViewer({
     setError(null);
     setNoEpisodes(false);
     setData(null);
-    getEpisodeDataSafe(org, dataset, episodeId)
+    getEpisodeDataSafe(org, dataset, episodeId, path)
       .then(({ data: loaded, error: loadError, noEpisodes: empty }) => {
         if (requestIdRef.current !== requestId) return;
         if (empty) {
@@ -351,7 +355,7 @@ export default function EpisodeViewer({
         setError(message || "Unknown error");
         setData(null);
       });
-  }, [org, dataset, episodeId, accessToken]);
+  }, [org, dataset, episodeId, accessToken, path]);
 
   if (noEpisodes) {
     return (
@@ -384,6 +388,7 @@ export default function EpisodeViewer({
             {error}
           </p>
           <div className="mt-4">
+            <DatasetPathPicker repoId={`${org}/${dataset}`} path={path} />
             <HfAuthButton variant="ghost" />
           </div>
         </div>
@@ -417,13 +422,14 @@ function EpisodeBootstrap({ data }: { data: EpisodeData }) {
   useEffect(() => {
     setEpisode(
       data.episodeId,
-      { repoId: data.datasetInfo.repoId },
+      { repoId: data.datasetInfo.repoId, path: data.datasetInfo.path },
       data.languageAtoms,
       data.frameTimestamps,
     );
   }, [
     data.episodeId,
     data.datasetInfo.repoId,
+    data.datasetInfo.path,
     data.languageAtoms,
     data.frameTimestamps,
     setEpisode,
@@ -559,7 +565,10 @@ function EpisodeViewerInner({
     setStatsLoading(true);
     setColumnMinMax(computeColumnMinMax(data.chartDataGroups));
     if (org && dataset) {
-      const repoId = `${org}/${dataset}`;
+      const repoId = {
+        repoId: data.datasetInfo.repoId,
+        path: data.datasetInfo.path,
+      };
       getDatasetVersionAndInfo(repoId)
         .then(({ info }) => loadAllEpisodeLengths(repoId, info.fps))
         .then((result) => {
@@ -579,7 +588,10 @@ function EpisodeViewerInner({
     if (framesLoadedRef.current || !org || !dataset) return;
     framesLoadedRef.current = true;
     setFramesLoading(true);
-    const repoId = `${org}/${dataset}`;
+    const repoId = {
+      repoId: data.datasetInfo.repoId,
+      path: data.datasetInfo.path,
+    };
     getDatasetVersionAndInfo(repoId)
       .then(({ version, info }) =>
         loadAllEpisodeFrameInfo(
@@ -605,7 +617,10 @@ function EpisodeViewerInner({
     if (insightsLoadedRef.current || !org || !dataset) return;
     insightsLoadedRef.current = true;
     setInsightsLoading(true);
-    const repoId = `${org}/${dataset}`;
+    const repoId = {
+      repoId: data.datasetInfo.repoId,
+      path: data.datasetInfo.path,
+    };
     getDatasetVersionAndInfo(repoId)
       .then(({ version, info }) =>
         loadCrossEpisodeActionVariance(
@@ -743,7 +758,7 @@ function EpisodeViewerInner({
             nextEpisodeId >= lowestEpisodeId &&
             nextEpisodeId <= highestEpisodeId
           ) {
-            router.push(`./episode_${nextEpisodeId}`);
+            router.push(episodeHref(nextEpisodeId, datasetInfo.path));
           }
         }
       }
@@ -752,7 +767,7 @@ function EpisodeViewerInner({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // router / setIsPlaying are stable; the rest is read via keyStateRef.
-  }, [router, setIsPlaying]);
+  }, [router, setIsPlaying, datasetInfo.path]);
 
   // Pagination functions
   const nextPage = () => {
@@ -806,6 +821,12 @@ function EpisodeViewerInner({
         </div>
       </div>
 
+      <div className="shrink-0 border-b border-line-subtle bg-[var(--surface-0)] px-4 py-2">
+        <DatasetPathPicker
+          repoId={datasetInfo.repoId}
+          path={datasetInfo.path}
+        />
+      </div>
       {/* Body: sidebar + content */}
       <div className="flex flex-1 min-h-0">
         {/* Sidebar — on Episodes and 3D Replay tabs */}
@@ -830,7 +851,7 @@ function EpisodeViewerInner({
                     replayChangerRef.current?.(ep);
                   }
                 : activeTab === "annotations"
-                  ? (ep) => router.push(`./episode_${ep}`)
+                  ? (ep) => router.push(episodeHref(ep, datasetInfo.path))
                   : undefined
             }
           />
@@ -947,6 +968,7 @@ function EpisodeViewerInner({
           {activeTab === "filtering" && (
             <Suspense fallback={<Loading />}>
               <FilteringPanel
+                datasetPath={datasetInfo.path}
                 repoId={datasetInfo.repoId}
                 crossEpisodeData={crossEpData}
                 crossEpisodeLoading={insightsLoading}
@@ -960,7 +982,12 @@ function EpisodeViewerInner({
             </Suspense>
           )}
 
-          {activeTab === "doctor" && (
+          {activeTab === "doctor" && datasetInfo.path && (
+            <p className="text-sm text-fg-muted">
+              LeRobot Doctor does not support dataset subdirectories yet.
+            </p>
+          )}
+          {activeTab === "doctor" && !datasetInfo.path && (
             <div className="flex flex-col h-full">
               <div className="flex items-center justify-between px-1 pb-2 text-xs text-fg-muted">
                 <span>

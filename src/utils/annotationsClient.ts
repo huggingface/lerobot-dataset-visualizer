@@ -27,11 +27,20 @@ export function getAnnotateBackendUrl(): string | null {
 
 interface DatasetIdent {
   repoId?: string | null;
+  path?: string;
   localPath?: string | null;
   revision?: string | null;
 }
 
+function assertRootDataset(ident: DatasetIdent): void {
+  if (ident.path)
+    throw new Error(
+      "The annotation backend does not support dataset subdirectories. Edits are saved in this browser session.",
+    );
+}
+
 function buildUrl(path: string, ident: DatasetIdent): string {
+  assertRootDataset(ident);
   if (!ENV_URL) throw new Error("Annotate backend not configured");
   const url = new URL(path, ENV_URL);
   if (ident.repoId) url.searchParams.set("repo_id", ident.repoId);
@@ -53,6 +62,7 @@ export async function pingBackend(): Promise<boolean> {
 export async function loadDataset(
   ident: DatasetIdent,
 ): Promise<{ ok: boolean }> {
+  assertRootDataset(ident);
   if (!ENV_URL) return { ok: false };
   const res = await fetch(new URL("/api/dataset/load", ENV_URL).toString(), {
     method: "POST",
@@ -70,6 +80,7 @@ export async function fetchEpisodeAtoms(
   episodeId: number,
   ident: DatasetIdent,
 ): Promise<LanguageAtom[]> {
+  assertRootDataset(ident);
   if (!ENV_URL) return [];
   await loadDataset(ident);
   const res = await fetch(buildUrl(`/api/episodes/${episodeId}/atoms`, ident));
@@ -85,6 +96,7 @@ export async function saveEpisodeAtoms(
   ident: DatasetIdent,
   atoms: LanguageAtom[],
 ): Promise<{ path: string | null }> {
+  assertRootDataset(ident);
   if (!ENV_URL) return { path: null };
   const res = await fetch(
     new URL(`/api/episodes/${episodeId}/atoms`, ENV_URL).toString(),
@@ -111,6 +123,7 @@ export async function fetchFrameTimestamps(
   episodeId: number,
   ident: DatasetIdent,
 ): Promise<number[]> {
+  assertRootDataset(ident);
   if (!ENV_URL) return [];
   const res = await fetch(
     buildUrl(`/api/episodes/${episodeId}/frame_timestamps`, ident),
@@ -129,6 +142,7 @@ export async function exportDataset(
   persistent_rows: number;
   event_rows: number;
 }> {
+  assertRootDataset(ident);
   if (!ENV_URL) throw new Error("Annotate backend not configured");
   const res = await fetch(new URL("/api/export", ENV_URL).toString(), {
     method: "POST",
@@ -163,6 +177,7 @@ export async function pushToHub(
   privateRepo: boolean,
   commitMessage: string,
 ): Promise<PushToHubResult> {
+  assertRootDataset(ident);
   if (!ENV_URL) throw new Error("Annotate backend not configured");
   const res = await fetch(new URL("/api/push_to_hub", ENV_URL).toString(), {
     method: "POST",

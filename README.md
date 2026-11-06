@@ -42,6 +42,12 @@ This tool is designed to help robotics researchers and practitioners quickly ins
 - **Efficient Data Loading:** Uses parquet and JSON loading for large dataset support, with pagination, chunking, and lazy-loaded panels for fast initial load.
 - **Responsive UI:** Built with React, Next.js, and Tailwind CSS for a fast, modern user experience.
 
+## Datasets in subdirectories
+
+Open `/lerobot/community_dataset_v3?path=00ri/so100_battery`, or enter a directory
+in the viewer. Omitting `path` selects the repo root. For the HF Space, use
+`?path=/lerobot/community_dataset_v3/episode_0&datasetPath=00ri/so100_battery`.
+
 ## Hand annotations
 
 Choose **Advanced → 3D Hands** (below **Annotations**) or open an annotated

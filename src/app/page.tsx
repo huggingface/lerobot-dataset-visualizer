@@ -1,4 +1,5 @@
 "use client";
+import { spaceRedirect } from "@/utils/datasetSource";
 import { useEffect, useRef, useState, useCallback, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
@@ -65,28 +66,8 @@ function HomeInner() {
       return;
     }
 
-    // sync with hf.co/spaces URL params
-    if (searchParams.get("path")) {
-      router.push(searchParams.get("path")!);
-      return;
-    }
-
-    // legacy sync with hf.co/spaces URL params
-    let redirectUrl: string | null = null;
-    if (searchParams.get("dataset") && searchParams.get("episode")) {
-      redirectUrl = `/${searchParams.get("dataset")}/episode_${searchParams.get("episode")}`;
-    } else if (searchParams.get("dataset")) {
-      redirectUrl = `/${searchParams.get("dataset")}`;
-    }
-
-    if (redirectUrl && searchParams.get("t")) {
-      redirectUrl += `?t=${searchParams.get("t")}`;
-    }
-
-    if (redirectUrl) {
-      router.push(redirectUrl);
-      return;
-    }
+    const redirectUrl = spaceRedirect(new URLSearchParams(searchParams));
+    if (redirectUrl) router.push(redirectUrl);
   }, [searchParams, router]);
 
   const videoRef = useRef<HTMLVideoElement>(null);

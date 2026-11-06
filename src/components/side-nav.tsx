@@ -1,5 +1,6 @@
 "use client";
 
+import { episodeHref } from "@/utils/datasetSource";
 import Link from "next/link";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useFlaggedEpisodes } from "@/context/flagged-episodes-context";
@@ -238,7 +239,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   ) : (
                     <div className={itemClass}>
                       <Link
-                        href={`./episode_${episode}`}
+                        href={episodeHref(episode, datasetInfo.path)}
                         onClick={closeDrawer}
                         className="flex-1 text-left"
                       >

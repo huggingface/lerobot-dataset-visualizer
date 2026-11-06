@@ -1,4 +1,10 @@
 import {
+  datasetSource,
+  datasetSourceKey,
+  SubpathLeRobotDataset,
+  type DatasetSource,
+} from "@/utils/datasetSource";
+import {
   DatasetMetadata,
   fetchParquetFile,
   formatStringWithVars,
@@ -133,11 +139,11 @@ const leRobotDatasets = new Map<string, LeRobotDataset>();
  * for every lookup refetched `meta/info.json` each time. Keyed on the token too, because the headers
  * are fixed at construction and signing in must take effect.
  */
-function leRobotDataset(repoId: string): LeRobotDataset {
-  const key = `${repoId}\n${getAuthToken() ?? ""}`;
+function leRobotDataset(source: DatasetSource): LeRobotDataset {
+  const key = `${datasetSourceKey(source)}\n${getAuthToken() ?? ""}`;
   let dataset = leRobotDatasets.get(key);
   if (!dataset) {
-    dataset = new LeRobotDataset(repoId, {
+    dataset = new SubpathLeRobotDataset(source, {
       endpoint: HUB_ENDPOINT,
       additionalFetchHeaders: authHeaders(),
       fetch: rangeCachedFetch,
@@ -153,15 +159,17 @@ function leRobotDataset(repoId: string): LeRobotDataset {
  * reads the v3 index by row range instead of scanning every shard for a matching episode_index.
  */
 async function loadLeRobotEpisode(
-  repoId: string,
+  source: DatasetSource,
   episodeId: number,
 ): Promise<LeRobotEpisode> {
-  const [episode] = await leRobotDataset(repoId).episodes({
+  const [episode] = await leRobotDataset(source).episodes({
     offset: episodeId,
     limit: 1,
   });
   if (!episode) {
-    throw new Error(`Episode ${episodeId} not found in ${repoId}`);
+    throw new Error(
+      `Episode ${episodeId} not found in ${datasetSourceKey(source)}`,
+    );
   }
   return episode;
 }
@@ -172,10 +180,10 @@ async function loadLeRobotEpisode(
  */
 /** Every episode, normalized. v3 only: v2 needs no index read to locate an episode. */
 async function loadLeRobotEpisodes(
-  repoId: string,
+  source: DatasetSource,
   totalEpisodes: number,
 ): Promise<LeRobotEpisode[]> {
-  return leRobotDataset(repoId).episodes({ offset: 0, limit: totalEpisodes });
+  return leRobotDataset(source).episodes({ offset: 0, limit: totalEpisodes });
 }
 
 function toVideosInfo(
@@ -219,6 +227,7 @@ export type CameraInfo = { name: string; width: number; height: number };
 
 export type DatasetDisplayInfo = {
   repoId: string;
+  path?: string;
   total_frames: number;
   total_episodes: number;
   fps: number;
@@ -430,12 +439,12 @@ function pickProgressColumn(rows: Record<string, unknown>[]): string | null {
 // duration" lets the caller kick off the fetch in parallel with the main
 // episode-data fetch instead of waiting on a sequential await.
 async function loadEpisodeProgressGroup(
-  repoId: string,
+  source: DatasetSource,
   version: string,
   episodeId: number,
 ): Promise<((episodeDuration: number) => ChartRow[]) | null> {
   for (const progressPath of PROGRESS_PARQUET_CANDIDATES) {
-    const progressUrl = buildVersionedUrl(repoId, version, progressPath);
+    const progressUrl = buildVersionedUrl(source, version, progressPath);
     if (missingProgressFiles.has(progressUrl)) continue;
     try {
       const progressBuffer = await fetchParquetFile(progressUrl);
@@ -513,12 +522,13 @@ export async function getEpisodeData(
   org: string,
   dataset: string,
   episodeId: number,
+  path = "",
 ): Promise<EpisodeData> {
-  const repoId = `${org}/${dataset}`;
+  const source = datasetSource({ repoId: `${org}/${dataset}`, path });
   try {
     // episodes() awaits the package's own meta/info.json read, which would otherwise start only after ours.
     // Forget the instance if that read fails, so the next load retries instead of reusing the memoized rejection.
-    const leRobot = leRobotDataset(repoId);
+    const leRobot = leRobotDataset(source);
     const forgetLeRobot = () => {
       for (const [key, cached] of leRobotDatasets) {
         if (cached === leRobot) leRobotDatasets.delete(key);
@@ -527,14 +537,14 @@ export async function getEpisodeData(
     void leRobot.info().catch(forgetLeRobot);
 
     console.time(`[perf] getDatasetVersionAndInfo`);
-    const { version, info: rawInfo } = await getDatasetVersionAndInfo(repoId);
+    const { version, info: rawInfo } = await getDatasetVersionAndInfo(source);
     console.timeEnd(`[perf] getDatasetVersionAndInfo`);
     const info = rawInfo as unknown as DatasetMetadata;
 
     if (info.total_episodes === 0) {
       // The package memoizes info() with no TTL: keeping it would pin totalEpisodes at 0 after episodes are pushed.
       forgetLeRobot();
-      throw new NoEpisodesError(`${repoId} has no episodes`);
+      throw new NoEpisodesError(`${datasetSourceKey(source)} has no episodes`);
     }
 
     if (info.video_path === null) {
@@ -558,10 +568,10 @@ export async function getEpisodeData(
     console.time(`[perf] getEpisodeData (${version})`);
     const [result, progressBuilder, stats] = await Promise.all([
       version === "v3.0"
-        ? getEpisodeDataV3(repoId, version, info, episodeId)
-        : getEpisodeDataV2(repoId, version, info, episodeId),
-      loadEpisodeProgressGroup(repoId, version, episodeId),
-      hasGrayscaleFeed ? getDatasetStats(repoId) : Promise.resolve(null),
+        ? getEpisodeDataV3(source, version, info, episodeId)
+        : getEpisodeDataV2(source, version, info, episodeId),
+      loadEpisodeProgressGroup(source, version, episodeId),
+      hasGrayscaleFeed ? getDatasetStats(source) : Promise.resolve(null),
     ]);
     console.timeEnd(`[perf] getEpisodeData (${version})`);
 
@@ -621,10 +631,10 @@ const V2_PROBE_FROM_EPISODE = 32;
  * start elsewhere (10, 20, 30, ... in behavior-1k) keep the package's lookup.
  */
 function isV2IndexContiguous(
-  repoId: string,
+  source: DatasetSource,
   totalEpisodes: number,
 ): Promise<boolean> {
-  const url = leRobotDataset(repoId).fileUrl("meta/episodes.jsonl");
+  const url = leRobotDataset(source).fileUrl("meta/episodes.jsonl");
   let contiguous = v2ContiguousIndexes.get(url);
   if (!contiguous) {
     const read = (start: number, end?: number) =>
@@ -667,10 +677,10 @@ function isV2IndexContiguous(
  * since that path takes its duration from the chart timestamps.
  */
 async function v2EpisodeFromTemplates(
-  repoId: string,
+  source: DatasetSource,
   episodeId: number,
 ): Promise<LeRobotEpisode> {
-  const dataset = leRobotDataset(repoId);
+  const dataset = leRobotDataset(source);
   const info = await dataset.info();
   /// The package's lookup keeps answering for ids that name no episode ("not found" past the end).
   if (
@@ -678,7 +688,7 @@ async function v2EpisodeFromTemplates(
     episodeId < 0 ||
     episodeId >= info.totalEpisodes
   ) {
-    return loadLeRobotEpisode(repoId, episodeId);
+    return loadLeRobotEpisode(source, episodeId);
   }
   const { videoPath } = info;
   const vars = {
@@ -712,13 +722,13 @@ async function v2EpisodeFromTemplates(
 
 // Legacy v2.x data loading
 async function getEpisodeDataV2(
-  repoId: string,
+  source: DatasetSource,
   version: string,
   info: DatasetMetadata,
   episodeId: number,
 ): Promise<EpisodeData> {
   const datasetInfo: DatasetDisplayInfo = {
-    repoId,
+    ...datasetSource(source),
     total_frames: info.total_frames,
     total_episodes: info.total_episodes,
     fps: info.fps,
@@ -744,20 +754,20 @@ async function getEpisodeDataV2(
   const probe =
     episodeId >= V2_PROBE_FROM_EPISODE ||
     v2ContiguousIndexes.has(
-      leRobotDataset(repoId).fileUrl("meta/episodes.jsonl"),
+      leRobotDataset(source).fileUrl("meta/episodes.jsonl"),
     );
   const [contiguous] = await Promise.all([
-    probe && isV2IndexContiguous(repoId, info.total_episodes),
-    leRobotDataset(repoId).info(),
+    probe && isV2IndexContiguous(source, info.total_episodes),
+    leRobotDataset(source).info(),
   ]);
   const leRobotEpisode = contiguous
-    ? await v2EpisodeFromTemplates(repoId, episodeId)
-    : await loadLeRobotEpisode(repoId, episodeId);
+    ? await v2EpisodeFromTemplates(source, episodeId)
+    : await loadLeRobotEpisode(source, episodeId);
   const videosInfo =
     info.video_path !== null ? toVideosInfo(leRobotEpisode, info, false) : [];
 
   const { frames, textRows, handTracking } = await loadEpisodeFrames(
-    repoId,
+    source,
     leRobotEpisode,
     info,
   );
@@ -796,7 +806,7 @@ async function getEpisodeDataV2(
 
   if (!task && textRows.length > 0) {
     try {
-      const tasksUrl = buildVersionedUrl(repoId, version, "meta/tasks.jsonl");
+      const tasksUrl = buildVersionedUrl(source, version, "meta/tasks.jsonl");
       const tasksResponse = await fetch(tasksUrl, { cache: "no-store" });
 
       if (tasksResponse.ok) {
@@ -863,13 +873,13 @@ async function getEpisodeDataV2(
 
 // v3.0 implementation with segmentation support for all episodes
 async function getEpisodeDataV3(
-  repoId: string,
+  source: DatasetSource,
   version: string,
   info: DatasetMetadata,
   episodeId: number,
 ): Promise<EpisodeData> {
   const datasetInfo: DatasetDisplayInfo = {
-    repoId,
+    ...datasetSource(source),
     total_frames: info.total_frames,
     total_episodes: info.total_episodes,
     fps: info.fps,
@@ -881,7 +891,7 @@ async function getEpisodeDataV3(
 
   const episodes = Array.from({ length: info.total_episodes }, (_, i) => i);
 
-  const leRobotEpisode = await loadLeRobotEpisode(repoId, episodeId);
+  const leRobotEpisode = await loadLeRobotEpisode(source, episodeId);
   const episodeMetadata = toEpisodeMetadataV3(leRobotEpisode);
   const videosInfo = toVideosInfo(leRobotEpisode, info, true);
 
@@ -895,7 +905,7 @@ async function getEpisodeDataV3(
     frameTimestamps,
     handTracking,
   } = await loadEpisodeDataV3(
-    repoId,
+    source,
     version,
     info,
     episodeMetadata,
@@ -924,7 +934,7 @@ async function getEpisodeDataV3(
 
 // Load episode data for v3.0 charts
 async function loadEpisodeDataV3(
-  repoId: string,
+  source: DatasetSource,
   version: string,
   info: DatasetMetadata,
   episodeMetadata: EpisodeMetadataV3,
@@ -940,7 +950,7 @@ async function loadEpisodeDataV3(
 }> {
   try {
     const { frames, textRows, handTracking } = await loadEpisodeFrames(
-      repoId,
+      source,
       episode,
       info,
     );
@@ -1029,7 +1039,7 @@ async function loadEpisodeDataV3(
     if (!task && textRows.length > 0) {
       try {
         const tasksUrl = buildVersionedUrl(
-          repoId,
+          source,
           version,
           "meta/tasks.parquet",
         );
@@ -1183,7 +1193,7 @@ const MAX_NESTED_TEXT_VALUES = 25_000_000;
 
 /** The episode's numeric series from `@huggingface/lerobot`, plus its text columns read alongside. */
 async function loadEpisodeFrames(
-  repoId: string,
+  source: DatasetSource,
   episode: LeRobotEpisode,
   info: DatasetMetadata,
 ): Promise<{
@@ -1194,7 +1204,7 @@ async function loadEpisodeFrames(
   const data = episode.data;
   if (!data) return { frames: undefined, textRows: [] };
   const [frames, textRows, report] = await Promise.all([
-    leRobotDataset(repoId).frames(episode),
+    leRobotDataset(source).frames(episode),
     fetchParquetFile(data.url).then(async (file) => {
       const values = nestedColumnValues(
         await parquetMetadataAsync(file),
@@ -1217,7 +1227,7 @@ async function loadEpisodeFrames(
     hasHandTracking(info)
       ? fetch(
           buildVersionedUrl(
-            repoId,
+            source,
             info.codebase_version,
             "annotation_studio/run.json",
           ),
@@ -1355,11 +1365,11 @@ export function computeColumnMinMax(
  */
 /** Works for every version: the package reads v2's episodes.jsonl and v3's episode index alike. */
 export async function loadAllEpisodeLengths(
-  repoId: string,
+  source: DatasetSource,
   fps: number,
 ): Promise<EpisodeLengthStats | null> {
   try {
-    const dataset = leRobotDataset(repoId);
+    const dataset = leRobotDataset(source);
     const { totalEpisodes } = await dataset.info();
     const allEpisodes = (
       await dataset.episodes({ offset: 0, limit: totalEpisodes })
@@ -1467,7 +1477,7 @@ export async function loadAllEpisodeLengths(
  * Returns camera names + a map of camera → EpisodeFrameInfo[].
  */
 export async function loadAllEpisodeFrameInfo(
-  repoId: string,
+  source: DatasetSource,
   version: string,
   info: DatasetMetadata,
 ): Promise<EpisodeFramesData> {
@@ -1486,7 +1496,7 @@ export async function loadAllEpisodeFrameInfo(
 
   if (version === "v3.0") {
     for (const episode of await loadLeRobotEpisodes(
-      repoId,
+      source,
       info.total_episodes,
     )) {
       if (sampledEpisodeSet && !sampledEpisodeSet.has(episode.index)) continue;
@@ -1514,7 +1524,7 @@ export async function loadAllEpisodeFrameInfo(
       });
       framesByCamera[cam].push({
         episodeIndex: i,
-        videoUrl: buildVersionedUrl(repoId, version, videoPath),
+        videoUrl: buildVersionedUrl(source, version, videoPath),
         firstFrameTime: 0,
         lastFrameTime: null,
       });
@@ -1585,7 +1595,7 @@ export type CrossEpisodeVarianceData = {
 };
 
 export async function loadCrossEpisodeActionVariance(
-  repoId: string,
+  source: DatasetSource,
   version: string,
   info: DatasetMetadata,
   fps: number,
@@ -1644,7 +1654,7 @@ export async function loadCrossEpisodeActionVariance(
 
   if (version === "v3.0") {
     for (const episode of await loadLeRobotEpisodes(
-      repoId,
+      source,
       info.total_episodes,
     )) {
       if (!episode.data) continue;
@@ -1754,7 +1764,7 @@ export async function loadCrossEpisodeActionVariance(
         });
         try {
           const buf = await fetchParquetFile(
-            buildVersionedUrl(repoId, version, dataPath),
+            buildVersionedUrl(source, version, dataPath),
           );
           const rows = await readParquetAsObjects(
             buf,
@@ -2265,14 +2275,14 @@ export async function loadCrossEpisodeActionVariance(
 
 // Load only flatChartData for a specific episode (used by the 3D Replay viewer's episode switching)
 export async function loadEpisodeFlatChartData(
-  repoId: string,
+  source: DatasetSource,
   version: string,
   info: DatasetMetadata,
   episodeId: number,
 ): Promise<Record<string, number>[]> {
-  const episode = await loadLeRobotEpisode(repoId, episodeId);
+  const episode = await loadLeRobotEpisode(source, episodeId);
   const { flatChartData } = await loadEpisodeDataV3(
-    repoId,
+    source,
     version,
     info,
     toEpisodeMetadataV3(episode),
@@ -2286,9 +2296,10 @@ export async function getEpisodeDataSafe(
   org: string,
   dataset: string,
   episodeId: number,
+  path = "",
 ): Promise<{ data?: EpisodeData; error?: string; noEpisodes?: boolean }> {
   try {
-    const data = await getEpisodeData(org, dataset, episodeId);
+    const data = await getEpisodeData(org, dataset, episodeId, path);
     return { data };
   } catch (err: unknown) {
     if (err instanceof NoEpisodesError) {
