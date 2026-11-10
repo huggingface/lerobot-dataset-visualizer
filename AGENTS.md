@@ -125,6 +125,14 @@ Episode lengths, the Frames listing and the cross-episode statistics describe th
 - Seek inside a frame, not on its boundary: `loadAllEpisodeFrameInfo` gives `firstFrameTime` / `lastFrameTime` half a frame in from the episode's ends (`lastFrameTime: null` on v2.x means half a frame before the file's end). On the boundary the browser may show the neighbouring episode's frame.
 - The videos are loaded without CORS: frames are drawn, never read back.
 
+## Playback (`src/context/time-context.tsx`, `src/components/playback-bar.tsx`)
+
+- `TimeProvider` takes the episode's `fps` and `frames` (its frame count). Pass the real count: on v2.x `duration` is the last frame's timestamp, one frame short of the episode.
+- `stepFrames(n)` (from `useTimeControls`) pauses and moves `n` frames; the arithmetic is in `src/utils/playback.ts`. A step seeks a millisecond inside the frame, never onto the boundary between two, where the browser may show either.
+- The end-of-episode loop in `SimpleVideosPlayer` only runs while playing. Paused, a seek or a step onto the last frames must show them.
+- The playback speed lives in the time context and `sessionStorage`; `SimpleVideosPlayer` applies it to every camera, and as each video's default rate so it survives a reload of the video.
+- Keys: Space plays and pauses; `←` `→` (or `,` `.`) step a frame, with Shift a second; `↑` `↓` change episode. The horizontal arrows are left to whatever is focused when it uses them itself (text fields, sliders, option groups).
+
 ## Viewer state
 
 - The open tab is mirrored into `?tab=` (`searchWithTab`, the default Episodes tab is left out) with `replaceState`, so a link opens the same view and Back returns to an analysis tab after following an `EpisodeLink`. `sessionStorage` still carries the tab across sidebar navigation, whose links have no query.

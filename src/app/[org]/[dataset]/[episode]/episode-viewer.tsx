@@ -73,6 +73,24 @@ function isKeyboardFocusInsideTextEntry(target: EventTarget | null): boolean {
   );
 }
 
+/**
+ * Whether the focused element uses the left and right arrows itself: text being typed, a slider,
+ * a group of options. A plain button does not, so stepping frames still works after clicking play.
+ */
+function isHorizontalArrowOwnedByFocus(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable || target.closest('[contenteditable="true"]')) {
+    return true;
+  }
+  const tag = target.tagName;
+  if (tag === "TEXTAREA" || tag === "SELECT" || tag === "INPUT") return true;
+  return (
+    target.closest(
+      '[role="radiogroup"], [role="menu"], [role="listbox"], [role="slider"], [role="tablist"]',
+    ) !== null
+  );
+}
+
 const TABS = [
   "episodes",
   "annotations",
@@ -483,7 +501,11 @@ export default function EpisodeViewer({
   }
 
   return (
-    <TimeProvider duration={data!.duration}>
+    <TimeProvider
+      duration={data!.duration}
+      fps={data!.datasetInfo.fps}
+      frames={data!.frameTimestamps?.length}
+    >
       <FlaggedEpisodesProvider
         key={data!.datasetInfo.repoId}
         repoId={data!.datasetInfo.repoId}
@@ -673,7 +695,7 @@ function EpisodeViewerInner({
   // Not `useTime()`: any consumer of it re-renders on every playback tick,
   // which would redraw this whole component ~12×/s. <UrlTimeSync /> handles
   // the one thing here that needs `currentTime` (the ?t= URL writer).
-  const { seek, setIsPlaying } = useTimeControls();
+  const { seek, setIsPlaying, stepFrames } = useTimeControls();
   /// Passed to the embedded lerobot-doctor Space, which follows `__theme` like any HF Space.
   const theme = useTheme();
 
@@ -727,8 +749,20 @@ function EpisodeViewerInner({
   // detach + reattach the listener each time. Now the listener attaches
   // once and reads the latest state via the ref.
   // Vercel rule: advanced-event-handler-refs.
-  const keyStateRef = useRef({ activeTab, episodeId, episodes, replayEpisode });
-  keyStateRef.current = { activeTab, episodeId, episodes, replayEpisode };
+  const keyStateRef = useRef({
+    activeTab,
+    episodeId,
+    episodes,
+    replayEpisode,
+    fps: datasetInfo.fps,
+  });
+  keyStateRef.current = {
+    activeTab,
+    episodeId,
+    episodes,
+    replayEpisode,
+    fps: datasetInfo.fps,
+  };
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -744,6 +778,23 @@ function EpisodeViewerInner({
         } else {
           setIsPlaying((prev: boolean) => !prev);
         }
+      } else if (
+        key === "ArrowLeft" ||
+        key === "ArrowRight" ||
+        key === "," ||
+        key === "."
+      ) {
+        // One frame back or forward on the tabs that play the episode's videos; with Shift, one
+        // second. The comma and full stop are the same keys video players use.
+        const playsVideos =
+          s.activeTab === "episodes" ||
+          s.activeTab === "annotations" ||
+          s.activeTab === "hands";
+        if (!playsVideos || e.metaKey || e.ctrlKey || e.altKey) return;
+        if (isHorizontalArrowOwnedByFocus(e.target)) return;
+        e.preventDefault();
+        const direction = key === "ArrowLeft" || key === "," ? -1 : 1;
+        stepFrames(direction * (e.shiftKey ? s.fps : 1));
       } else if (key === "ArrowDown" || key === "ArrowUp") {
         if (inTextEntry) return;
         e.preventDefault();
@@ -773,8 +824,8 @@ function EpisodeViewerInner({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-    // router / setIsPlaying are stable; the rest is read via keyStateRef.
-  }, [router, setIsPlaying]);
+    // router / setIsPlaying / stepFrames are stable; the rest is read via keyStateRef.
+  }, [router, setIsPlaying, stepFrames]);
 
   // Pagination functions
   const nextPage = () => {
