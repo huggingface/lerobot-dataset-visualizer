@@ -237,6 +237,65 @@ export function Switch({
   );
 }
 
+/** A few mutually exclusive choices side by side; the chosen one is highlighted. */
+export function Segmented<T extends string>({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+}: {
+  value: T;
+  onChange: (value: T) => void;
+  options: { value: T; label: React.ReactNode; title?: string }[];
+  ariaLabel: string;
+}) {
+  const move = (step: number) => {
+    const index = options.findIndex((o) => o.value === value);
+    const next = options[(index + step + options.length) % options.length];
+    if (next) onChange(next.value);
+  };
+  return (
+    <div
+      role="radiogroup"
+      aria-label={ariaLabel}
+      className="inline-flex shrink-0 overflow-hidden rounded-md border border-line"
+      onKeyDown={(e) => {
+        if (e.key === "ArrowRight") move(1);
+        else if (e.key === "ArrowLeft") move(-1);
+        else return;
+        e.preventDefault();
+        // Keep focus on the choice that is now selected (currentTarget is gone by the next frame).
+        const group = e.currentTarget;
+        requestAnimationFrame(() =>
+          group.querySelector<HTMLElement>('[aria-checked="true"]')?.focus(),
+        );
+      }}
+    >
+      {options.map((option) => {
+        const checked = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={checked}
+            tabIndex={checked ? 0 : -1}
+            title={option.title}
+            onClick={() => onChange(option.value)}
+            className={`border-l border-line px-2.5 py-1 text-xs transition-colors first:border-l-0 ${
+              checked
+                ? "bg-accent/15 text-accent-fg"
+                : "bg-fill text-fg-muted hover:bg-fill-strong hover:text-fg"
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Repo and episode above the videos, on every tab that plays an episode. */
 export function EpisodeHeader({
   repoId,

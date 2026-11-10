@@ -461,3 +461,64 @@ describe("v3.0 episode metadata row parsing helpers", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Frames tab: where each episode's first and last frame are sought
+// ---------------------------------------------------------------------------
+
+import { loadAllEpisodeFrameInfo } from "@/app/[org]/[dataset]/[episode]/fetch-data";
+import type { DatasetMetadata } from "@/utils/parquetUtils";
+
+describe("loadAllEpisodeFrameInfo (v2.x, one video per episode)", () => {
+  const info: DatasetMetadata = {
+    codebase_version: "v2.1",
+    robot_type: "so101_follower",
+    total_episodes: 3,
+    total_frames: 600,
+    total_tasks: 1,
+    total_videos: 3,
+    total_chunks: 1,
+    chunks_size: 1000,
+    fps: 30,
+    splits: { train: "0:3" },
+    data_path:
+      "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet",
+    video_path:
+      "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4",
+    features: {
+      action: { dtype: "float32", shape: [6], names: null },
+      "observation.images.top": {
+        dtype: "video",
+        shape: [480, 640, 3],
+        names: null,
+      },
+    },
+  };
+
+  test("seeks half a frame inside each episode, not on its boundary", async () => {
+    const data = await loadAllEpisodeFrameInfo("org/ds", "v2.1", info);
+    const frames = data.framesByCamera["observation.images.top"];
+
+    expect(data.cameras).toEqual(["observation.images.top"]);
+    expect(data.totalEpisodes).toBe(3);
+    expect(data.halfFrameSec).toBeCloseTo(1 / 60, 10);
+    expect(frames.map((f) => f.episodeIndex)).toEqual([0, 1, 2]);
+    expect(frames[1].videoUrl).toBe(
+      "https://huggingface.co/datasets/org/ds/resolve/main/videos/chunk-000/observation.images.top/episode_000001.mp4",
+    );
+    expect(frames[1].firstFrameTime).toBeCloseTo(1 / 60, 10);
+    // The file's length is only known once it is opened: null means "half a frame before the end".
+    expect(frames[1].lastFrameTime).toBeNull();
+  });
+
+  test("a dataset without cameras lists none", async () => {
+    const data = await loadAllEpisodeFrameInfo("org/ds", "v2.1", {
+      ...info,
+      features: { action: info.features.action },
+    });
+
+    expect(data.cameras).toEqual([]);
+    expect(data.framesByCamera).toEqual({});
+    expect(data.totalEpisodes).toBe(3);
+  });
+});

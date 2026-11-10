@@ -690,7 +690,12 @@ function EpisodeViewerInner({
       })
       .catch(() => {
         if (!mountedRef.current) return;
-        setEpisodeFramesData({ cameras: [], framesByCamera: {} });
+        setEpisodeFramesData({
+          cameras: [],
+          framesByCamera: {},
+          totalEpisodes: datasetInfo.total_episodes,
+          halfFrameSec: 0.5 / (datasetInfo.fps || 30),
+        });
       })
       .finally(() => {
         if (mountedRef.current) setFramesLoading(false);
