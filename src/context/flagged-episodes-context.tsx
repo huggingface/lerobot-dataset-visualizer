@@ -8,16 +8,12 @@ import React, {
   useMemo,
   useEffect,
 } from "react";
-
-const STORAGE_KEY = "flagged-episodes";
-
-function saveToStorage(s: Set<number>) {
-  try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify([...s]));
-  } catch {
-    /* ignore */
-  }
-}
+import {
+  flaggedStorageKey,
+  parseFlagged,
+  readFlagged,
+  writeFlagged,
+} from "@/utils/flaggedEpisodes";
 
 type FlaggedEpisodesContextType = {
   flagged: Set<number>;
@@ -25,6 +21,7 @@ type FlaggedEpisodesContextType = {
   has: (id: number) => boolean;
   toggle: (id: number) => void;
   addMany: (ids: number[]) => void;
+  removeMany: (ids: number[]) => void;
   clear: () => void;
 };
 
@@ -41,29 +38,46 @@ export function useFlaggedEpisodes() {
   return ctx;
 }
 
+function browserStorage(): Storage | undefined {
+  try {
+    return typeof window === "undefined" ? undefined : window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Flags for one dataset, kept in localStorage so a review spread over several sittings survives.
+ * Mount it with `key={repoId}`: the flags are read once, when the provider mounts. It only ever
+ * mounts in the browser (behind the episode loading gate), so reading storage up front is safe.
+ */
 export const FlaggedEpisodesProvider: React.FC<{
+  repoId: string;
   children: React.ReactNode;
-}> = ({ children }) => {
-  const [flagged, setFlagged] = useState<Set<number>>(new Set());
-  const [hydrated, setHydrated] = useState(false);
+}> = ({ repoId, children }) => {
+  const [flagged, setFlagged] = useState<Set<number>>(() =>
+    readFlagged(browserStorage(), repoId),
+  );
 
-  // Hydrate from sessionStorage after mount (avoids SSR/client mismatch)
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(STORAGE_KEY);
-      if (raw) setFlagged(new Set(JSON.parse(raw) as number[]));
-    } catch {
-      /* ignore */
-    }
-    setHydrated(true);
-  }, []);
+    writeFlagged(browserStorage(), repoId, flagged);
+  }, [flagged, repoId]);
 
-  // Only persist after hydration so the initial empty set doesn't
-  // overwrite stored flags when the component remounts.
+  // Another tab on the same dataset changed the flags: follow it.
   useEffect(() => {
-    if (!hydrated) return;
-    saveToStorage(flagged);
-  }, [flagged, hydrated]);
+    const key = flaggedStorageKey(repoId);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== key) return;
+      const next = parseFlagged(e.newValue);
+      setFlagged((prev) =>
+        prev.size === next.size && [...prev].every((id) => next.has(id))
+          ? prev
+          : next,
+      );
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [repoId]);
 
   const toggle = useCallback((id: number) => {
     setFlagged((prev) => {
@@ -78,11 +92,22 @@ export const FlaggedEpisodesProvider: React.FC<{
     setFlagged((prev) => {
       const next = new Set(prev);
       for (const id of ids) next.add(id);
-      return next;
+      return next.size === prev.size ? prev : next;
     });
   }, []);
 
-  const clear = useCallback(() => setFlagged(new Set()), []);
+  const removeMany = useCallback((ids: number[]) => {
+    setFlagged((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) next.delete(id);
+      return next.size === prev.size ? prev : next;
+    });
+  }, []);
+
+  const clear = useCallback(
+    () => setFlagged((prev) => (prev.size === 0 ? prev : new Set())),
+    [],
+  );
 
   const has = useCallback((id: number) => flagged.has(id), [flagged]);
 
@@ -93,9 +118,10 @@ export const FlaggedEpisodesProvider: React.FC<{
       has,
       toggle,
       addMany,
+      removeMany,
       clear,
     }),
-    [flagged, has, toggle, addMany, clear],
+    [flagged, has, toggle, addMany, removeMany, clear],
   );
 
   return (

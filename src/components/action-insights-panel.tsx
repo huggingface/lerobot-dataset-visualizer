@@ -10,7 +10,6 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
-import { useFlaggedEpisodes } from "@/context/flagged-episodes-context";
 import { CHART_CONFIG } from "@/utils/constants";
 import type {
   CrossEpisodeVarianceData,
@@ -20,7 +19,14 @@ import type {
   JerkyEpisode,
   AggAlignment,
 } from "@/app/[org]/[dataset]/[episode]/fetch-data";
-import { InlineLoading, PageHeader, Switch } from "@/components/ui";
+import {
+  EpisodeLink,
+  FlagAllButton,
+  FlagButton,
+  InlineLoading,
+  PageHeader,
+  Switch,
+} from "@/components/ui";
 
 const FullscreenCtx = React.createContext(false);
 const useIsFullscreen = () => React.useContext(FullscreenCtx);
@@ -139,58 +145,6 @@ function FullscreenWrapper({ children }: { children: React.ReactNode }) {
   );
 }
 
-function FlagBtn({ id }: { id: number }) {
-  const { has, toggle } = useFlaggedEpisodes();
-  const flagged = has(id);
-  return (
-    <button
-      onClick={() => toggle(id)}
-      title={flagged ? "Unflag episode" : "Flag for review"}
-      className={`p-0.5 rounded transition-colors ${flagged ? "text-rose-500 hover:text-flag-fg" : "text-fg-faint hover:text-fg-muted"}`}
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill={flagged ? "currentColor" : "none"}
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-        <line x1="4" y1="22" x2="4" y2="15" />
-      </svg>
-    </button>
-  );
-}
-
-function FlagAllBtn({ ids, label }: { ids: number[]; label?: string }) {
-  const { addMany } = useFlaggedEpisodes();
-  return (
-    <button
-      onClick={() => addMany(ids)}
-      className="text-xs text-fg-faint hover:text-flag-fg transition-colors flex items-center gap-1"
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="10"
-        height="10"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-        <line x1="4" y1="22" x2="4" y2="15" />
-      </svg>
-      {label ?? "Flag all"}
-    </button>
-  );
-}
 const COLORS = [
   "#f97316",
   "#3b82f6",
@@ -806,7 +760,7 @@ function JerkyEpisodesList({ episodes }: { episodes: JerkyEpisode[] }) {
           </span>
         </p>
         <div className="flex items-center gap-3">
-          <FlagAllBtn ids={display.map((e) => e.episodeIndex)} />
+          <FlagAllButton ids={display.map((e) => e.episodeIndex)} />
           {episodes.length > 15 && (
             <button
               onClick={() => setShowAll((v) => !v)}
@@ -833,9 +787,11 @@ function JerkyEpisodesList({ episodes }: { episodes: JerkyEpisode[] }) {
                 className="border-b border-line-subtle text-fg-soft"
               >
                 <td className="py-1">
-                  <FlagBtn id={e.episodeIndex} />
+                  <FlagButton id={e.episodeIndex} />
                 </td>
-                <td className="py-1 pr-3">ep {e.episodeIndex}</td>
+                <td className="py-1 pr-3">
+                  <EpisodeLink episode={e.episodeIndex} />
+                </td>
                 <td className="py-1 text-right tabular-nums">
                   {e.meanAbsDelta.toFixed(4)}
                 </td>

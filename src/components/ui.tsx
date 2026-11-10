@@ -1,7 +1,116 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
+import { useFlaggedEpisodes } from "@/context/flagged-episodes-context";
 import { setTheme, useTheme } from "@/utils/theme";
+
+/** Path of an episode's page, opened on the Episodes tab whatever tab was last used. */
+export function episodeHref(episode: number): string {
+  return `./episode_${episode}?tab=episodes`;
+}
+
+/**
+ * An episode named in an analysis (a jerky episode, an outlier, a thumbnail) that opens it. Without
+ * this the analysis tabs named episodes the reader then had to find by hand in the sidebar.
+ */
+export function EpisodeLink({
+  episode,
+  children,
+  className = "",
+}: {
+  episode: number;
+  children?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Link
+      href={episodeHref(episode)}
+      title={`Open episode ${episode}`}
+      className={`tabular underline-offset-2 transition-colors hover:text-accent-fg hover:underline focus-visible:text-accent-fg focus-visible:underline focus-visible:outline-none ${className}`}
+    >
+      {children ?? `ep ${episode}`}
+    </Link>
+  );
+}
+
+export function FlagIcon({
+  size = 12,
+  filled = false,
+}: {
+  size?: number;
+  filled?: boolean;
+}) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+      <line x1="4" y1="22" x2="4" y2="15" />
+    </svg>
+  );
+}
+
+/** Flags or unflags one episode. Rose only once flagged, per the colour semantics. */
+export function FlagButton({
+  id,
+  size = 12,
+  className = "",
+}: {
+  id: number;
+  size?: number;
+  className?: string;
+}) {
+  const { has, toggle } = useFlaggedEpisodes();
+  const flagged = has(id);
+  const label = flagged ? `Unflag episode ${id}` : `Flag episode ${id}`;
+  return (
+    <button
+      type="button"
+      onClick={() => toggle(id)}
+      title={label}
+      aria-label={label}
+      aria-pressed={flagged}
+      className={`rounded p-0.5 transition-colors ${flagged ? "text-rose-500 hover:text-flag-fg" : "text-fg-faint hover:text-fg-muted"} ${className}`}
+    >
+      <FlagIcon size={size} filled={flagged} />
+    </button>
+  );
+}
+
+/** Flags a whole list; once every one of them is flagged it offers to undo that instead. */
+export function FlagAllButton({
+  ids,
+  label = "Flag all",
+  unflagLabel = "Unflag all",
+}: {
+  ids: number[];
+  label?: string;
+  unflagLabel?: string;
+}) {
+  const { flagged, addMany, removeMany } = useFlaggedEpisodes();
+  const allFlagged = ids.length > 0 && ids.every((id) => flagged.has(id));
+  return (
+    <button
+      type="button"
+      disabled={ids.length === 0}
+      onClick={() => (allFlagged ? removeMany(ids) : addMany(ids))}
+      className={`flex items-center gap-1 text-xs transition-colors disabled:opacity-40 ${allFlagged ? "text-flag-fg hover:text-fg-muted" : "text-fg-faint hover:text-flag-fg"}`}
+    >
+      <FlagIcon size={10} filled={allFlagged} />
+      {allFlagged ? unflagLabel : label}
+    </button>
+  );
+}
 
 /**
  * Shared building blocks for the analysis tabs (Statistics, Filtering, Frames, Action Insights), so

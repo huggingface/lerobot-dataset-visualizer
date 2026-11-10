@@ -110,6 +110,11 @@ Series keys use `" | "` as delimiter (e.g. `observation.state | 0`).
 - Mocking fetch: `globalThis.fetch = mock(() => Promise.resolve(new Response(...))) as unknown as typeof fetch`
 - CI: `.github/workflows/test.yml` runs `bun test` on push/PR to main
 
+## Viewer state
+
+- The open tab is mirrored into `?tab=` (`searchWithTab`, the default Episodes tab is left out) with `replaceState`, so a link opens the same view and Back returns to an analysis tab after following an `EpisodeLink`. `sessionStorage` still carries the tab across sidebar navigation, whose links have no query.
+- Flagged episodes are stored per dataset in `localStorage` (`src/utils/flaggedEpisodes.ts`); mount `FlaggedEpisodesProvider` with `key={repoId}`.
+
 ## URL structure
 
 All dataset URLs:
@@ -150,5 +155,5 @@ Colours, surfaces and fonts follow the Hub (moon-landing). Tokens live in `src/a
 - **Color semantics**: orange (accent) = primary/active; rose (`rose-500`, `text-flag-fg`, `.btn-flagged`) is reserved for **flagged-episode** UI only — don't reuse it for generic accents. The annotation role colours (task aug cyan, subtask yellow, …) are semantic and stay as they are.
 - **Playhead**: the playback position (chart cursor, annotation timeline) uses `--playhead`, a neutral near-white, so it never reads as a series, a role or a flag.
 - **Buttons**: `.btn` (secondary), plus `.btn-active` for a selected toggle, `.btn-flagged` for flag filters/actions and `.btn-primary` for the main action. They live in `@layer components`, so a utility on the element (size, width) overrides them.
-- **Analysis tabs** (Statistics, Filtering, Frames, Action Insights) build on `src/components/ui.tsx`: `PageHeader`, `StatCard`, `InlineLoading` / `Spinner`, `Switch`; `EpisodeHeader` heads every tab that plays an episode. Tab roots are `w-full max-w-5xl mx-auto py-6 space-y-6` (`w-full` matters: `mx-auto` in the flex-column content area otherwise sizes the column to its content). Section cards are `bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10` with an `h3` of `text-sm font-semibold text-slate-200`.
+- **Analysis tabs** (Statistics, Filtering, Frames, Action Insights) build on `src/components/ui.tsx`: `PageHeader`, `StatCard`, `InlineLoading` / `Spinner`, `Switch`; `EpisodeHeader` heads every tab that plays an episode. An episode named in an analysis is an `EpisodeLink` (it opens that episode), and flagging goes through `FlagButton` / `FlagAllButton`. Tab roots are `w-full max-w-5xl mx-auto py-6 space-y-6` (`w-full` matters: `mx-auto` in the flex-column content area otherwise sizes the column to its content). Section cards are `bg-[var(--surface-1)]/60 rounded-lg p-5 border border-white/10` with an `h3` of `text-sm font-semibold text-slate-200`.
 - **Annotations** keeps its own skin (`annotations-skin.css`) for role colours (subtask yellow, plan blue, …); generic UI in it (focus, selection, primary button) uses the app `--accent`.

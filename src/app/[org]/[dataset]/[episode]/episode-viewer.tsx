@@ -8,7 +8,10 @@ import PlaybackBar from "@/components/playback-bar";
 import { TimeProvider, useTime, useTimeControls } from "@/context/time-context";
 import { useAuth } from "@/context/auth-context";
 import { getAuthToken } from "@/utils/auth";
-import { FlaggedEpisodesProvider } from "@/context/flagged-episodes-context";
+import {
+  FlaggedEpisodesProvider,
+  useFlaggedEpisodes,
+} from "@/context/flagged-episodes-context";
 import {
   AnnotationsProvider,
   useAnnotations,
@@ -37,6 +40,7 @@ import {
 } from "./fetch-data";
 import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
 import { CHART_CONFIG } from "@/utils/constants";
+import { searchWithTab } from "@/utils/tabUrl";
 import { parseInfo } from "@huggingface/lerobot";
 import type { DatasetMetadata } from "@/utils/parquetUtils";
 
@@ -122,26 +126,41 @@ function UrlTimeSync() {
 // during playback because it consumes `currentTime` from useTime. React
 // would unmount and remount every tab on every tick.
 /** Analysis tabs, grouped under "Advanced" so the bar leads with Episodes and 3D Replay. */
-const ADVANCED_TABS: { tab: ActiveTab; label: string; title?: string }[] = [
+const ADVANCED_TABS: { tab: ActiveTab; label: string; hint: string }[] = [
   {
     tab: "annotations",
     label: "Annotations",
-    title:
-      "Edit subtask / plan / memory / interjection / VQA atoms (lerobot v3.1 schema)",
+    hint: "Subtasks, plans, memory and VQA on the timeline",
   },
   {
     tab: "hands",
     label: "3D Hands",
-    title: "Synchronized wrists, hands and camera overlays",
+    hint: "Wrists, hands and camera overlays in sync",
   },
-  { tab: "statistics", label: "Statistics" },
-  { tab: "filtering", label: "Filtering" },
-  { tab: "frames", label: "Frames" },
-  { tab: "insights", label: "Action Insights" },
+  {
+    tab: "statistics",
+    label: "Statistics",
+    hint: "Size, cameras and episode lengths",
+  },
+  {
+    tab: "filtering",
+    label: "Filtering",
+    hint: "Find and flag episodes to remove",
+  },
+  {
+    tab: "frames",
+    label: "Frames",
+    hint: "First and last frame of every episode",
+  },
+  {
+    tab: "insights",
+    label: "Action Insights",
+    hint: "Chunk length, control delay, variance",
+  },
   {
     tab: "doctor",
     label: "Doctor",
-    title: "Dataset quality diagnostics (powered by lerobot-doctor)",
+    hint: "Quality checks by lerobot-doctor",
   },
 ];
 
@@ -156,6 +175,9 @@ function AdvancedTabsMenu({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const { count: flaggedCount } = useFlaggedEpisodes();
   const tabs = ADVANCED_TABS.filter((t) => t.tab !== "hands" || handsAvailable);
   const active = tabs.find((t) => t.tab === activeTab);
 
@@ -164,21 +186,62 @@ function AdvancedTabsMenu({
     const onPointerDown = (e: PointerEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
     window.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-    };
+    return () => window.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
+
+  // Opening moves focus into the menu, onto the open tab when it is one of these.
+  useEffect(() => {
+    if (!open) return;
+    const items = menuRef.current?.querySelectorAll<HTMLElement>(
+      '[role="menuitemradio"]',
+    );
+    if (!items?.length) return;
+    const current = [...items].find(
+      (item) => item.getAttribute("aria-checked") === "true",
+    );
+    (current ?? items[0]).focus();
+  }, [open]);
+
+  const close = (returnFocus: boolean) => {
+    setOpen(false);
+    if (returnFocus) buttonRef.current?.focus();
+  };
+
+  const onMenuKeyDown = (e: React.KeyboardEvent) => {
+    const items = [
+      ...(menuRef.current?.querySelectorAll<HTMLElement>(
+        '[role="menuitemradio"]',
+      ) ?? []),
+    ];
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    const focus = (i: number) => {
+      e.preventDefault();
+      // The viewer's own arrow-key handler changes episode; these keys belong to the menu.
+      e.stopPropagation();
+      items[(i + items.length) % items.length]?.focus();
+    };
+    if (e.key === "ArrowDown") focus(index + 1);
+    else if (e.key === "ArrowUp") focus(index - 1);
+    else if (e.key === "Home") focus(0);
+    else if (e.key === "End") focus(items.length - 1);
+    else if (e.key === "Escape") {
+      e.preventDefault();
+      close(true);
+    } else if (e.key === "Tab") setOpen(false);
+  };
 
   return (
     <div ref={rootRef} className="relative">
       <button
+        ref={buttonRef}
         onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" && !open) {
+            e.preventDefault();
+            setOpen(true);
+          }
+        }}
         aria-haspopup="menu"
         aria-expanded={open}
         data-active={active ? true : undefined}
@@ -209,27 +272,45 @@ function AdvancedTabsMenu({
       </button>
       {open && (
         <div
+          ref={menuRef}
           role="menu"
-          className="absolute left-0 top-full z-50 mt-1 min-w-[12rem] panel-raised bg-[var(--surface-1)] p-1.5 shadow-xl animate-menu-pop [transform-origin:top_left]"
+          aria-label="Advanced tabs"
+          onKeyDown={onMenuKeyDown}
+          className="absolute left-0 top-full z-50 mt-1 w-72 max-w-[calc(100vw-1rem)] panel-raised bg-[var(--surface-1)] p-1.5 shadow-xl animate-menu-pop [transform-origin:top_left]"
         >
-          {tabs.map(({ tab, label, title }) => (
-            <button
-              key={tab}
-              role="menuitem"
-              title={title}
-              onClick={() => {
-                onSelect(tab);
-                setOpen(false);
-              }}
-              className={`block w-full rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${
-                tab === activeTab
-                  ? "bg-accent/10 text-accent-fg"
-                  : "text-fg-soft hover:bg-fill hover:text-fg"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+          {tabs.map(({ tab, label, hint }) => {
+            const current = tab === activeTab;
+            return (
+              <button
+                key={tab}
+                role="menuitemradio"
+                aria-checked={current}
+                onClick={() => {
+                  onSelect(tab);
+                  close(true);
+                }}
+                className={`block w-full rounded-md px-2.5 py-1.5 text-left transition-colors focus:outline-none ${
+                  current
+                    ? "bg-accent/10"
+                    : "hover:bg-fill focus-visible:bg-fill"
+                }`}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span
+                    className={`text-sm ${current ? "text-accent-fg" : "text-fg"}`}
+                  >
+                    {label}
+                  </span>
+                  {tab === "filtering" && flaggedCount > 0 && (
+                    <span className="tabular rounded border border-rose-500/30 bg-rose-500/15 px-1.5 text-[10px] text-flag-fg">
+                      {flaggedCount} flagged
+                    </span>
+                  )}
+                </span>
+                <span className="block text-xs text-fg-muted">{hint}</span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -401,7 +482,10 @@ export default function EpisodeViewer({
 
   return (
     <TimeProvider duration={data!.duration}>
-      <FlaggedEpisodesProvider>
+      <FlaggedEpisodesProvider
+        key={data!.datasetInfo.repoId}
+        repoId={data!.datasetInfo.repoId}
+      >
         <AnnotationsProvider>
           <EpisodeBootstrap data={data!} />
           <EpisodeViewerInner data={data!} org={org} dataset={dataset} />
@@ -543,6 +627,18 @@ function EpisodeViewerInner({
       void import("@/components/replay-viewer");
     }
   }, [replaySupported]);
+
+  // The address bar names the open tab, so a copied link (or Back, after following an episode link
+  // out of an analysis tab) returns to this view. replaceState: switching tabs adds no history.
+  useEffect(() => {
+    const search = searchWithTab(window.location.search, activeTab, "episodes");
+    if (search === window.location.search) return;
+    const path = `${window.location.pathname}${search}`;
+    window.history.replaceState({}, "", path);
+    postParentMessageWithParams((params: URLSearchParams) => {
+      params.set("path", path);
+    });
+  }, [activeTab]);
 
   // Persist UI state across episode navigations. One effect instead of
   // three near-identical writes — fewer commit hooks per render and the
