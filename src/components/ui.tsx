@@ -281,6 +281,8 @@ export function Segmented<T extends string>({
         else if (e.key === "ArrowLeft") move(-1);
         else return;
         e.preventDefault();
+        // These arrows choose an option; they must not reach the viewer's own key handling.
+        e.stopPropagation();
         // Keep focus on the choice that is now selected (currentTarget is gone by the next frame).
         const group = e.currentTarget;
         requestAnimationFrame(() =>

@@ -42,8 +42,14 @@ export const SimpleVideosPlayer = ({
   handTracking,
 }: VideoPlayerProps) => {
   const [showHands, setShowHands] = React.useState(true);
-  const { currentTime, seek, externalSeekVersion, isPlaying, setIsPlaying } =
-    useTime();
+  const {
+    currentTime,
+    seek,
+    externalSeekVersion,
+    isPlaying,
+    setIsPlaying,
+    playbackRate,
+  } = useTime();
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   // Mirror videoRefs into state so the absolutely-positioned VQA overlay can
   // re-render with the actual <video> element once it mounts. Using a ref
@@ -233,9 +239,11 @@ export const SimpleVideosPlayer = ({
         if (info.isSegmented) {
           const segmentEnd = info.segmentEnd ?? video.duration;
           const segmentStart = info.segmentStart ?? 0;
+          // Only while playing: paused, a seek or a frame step onto the episode's last frames
+          // is a request to look at them, and looping would make them unreachable.
           if (
-            video.currentTime >=
-            segmentEnd - THRESHOLDS.VIDEO_SEGMENT_BOUNDARY
+            isPlayingRef.current &&
+            video.currentTime >= segmentEnd - THRESHOLDS.VIDEO_SEGMENT_BOUNDARY
           ) {
             // Primary drives the coordinated loop. Non-primary cameras
             // that race ahead just snap to segmentStart and wait — the
@@ -285,6 +293,8 @@ export const SimpleVideosPlayer = ({
       const handleEnded = info.isSegmented
         ? null
         : () => {
+            // Paused on the last frame (a seek or a frame step to the end): stay there.
+            if (!isPlayingRef.current) return;
             // Same coordinated loop strategy for non-segmented videos at
             // their natural end — primary drives, others wait for primary
             // to align them.
@@ -404,6 +414,16 @@ export const SimpleVideosPlayer = ({
     handle = video.requestVideoFrameCallback(onFrame);
     return () => video.cancelVideoFrameCallback(handle);
   }, [videosReady, firstVisibleIdx, videosInfo, seek]);
+
+  // Every camera plays at the chosen speed. The default rate is set too: reloading a video
+  // (an expired URL) resets its rate to the default.
+  useEffect(() => {
+    videoRefs.current.forEach((video) => {
+      if (!video) return;
+      video.defaultPlaybackRate = playbackRate;
+      video.playbackRate = playbackRate;
+    });
+  }, [playbackRate, videosReady, videosInfo]);
 
   // Handle play/pause — skip hidden videos
   useEffect(() => {

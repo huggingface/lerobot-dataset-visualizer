@@ -7,6 +7,11 @@ import React, {
   useEffect,
   useMemo,
 } from "react";
+import {
+  PLAYBACK_RATES,
+  frameCount,
+  stepFrames as framesFrom,
+} from "@/utils/playback";
 
 // `external` (default) — user-initiated seek (slider drag, chart click,
 //                        loop boundary reset). Bumps `externalSeekVersion`
@@ -23,12 +28,21 @@ type TimeControls = {
   subscribe: (cb: (t: number) => void) => () => void;
   setIsPlaying: React.Dispatch<React.SetStateAction<boolean>>;
   setDuration: React.Dispatch<React.SetStateAction<number>>;
+  /** Pauses and moves `frames` frames (negative: back), staying inside the episode. */
+  stepFrames: (frames: number) => void;
+  setPlaybackRate: (rate: number) => void;
 };
 
 type TimeContextType = TimeControls & {
   isPlaying: boolean;
   duration: number;
   currentTime: number;
+  /** Frames per second of the episode, or 0 when unknown: no frame stepping then. */
+  fps: number;
+  /** How many frames the episode has. */
+  frames: number;
+  /** 1 is real time. */
+  playbackRate: number;
   // Monotonically increasing counter that bumps on every `external` seek.
   // Sync effects compare the current value against a stored ref to detect
   // user-initiated seeks without relying on heuristics like "did the time
@@ -58,13 +72,37 @@ export const useTimeControls = () => {
   return ctx;
 };
 
+const RATE_KEY = "playbackRate";
+
+/** The speed chosen earlier in this browser tab: it should outlive an episode change. */
+function storedPlaybackRate(): number {
+  try {
+    const rate = Number(sessionStorage.getItem(RATE_KEY));
+    return (PLAYBACK_RATES as readonly number[]).includes(rate) ? rate : 1;
+  } catch {
+    return 1;
+  }
+}
+
 export const TimeProvider: React.FC<{
   children: React.ReactNode;
   duration: number;
-}> = ({ children, duration: initialDuration }) => {
+  fps?: number;
+  /**
+   * The episode's frame count, when known. A duration alone is not enough: on v2.x it is the last
+   * frame's timestamp, which is one frame short of the episode.
+   */
+  frames?: number;
+}> = ({
+  children,
+  duration: initialDuration,
+  fps = 0,
+  frames: knownFrames,
+}) => {
   const [currentTime, setCurrentTimeState] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(initialDuration);
+  const [playbackRate, setPlaybackRateState] = useState(storedPlaybackRate);
   const [externalSeekVersion, setExternalSeekVersion] = useState(0);
   const listeners = useRef<Set<(t: number) => void>>(new Set());
 
@@ -118,9 +156,44 @@ export const TimeProvider: React.FC<{
     return () => listeners.current.delete(cb);
   }, []);
 
+  const frames =
+    knownFrames && knownFrames > 0
+      ? knownFrames
+      : fps > 0
+        ? frameCount(duration, fps)
+        : 0;
+  // Read through a ref so stepping stays one stable function for the provider's lifetime.
+  const framesRef = useRef(frames);
+  framesRef.current = frames;
+  const stepFrames = useCallback(
+    (step: number) => {
+      if (!(fps > 0)) return;
+      // A step is for looking at one frame: playing on would move straight past it.
+      setIsPlaying(false);
+      updateTime(framesFrom(timeRef.current, fps, framesRef.current, step));
+    },
+    [fps, updateTime],
+  );
+
+  const setPlaybackRate = useCallback((rate: number) => {
+    setPlaybackRateState(rate);
+    try {
+      sessionStorage.setItem(RATE_KEY, String(rate));
+    } catch {
+      // Storage blocked: the speed lasts for this episode only.
+    }
+  }, []);
+
   const controls = useMemo(
-    () => ({ seek: updateTime, subscribe, setIsPlaying, setDuration }),
-    [updateTime, subscribe],
+    () => ({
+      seek: updateTime,
+      subscribe,
+      setIsPlaying,
+      setDuration,
+      stepFrames,
+      setPlaybackRate,
+    }),
+    [updateTime, subscribe, stepFrames, setPlaybackRate],
   );
   const value = useMemo(
     () => ({
@@ -129,8 +202,20 @@ export const TimeProvider: React.FC<{
       duration,
       currentTime,
       externalSeekVersion,
+      fps,
+      frames,
+      playbackRate,
     }),
-    [controls, isPlaying, duration, currentTime, externalSeekVersion],
+    [
+      controls,
+      isPlaying,
+      duration,
+      currentTime,
+      externalSeekVersion,
+      fps,
+      frames,
+      playbackRate,
+    ],
   );
 
   return (
