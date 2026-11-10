@@ -14,6 +14,7 @@ export type AggVelocityStat = {
   name: string;
   std: number; // normalized by motor range
   maxAbs: number; // normalized by motor range
+  /** Counts of Δa over `[lo, hi]`, which is symmetric about zero; outliers are in the end bins. */
   bins: number[];
   lo: number; // normalized by motor range
   hi: number; // normalized by motor range
@@ -77,7 +78,11 @@ export type EpisodeSeries = {
 
 const DISCRETE_THRESHOLD = 4; // ≤ this many unique values → discrete motor
 const ACTIVITY_THRESHOLD = 0.001; // 0.1% of motor range
-const VELOCITY_BINS = 30;
+/** Odd, so the middle bin is "no change". */
+const VELOCITY_BINS = 31;
+/** The share of changes the velocity histogram's range holds; the rest sit in its end bins. */
+const VELOCITY_REACH_QUANTILE = 0.995;
+const FINE_BINS = 1024;
 const MAX_ACF_LAG = 100;
 const ALIGNMENT_MAX_LAG = 30;
 /**
@@ -202,6 +207,174 @@ type BaseStats = Omit<
   "aggAutocorrelation" | "aggAlignment"
 >;
 
+/** Per motor, over the whole sample: its range, and where it is moving. */
+type MotorActivity = {
+  /** max − min of each dimension, or 1 for a dimension that never changes. */
+  motorRanges: Float64Array;
+  /** Dimensions taking only a few distinct values (a gripper that is open or closed). */
+  discrete: boolean[];
+  /** `[e * D + d]`: 1 where dimension d moves in episode e. */
+  active: Uint8Array;
+  /** Dimensions that move in at least one episode. */
+  globallyActive: Uint8Array;
+};
+
+function motorActivity(episodes: EpisodeSeries[], D: number): MotorActivity {
+  const E = episodes.length;
+
+  // Range over the whole sample, and whether the dimension only takes a few values.
+  const lo = new Float64Array(D).fill(Infinity);
+  const hi = new Float64Array(D).fill(-Infinity);
+  const uniques = Array.from({ length: D }, () => new Set<number>());
+  for (const { actions, length: T } of episodes) {
+    for (let t = 0; t < T; t++) {
+      for (let d = 0; d < D; d++) {
+        const v = actions[t * D + d];
+        if (v < lo[d]) lo[d] = v;
+        if (v > hi[d]) hi[d] = v;
+        if (uniques[d].size <= DISCRETE_THRESHOLD) uniques[d].add(v);
+      }
+    }
+  }
+  const motorRanges = new Float64Array(D);
+  for (let d = 0; d < D; d++) motorRanges[d] = hi[d] - lo[d] || 1;
+
+  // Is dimension d moving in episode e? p95(|Δa|) against 0.1% of its range.
+  const active = new Uint8Array(E * D);
+  for (let e = 0; e < E; e++) {
+    const { actions, length: T } = episodes[e];
+    if (T < 2) continue;
+    const absDeltas = new Float64Array(T - 1);
+    for (let d = 0; d < D; d++) {
+      for (let t = 1; t < T; t++) {
+        absDeltas[t - 1] = Math.abs(
+          actions[t * D + d] - actions[(t - 1) * D + d],
+        );
+      }
+      absDeltas.sort();
+      const p95 = absDeltas[Math.floor(absDeltas.length * 0.95)];
+      if (p95 >= motorRanges[d] * ACTIVITY_THRESHOLD) active[e * D + d] = 1;
+    }
+  }
+  const globallyActive = new Uint8Array(D);
+  for (let e = 0; e < E; e++) {
+    for (let d = 0; d < D; d++) if (active[e * D + d]) globallyActive[d] = 1;
+  }
+
+  return {
+    motorRanges,
+    discrete: uniques.map((values) => values.size <= DISCRETE_THRESHOLD),
+    active,
+    globallyActive,
+  };
+}
+
+/** Velocity: the distribution of Δa per dimension, pooled over the episodes where it moves. */
+function velocityStats(
+  episodes: EpisodeSeries[],
+  D: number,
+  actionNames: string[],
+  { motorRanges, discrete, active, globallyActive }: MotorActivity,
+): AggVelocityStat[] {
+  const E = episodes.length;
+  const stats: AggVelocityStat[] = [];
+  /** Calls `visit` with every Δa of dimension d that counts toward its statistics. */
+  const eachDelta = (d: number, visit: (delta: number) => void) => {
+    for (let e = 0; e < E; e++) {
+      // A dimension that never moves has no "active" episodes: describe all of them instead.
+      if (globallyActive[d] && !active[e * D + d]) continue;
+      const { actions, length: T } = episodes[e];
+      for (let t = 1; t < T; t++) {
+        visit(actions[t * D + d] - actions[(t - 1) * D + d]);
+      }
+    }
+  };
+
+  for (let d = 0; d < D; d++) {
+    const motorRange = motorRanges[d];
+    const base = {
+      name: shortName(actionNames[d]),
+      motorRange,
+      inactive: !globallyActive[d],
+      discrete: discrete[d],
+    };
+
+    let count = 0;
+    let sum = 0;
+    let maxAbs = 0;
+    eachDelta(d, (v) => {
+      count++;
+      sum += v;
+      const a = Math.abs(v);
+      if (a > maxAbs) maxAbs = a;
+    });
+    if (count === 0 || maxAbs === 0) {
+      const bins = new Array(VELOCITY_BINS).fill(0);
+      // Every change is zero: all of them in the middle bin.
+      bins[(VELOCITY_BINS - 1) / 2] = count;
+      stats.push({ ...base, std: 0, maxAbs: 0, bins, lo: 0, hi: 0 });
+      continue;
+    }
+
+    // The histogram's reach: the |Δa| that 99.5% of changes stay within, found from a fine
+    // histogram rather than a sort (there can be millions of them). Up to the largest change,
+    // one spike flattened everything else into the middle bins.
+    const mean = sum / count;
+    const fine = new Uint32Array(FINE_BINS);
+    let varSum = 0;
+    eachDelta(d, (v) => {
+      varSum += (v - mean) ** 2;
+      fine[
+        Math.min(FINE_BINS - 1, Math.floor((Math.abs(v) / maxAbs) * FINE_BINS))
+      ]++;
+    });
+    let within = 0;
+    let reach = maxAbs;
+    for (let i = 0; i < FINE_BINS; i++) {
+      within += fine[i];
+      if (within >= count * VELOCITY_REACH_QUANTILE) {
+        reach = ((i + 1) / FINE_BINS) * maxAbs;
+        break;
+      }
+    }
+
+    // Symmetric about zero, with an odd number of bins, so "no change" is the middle one and the
+    // two tails can be compared by eye. Changes beyond the reach land in the end bins.
+    const bins = new Array(VELOCITY_BINS).fill(0);
+    eachDelta(d, (v) => {
+      const b = Math.floor(((v + reach) / (2 * reach)) * VELOCITY_BINS);
+      bins[Math.max(0, Math.min(VELOCITY_BINS - 1, b))]++;
+    });
+    stats.push({
+      ...base,
+      std: Math.sqrt(varSum / count) / motorRange,
+      maxAbs: maxAbs / motorRange,
+      bins,
+      lo: -reach / motorRange,
+      hi: reach / motorRange,
+    });
+  }
+  return stats;
+}
+
+/**
+ * The per-motor velocity statistics of one or more episodes. The cross-episode statistics include
+ * them; this is for the episode on screen, before (or without) the dataset-wide analysis.
+ */
+export function computeVelocityStats(
+  episodes: EpisodeSeries[],
+  actionDim: number,
+  actionNames: string[],
+): AggVelocityStat[] {
+  if (episodes.length === 0 || actionDim === 0) return [];
+  return velocityStats(
+    episodes,
+    actionDim,
+    actionNames,
+    motorActivity(episodes, actionDim),
+  );
+}
+
 /** Everything but the lag statistics: one pass each over the frames. */
 function baseStats(input: CrossEpisodeInput): {
   stats: BaseStats;
@@ -261,113 +434,9 @@ function baseStats(input: CrossEpisodeInput): {
   );
   movementScores.sort((a, b) => a.totalMovement - b.totalMovement);
 
-  // ── Per dimension: range over the whole sample, and whether it only takes a few values ──
-  const lo = new Float64Array(D).fill(Infinity);
-  const hi = new Float64Array(D).fill(-Infinity);
-  const uniques = Array.from({ length: D }, () => new Set<number>());
-  for (const { actions, length: T } of episodes) {
-    for (let t = 0; t < T; t++) {
-      for (let d = 0; d < D; d++) {
-        const v = actions[t * D + d];
-        if (v < lo[d]) lo[d] = v;
-        if (v > hi[d]) hi[d] = v;
-        if (uniques[d].size <= DISCRETE_THRESHOLD) uniques[d].add(v);
-      }
-    }
-  }
-  const motorRanges = new Float64Array(D);
-  for (let d = 0; d < D; d++) motorRanges[d] = hi[d] - lo[d] || 1;
-
-  // ── Is dimension d moving in episode e? p95(|Δa|) against 0.1% of its range ──
-  const active = new Uint8Array(E * D);
-  for (let e = 0; e < E; e++) {
-    const { actions, length: T } = episodes[e];
-    if (T < 2) continue;
-    const absDeltas = new Float64Array(T - 1);
-    for (let d = 0; d < D; d++) {
-      for (let t = 1; t < T; t++) {
-        absDeltas[t - 1] = Math.abs(
-          actions[t * D + d] - actions[(t - 1) * D + d],
-        );
-      }
-      absDeltas.sort();
-      const p95 = absDeltas[Math.floor(absDeltas.length * 0.95)];
-      if (p95 >= motorRanges[d] * ACTIVITY_THRESHOLD) active[e * D + d] = 1;
-    }
-  }
-  const globallyActive = new Uint8Array(D);
-  for (let e = 0; e < E; e++) {
-    for (let d = 0; d < D; d++) if (active[e * D + d]) globallyActive[d] = 1;
-  }
-
-  // ── Velocity: the distribution of Δa per dimension, pooled over the episodes where it moves ──
-  const aggVelocity: AggVelocityStat[] = [];
-  for (let d = 0; d < D; d++) {
-    const motorRange = motorRanges[d];
-    const base = {
-      name: shortName(actionNames[d]),
-      motorRange,
-      inactive: !globallyActive[d],
-      discrete: uniques[d].size <= DISCRETE_THRESHOLD,
-    };
-    // A dimension that never moves has no "active" episodes: describe all of them instead.
-    const counts = (e: number) => !globallyActive[d] || active[e * D + d] === 1;
-
-    let count = 0;
-    let sum = 0;
-    let maxAbsRaw = 0;
-    let loRaw = Infinity;
-    let hiRaw = -Infinity;
-    for (let e = 0; e < E; e++) {
-      if (!counts(e)) continue;
-      const { actions, length: T } = episodes[e];
-      for (let t = 1; t < T; t++) {
-        const v = actions[t * D + d] - actions[(t - 1) * D + d];
-        count++;
-        sum += v;
-        const a = Math.abs(v);
-        if (a > maxAbsRaw) maxAbsRaw = a;
-        if (v < loRaw) loRaw = v;
-        if (v > hiRaw) hiRaw = v;
-      }
-    }
-    if (count === 0) {
-      aggVelocity.push({
-        ...base,
-        std: 0,
-        maxAbs: 0,
-        bins: new Array(VELOCITY_BINS).fill(0),
-        lo: 0,
-        hi: 0,
-      });
-      continue;
-    }
-    const mean = sum / count;
-    const loNorm = loRaw / motorRange;
-    const hiNorm = hiRaw / motorRange;
-    const binW = (hiNorm - loNorm || 1) / VELOCITY_BINS;
-    const bins = new Array(VELOCITY_BINS).fill(0);
-    let varSum = 0;
-    for (let e = 0; e < E; e++) {
-      if (!counts(e)) continue;
-      const { actions, length: T } = episodes[e];
-      for (let t = 1; t < T; t++) {
-        const v = actions[t * D + d] - actions[(t - 1) * D + d];
-        varSum += (v - mean) ** 2;
-        let b = Math.floor((v / motorRange - loNorm) / binW);
-        if (b >= VELOCITY_BINS) b = VELOCITY_BINS - 1;
-        bins[b]++;
-      }
-    }
-    aggVelocity.push({
-      ...base,
-      std: Math.sqrt(varSum / count) / motorRange,
-      maxAbs: maxAbsRaw / motorRange,
-      bins,
-      lo: loNorm,
-      hi: hiNorm,
-    });
-  }
+  const activity = motorActivity(episodes, D);
+  const { motorRanges, active } = activity;
+  const aggVelocity = velocityStats(episodes, D, actionNames, activity);
 
   // ── Jerkiness per episode: mean |Δa| over its moving dimensions, in units of motor range ──
   const jerkyEpisodes: JerkyEpisode[] = episodes

@@ -984,6 +984,7 @@ function EpisodeViewerInner({
             <Suspense fallback={<Loading />}>
               <FilteringPanel
                 repoId={datasetInfo.repoId}
+                episodeId={episodeId}
                 crossEpisodeData={crossEpData}
                 crossEpisodeLoading={crossEpisode.loading}
                 crossEpisodeProgress={crossEpisode.progress}

@@ -3,6 +3,7 @@ import {
   LAG_WINDOW_FRAMES,
   computeCrossEpisodeStats,
   computeCrossEpisodeStatsInSteps,
+  computeVelocityStats,
   planEpisodeSample,
   type EpisodeSeries,
 } from "@/utils/crossEpisode";
@@ -292,5 +293,97 @@ describe("computeCrossEpisodeStats", () => {
 
     expect(stepped).toEqual(computeCrossEpisodeStats(input(episodes, 3)));
     expect(pauses).toBe(2);
+  });
+});
+
+describe("velocity histograms", () => {
+  /** One episode whose single action follows `value(t)`. */
+  const single = (length: number, value: (t: number) => number) => {
+    const actions = new Float32Array(length);
+    for (let t = 0; t < length; t++) actions[t] = value(t);
+    return [{ index: 0, length, actions, states: null }];
+  };
+  const middle = (bins: number[]) => (bins.length - 1) / 2;
+
+  test("are symmetric about zero, with no change in the middle bin", () => {
+    // A steady ramp up, then the same ramp down: as many +1 steps as -1 steps.
+    const [stat] = computeVelocityStats(
+      single(401, (t) => (t <= 200 ? t : 400 - t)),
+      1,
+      ["action | j0"],
+    );
+
+    expect(stat.bins.length % 2).toBe(1);
+    expect(stat.lo).toBeCloseTo(-stat.hi, 12);
+    expect(stat.bins.reduce((a, b) => a + b, 0)).toBe(400);
+    const m = middle(stat.bins);
+    const below = stat.bins.slice(0, m).reduce((a, b) => a + b, 0);
+    const above = stat.bins.slice(m + 1).reduce((a, b) => a + b, 0);
+    expect(below).toBe(200);
+    expect(above).toBe(200);
+  });
+
+  test("one spike does not flatten the rest into a single bin", () => {
+    const rand = noise(5);
+    // Small jitter everywhere, and one jump two hundred times its size.
+    let level = 0;
+    const values = Array.from({ length: 2001 }, (_, t) => {
+      level += rand() * 0.02 + (t === 1000 ? 4 : 0);
+      return level;
+    });
+    const [stat] = computeVelocityStats(
+      single(values.length, (t) => values[t]),
+      1,
+      ["action | j0"],
+    );
+
+    // The reach covers the jitter, not the jump...
+    expect(stat.hi).toBeLessThan(stat.maxAbs / 20);
+    // ...so the jitter spreads over many bins instead of piling into the middle one.
+    const occupied = stat.bins.filter((count) => count > 0).length;
+    expect(occupied).toBeGreaterThan(15);
+    // The jump is still counted: in the last bin, with everything else.
+    expect(stat.bins.reduce((a, b) => a + b, 0)).toBe(2000);
+    expect(stat.bins[stat.bins.length - 1]).toBeGreaterThan(0);
+  });
+
+  test("a motor that never changes puts everything in the middle bin", () => {
+    const [stat] = computeVelocityStats(
+      single(100, () => 0.5),
+      1,
+      ["action | j0"],
+    );
+
+    expect(stat.inactive).toBe(true);
+    expect(stat.std).toBe(0);
+    expect(stat.bins[middle(stat.bins)]).toBe(99);
+    expect(stat.bins.reduce((a, b) => a + b, 0)).toBe(99);
+  });
+
+  test("a single episode is enough", () => {
+    const stats = computeVelocityStats(
+      single(300, (t) => Math.sin(0.05 * t)),
+      1,
+      ["action | elbow"],
+    );
+
+    expect(stats.length).toBe(1);
+    expect(stats[0].name).toBe("elbow");
+    expect(stats[0].std).toBeGreaterThan(0);
+    expect(computeVelocityStats([], 1, ["action | elbow"])).toEqual([]);
+  });
+
+  test("the dataset-wide statistics use the same histograms", () => {
+    const episodes = makeEpisodes({
+      count: 3,
+      length: 300,
+      dims: 2,
+      signal: wobble,
+    });
+    const names = ["action | j0", "action | j1"];
+
+    expect(computeCrossEpisodeStats(input(episodes, 2))!.aggVelocity).toEqual(
+      computeVelocityStats(episodes, 2, names),
+    );
   });
 });
