@@ -29,12 +29,14 @@ import { hasRobotModel } from "@/lib/so101-robot";
 import {
   crossEpisodeCache,
   datasetCacheKey,
+  datasetSchemaCache,
   episodeFramesCache,
   episodeLengthsCache,
   getEpisodeDataSafe,
   loadAllEpisodeLengths,
   loadAllEpisodeFrameInfo,
   loadCrossEpisodeActionVariance,
+  loadDatasetSchema,
   type EpisodeData,
 } from "./fetch-data";
 import { useCachedResource } from "@/utils/useCachedResource";
@@ -628,6 +630,12 @@ function EpisodeViewerInner({
       );
     },
   );
+  const schema = useCachedResource(
+    datasetSchemaCache,
+    cacheKey,
+    activeTab === "statistics",
+    () => loadDatasetSchema(repoId),
+  );
   const episodeLengthStats = lengths.data;
   const crossEpData = crossEpisode.data;
 
@@ -934,6 +942,8 @@ function EpisodeViewerInner({
               datasetInfo={datasetInfo}
               episodeLengthStats={episodeLengthStats}
               loading={lengths.loading}
+              schema={schema.data}
+              schemaLoading={schema.loading}
             />
           )}
 

@@ -140,13 +140,18 @@ export function PageHeader({
   );
 }
 
-/** A labelled number: the label styled like the sidebar's, the value large and tabular. */
+/**
+ * A labelled number: the label styled like the sidebar's, the value large and tabular. `detail`
+ * is a small line under it, for where the number comes from (the episode that holds a record).
+ */
 export function StatCard({
   label,
   value,
+  detail,
 }: {
   label: string;
   value: React.ReactNode;
+  detail?: React.ReactNode;
 }) {
   return (
     <div className="rounded-lg border border-line bg-[var(--surface-1)]/60 px-4 py-3 min-w-0">
@@ -159,6 +164,9 @@ export function StatCard({
       <p className="text-lg font-semibold text-fg tabular mt-1 truncate">
         {value}
       </p>
+      {detail && (
+        <p className="mt-0.5 truncate text-xs text-fg-muted">{detail}</p>
+      )}
     </div>
   );
 }
