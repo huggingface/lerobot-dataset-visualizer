@@ -255,13 +255,21 @@ export type EpisodeLengthStats = {
 export type EpisodeFrameInfo = {
   episodeIndex: number;
   videoUrl: string;
+  /** Seconds into `videoUrl`, half a frame past the episode's start: inside its first frame. */
   firstFrameTime: number;
-  lastFrameTime: number | null; // null = seek to video.duration on client
+  /** Inside the episode's last frame; null = half a frame before the file's end (v2.x). */
+  lastFrameTime: number | null;
+  /** Episode length in seconds, where the index gives it (v3.0). */
+  durationSec?: number;
 };
 
 export type EpisodeFramesData = {
   cameras: string[];
   framesByCamera: Record<string, EpisodeFrameInfo[]>;
+  /** Episodes in the dataset; more than are listed when the listing is sampled. */
+  totalEpisodes: number;
+  /** Half a frame, in seconds: how far before a file's end its last frame is sought. */
+  halfFrameSec: number;
 };
 
 export type EpisodeData = {
@@ -1471,10 +1479,15 @@ export async function loadAllEpisodeFrameInfo(
   version: string,
   info: DatasetMetadata,
 ): Promise<EpisodeFramesData> {
+  /// A timestamp on a frame boundary can resolve to either side of it: seeking to an episode's
+  /// exact start could show the previous episode's last frame. Half a frame in is unambiguous.
+  const halfFrameSec = 0.5 / (info.fps || 30);
+  const empty = { totalEpisodes: info.total_episodes, halfFrameSec };
   const videoFeatures = Object.entries(info.features).filter(
     ([, f]) => f.dtype === "video",
   );
-  if (videoFeatures.length === 0) return { cameras: [], framesByCamera: {} };
+  if (videoFeatures.length === 0)
+    return { cameras: [], framesByCamera: {}, ...empty };
 
   const cameras = videoFeatures.map(([key]) => key);
   const framesByCamera: Record<string, EpisodeFrameInfo[]> = {};
@@ -1494,12 +1507,13 @@ export async function loadAllEpisodeFrameInfo(
         framesByCamera[video.cameraKey]?.push({
           episodeIndex: episode.index,
           videoUrl: video.url,
-          firstFrameTime: video.fromSec,
-          lastFrameTime: Math.max(0, video.toSec - 0.05),
+          firstFrameTime: video.fromSec + halfFrameSec,
+          lastFrameTime: Math.max(video.fromSec, video.toSec - halfFrameSec),
+          durationSec: video.toSec - video.fromSec,
         });
       }
     }
-    return { cameras, framesByCamera };
+    return { cameras, framesByCamera, ...empty };
   }
 
   // v2.x — construct URLs from template
@@ -1515,12 +1529,12 @@ export async function loadAllEpisodeFrameInfo(
       framesByCamera[cam].push({
         episodeIndex: i,
         videoUrl: buildVersionedUrl(repoId, version, videoPath),
-        firstFrameTime: 0,
+        firstFrameTime: halfFrameSec,
         lastFrameTime: null,
       });
     }
   }
-  return { cameras, framesByCamera };
+  return { cameras, framesByCamera, ...empty };
 }
 
 // ─── Cross-episode action variance ──────────────────────────────

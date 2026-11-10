@@ -110,6 +110,12 @@ Series keys use `" | "` as delimiter (e.g. `observation.state | 0`).
 - Mocking fetch: `globalThis.fetch = mock(() => Promise.resolve(new Response(...))) as unknown as typeof fetch`
 - CI: `.github/workflows/test.yml` runs `bun test` on push/PR to main
 
+## Frames tab (`src/components/overview-panel.tsx`)
+
+- Thumbnails come from `frameThumbnails()` (`src/utils/frameThumbnails.ts`): a few hidden `<video>` decoders shared by the page, one per file and at most six at once, each seeking from frame to frame and handing them back as cached canvases. Never mount a `<video>` per thumbnail: in v3.0 dozens of episodes share a file, and a page of 48 opened it 48 times.
+- Seek inside a frame, not on its boundary: `loadAllEpisodeFrameInfo` gives `firstFrameTime` / `lastFrameTime` half a frame in from the episode's ends (`lastFrameTime: null` on v2.x means half a frame before the file's end). On the boundary the browser may show the neighbouring episode's frame.
+- The videos are loaded without CORS: frames are drawn, never read back.
+
 ## Viewer state
 
 - The open tab is mirrored into `?tab=` (`searchWithTab`, the default Episodes tab is left out) with `replaceState`, so a link opens the same view and Back returns to an analysis tab after following an `EpisodeLink`. `sessionStorage` still carries the tab across sidebar navigation, whose links have no query.
