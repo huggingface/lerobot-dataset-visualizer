@@ -110,6 +110,15 @@ Series keys use `" | "` as delimiter (e.g. `observation.state | 0`).
 - Mocking fetch: `globalThis.fetch = mock(() => Promise.resolve(new Response(...))) as unknown as typeof fetch`
 - CI: `.github/workflows/test.yml` runs `bun test` on push/PR to main
 
+## Dataset-wide analyses
+
+Episode lengths, the Frames listing and the cross-episode statistics describe the dataset, not the episode on screen.
+
+- They load through `useCachedResource` into the `AsyncCache`s exported from `fetch-data.ts` (`episodeLengthsCache`, `episodeFramesCache`, `crossEpisodeCache`), keyed by `datasetCacheKey(repoId)`. The viewer remounts on every episode change; without the cache each analysis ran again. Add a new dataset-wide load the same way, never as component state.
+- The cross-episode statistics are computed in `src/utils/crossEpisode.ts` (pure, tested) from flat `Float32Array`s; `loadCrossEpisodeActionVariance` only reads. It reads with `openParquetFile` + `readParquetColumnChunks`: no row objects, and nothing kept once the pass is over (`fetchParquetFile` keeps every byte for the life of the page).
+- A v3.0 data file is read a row group at a time, so an episode costs its file. `planEpisodeSample` picks the files first, within `MAX_CROSS_EPISODE_BYTES`, then the episodes from them.
+- Lag statistics (autocorrelation, state–action alignment) run on consecutive frames: at most `LAG_WINDOW_FRAMES` from the middle of a long episode. Never subsample frames for them: a lag across skipped frames is no longer in frames.
+
 ## Frames tab (`src/components/overview-panel.tsx`)
 
 - Thumbnails come from `frameThumbnails()` (`src/utils/frameThumbnails.ts`): a few hidden `<video>` decoders shared by the page, one per file and at most six at once, each seeking from frame to frame and handing them back as cached canvases. Never mount a `<video>` per thumbnail: in v3.0 dozens of episodes share a file, and a page of 48 opened it 48 times.

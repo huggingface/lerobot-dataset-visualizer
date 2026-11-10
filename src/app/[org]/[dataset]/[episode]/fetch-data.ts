@@ -3,8 +3,16 @@ import {
   fetchParquetFile,
   formatStringWithVars,
   nestedColumnValues,
+  openParquetFile,
   readParquetAsObjects,
+  readParquetColumnChunks,
 } from "@/utils/parquetUtils";
+import {
+  computeCrossEpisodeStatsInSteps,
+  planEpisodeSample,
+  type CrossEpisodeVarianceData,
+  type EpisodeSeries,
+} from "@/utils/crossEpisode";
 import { parquetMetadataAsync } from "hyparquet";
 import { pick } from "@/utils/pick";
 import {
@@ -12,6 +20,7 @@ import {
   buildVersionedUrl,
   getDatasetStats,
 } from "@/utils/versionUtils";
+import { AsyncCache } from "@/utils/asyncCache";
 import { CHART_CONFIG, EXCLUDED_COLUMNS } from "@/utils/constants";
 import {
   processChartDataGroups,
@@ -175,7 +184,37 @@ async function loadLeRobotEpisodes(
   repoId: string,
   totalEpisodes: number,
 ): Promise<LeRobotEpisode[]> {
-  return leRobotDataset(repoId).episodes({ offset: 0, limit: totalEpisodes });
+  const dataset = leRobotDataset(repoId);
+  let listing = allEpisodes.get(dataset);
+  if (!listing) {
+    listing = dataset.episodes({ offset: 0, limit: totalEpisodes });
+    const started = listing;
+    // A failed listing is not kept, so the next tab that needs it tries again.
+    started.catch(() => {
+      if (allEpisodes.get(dataset) === started) allEpisodes.delete(dataset);
+    });
+    allEpisodes.set(dataset, listing);
+  }
+  return listing;
+}
+
+/**
+ * The whole episode listing, per dataset instance (so per repo and token). Statistics, Frames and
+ * the cross-episode analysis each need it; they used to read and decode the index once each.
+ */
+const allEpisodes = new WeakMap<LeRobotDataset, Promise<LeRobotEpisode[]>>();
+
+/**
+ * Dataset-wide results, kept across episode changes: none of them depends on the episode on screen.
+ * Keyed by `datasetCacheKey`, which includes the token, since signing in can change what is readable.
+ */
+export const episodeLengthsCache = new AsyncCache<EpisodeLengthStats | null>(4);
+export const episodeFramesCache = new AsyncCache<EpisodeFramesData>(4);
+export const crossEpisodeCache =
+  new AsyncCache<CrossEpisodeVarianceData | null>(4);
+
+export function datasetCacheKey(repoId: string): string {
+  return `${repoId}\n${getAuthToken() ?? ""}`;
 }
 
 function toVideosInfo(
@@ -337,10 +376,14 @@ const MAX_CROSS_EPISODE_SAMPLE = parsePositiveIntEnv(
   120,
   10,
 );
-const MAX_CROSS_EPISODE_FRAMES_PER_EPISODE = parsePositiveIntEnv(
-  process.env.MAX_CROSS_EPISODE_FRAMES_PER_EPISODE,
-  2500,
-  100,
+/**
+ * Action and state bytes the cross-episode analysis may read. A data file comes a whole row group
+ * at a time, so this bounds how many files the sample is drawn from on a large dataset.
+ */
+const MAX_CROSS_EPISODE_BYTES = parsePositiveIntEnv(
+  process.env.MAX_CROSS_EPISODE_BYTES,
+  48 * 1024 * 1024,
+  1024 * 1024,
 );
 const PROGRESS_PARQUET_CANDIDATES = [
   "sarm_progress.parquet",
@@ -1367,15 +1410,14 @@ export async function loadAllEpisodeLengths(
   fps: number,
 ): Promise<EpisodeLengthStats | null> {
   try {
-    const dataset = leRobotDataset(repoId);
-    const { totalEpisodes } = await dataset.info();
-    const allEpisodes = (
-      await dataset.episodes({ offset: 0, limit: totalEpisodes })
-    ).map((episode) => ({ index: episode.index, length: episode.length }));
+    const { totalEpisodes } = await leRobotDataset(repoId).info();
+    const listing = (await loadLeRobotEpisodes(repoId, totalEpisodes)).map(
+      (episode) => ({ index: episode.index, length: episode.length }),
+    );
 
-    if (allEpisodes.length === 0) return null;
+    if (listing.length === 0) return null;
 
-    const withSeconds = allEpisodes.map((ep) => ({
+    const withSeconds = listing.map((ep) => ({
       episodeIndex: ep.index,
       frames: ep.length,
       lengthSeconds: Math.round((ep.length / fps) * 100) / 100,
@@ -1539,74 +1581,161 @@ export async function loadAllEpisodeFrameInfo(
 
 // ─── Cross-episode action variance ──────────────────────────────
 
-export type LowMovementEpisode = {
-  episodeIndex: number;
-  totalMovement: number;
+export type {
+  LowMovementEpisode,
+  AggVelocityStat,
+  AggAutocorrelation,
+  SpeedDistEntry,
+  AggAlignment,
+  JerkyEpisode,
+  CrossEpisodeVarianceData,
+} from "@/utils/crossEpisode";
+
+/** The names of a vector feature's components, however deeply info.json nests them. */
+function featureNames(names: unknown, dim: number): string[] | null {
+  while (typeof names === "object" && names !== null && !Array.isArray(names)) {
+    names = Object.values(names)[0];
+  }
+  return Array.isArray(names) && names.length === dim
+    ? (names as string[])
+    : null;
+}
+
+/** Runs `task` over `items`, at most `limit` at a time, keeping their order in the result. */
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  task: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        results[i] = await task(items[i]);
+      }
+    }),
+  );
+  return results;
+}
+
+type EpisodeRows = {
+  index: number;
+  /** Row offsets in the file; `toRow` exclusive, or null for "to the file's end" (v2.x). */
+  fromRow: number;
+  toRow: number | null;
 };
 
-export type AggVelocityStat = {
-  name: string;
-  std: number; // normalized by motor range
-  maxAbs: number; // normalized by motor range
-  bins: number[];
-  lo: number; // normalized by motor range
-  hi: number; // normalized by motor range
-  motorRange: number;
-  inactive?: boolean; // true if p95(|Δa|) < 1% of motor range
-  discrete?: boolean; // true if motor has very few unique values (e.g. open/close gripper)
-};
+/** Copies one row's vector into `out`; false when the cell is not a vector of numbers. */
+function writeVector(
+  out: Float32Array,
+  offset: number,
+  dim: number,
+  value: unknown,
+): boolean {
+  if (Array.isArray(value) || ArrayBuffer.isView(value)) {
+    const vector = value as ArrayLike<unknown>;
+    if (vector.length < dim) return false;
+    for (let d = 0; d < dim; d++) out[offset + d] = Number(vector[d]);
+    return true;
+  }
+  // A feature of shape [1] is stored as a plain number.
+  if (dim === 1 && (typeof value === "number" || typeof value === "bigint")) {
+    out[offset] = Number(value);
+    return true;
+  }
+  return false;
+}
 
-export type AggAutocorrelation = {
-  chartData: Record<string, number>[];
-  suggestedChunk: number | null;
-  shortKeys: string[];
-};
+/**
+ * Reads the action (and state) rows of the given episodes out of one data file, in a single pass
+ * over the row groups that hold them. An episode whose action rows cannot be read is left out.
+ */
+async function readEpisodeSeries(
+  url: string,
+  episodes: EpisodeRows[],
+  action: { key: string; dim: number },
+  state: { key: string; dim: number } | null,
+): Promise<EpisodeSeries[]> {
+  const file = await openParquetFile(url);
+  const metadata = await parquetMetadataAsync(file);
+  const numRows = Number(metadata.num_rows);
 
-export type SpeedDistEntry = {
-  episodeIndex: number;
-  speed: number;
-};
+  const targets = episodes
+    .map((episode) => {
+      const from = Math.min(episode.fromRow, numRows);
+      const to = Math.min(episode.toRow ?? numRows, numRows);
+      const length = Math.max(0, to - from);
+      return {
+        index: episode.index,
+        from,
+        to,
+        length,
+        actions: new Float32Array(length * action.dim),
+        states: state ? new Float32Array(length * state.dim) : null,
+        actionRows: 0,
+        stateRows: 0,
+      };
+    })
+    .filter((target) => target.length > 0);
+  if (targets.length === 0) return [];
 
-export type AggAlignment = {
-  ccData: { lag: number; max: number; mean: number; min: number }[];
-  meanPeakLag: number;
-  meanPeakCorr: number;
-  maxPeakLag: number;
-  maxPeakCorr: number;
-  minPeakLag: number;
-  minPeakCorr: number;
-  lagRangeMin: number;
-  lagRangeMax: number;
-  numPairs: number;
-};
+  await readParquetColumnChunks(
+    file,
+    state ? [action.key, state.key] : [action.key],
+    ({ columnName, columnData, rowStart, rowEnd }) => {
+      const isAction = columnName === action.key;
+      const dim = isAction ? action.dim : (state?.dim ?? 0);
+      for (const target of targets) {
+        const out = isAction ? target.actions : target.states;
+        if (!out) continue;
+        const from = Math.max(target.from, rowStart);
+        const to = Math.min(target.to, rowEnd);
+        let written = 0;
+        for (let row = from; row < to; row++) {
+          const offset = (row - target.from) * dim;
+          if (writeVector(out, offset, dim, columnData[row - rowStart])) {
+            written++;
+          }
+        }
+        if (isAction) target.actionRows += written;
+        else target.stateRows += written;
+      }
+    },
+    {
+      rowStart: Math.min(...targets.map((t) => t.from)),
+      rowEnd: Math.max(...targets.map((t) => t.to)),
+      metadata,
+    },
+  );
 
-export type JerkyEpisode = {
-  episodeIndex: number;
-  meanAbsDelta: number;
-};
-
-export type CrossEpisodeVarianceData = {
-  actionNames: string[];
-  timeBins: number[];
-  variance: number[][];
-  numEpisodes: number;
-  lowMovementEpisodes: LowMovementEpisode[];
-  aggVelocity: AggVelocityStat[];
-  aggAutocorrelation: AggAutocorrelation | null;
-  speedDistribution: SpeedDistEntry[];
-  jerkyEpisodes: JerkyEpisode[];
-  aggAlignment: AggAlignment | null;
-};
+  return targets
+    .filter((target) => target.actionRows === target.length)
+    .map((target) => ({
+      index: target.index,
+      length: target.length,
+      actions: target.actions,
+      states: target.stateRows === target.length ? target.states : null,
+    }));
+}
 
 export async function loadCrossEpisodeActionVariance(
   repoId: string,
   version: string,
   info: DatasetMetadata,
   fps: number,
-  maxEpisodes = MAX_CROSS_EPISODE_SAMPLE,
-  numTimeBins = 50,
+  options: {
+    maxEpisodes?: number;
+    numTimeBins?: number;
+    /** Called as data files finish: how many are read, out of how many. */
+    onProgress?: (progress: { done: number; total: number }) => void;
+  } = {},
 ): Promise<CrossEpisodeVarianceData | null> {
-  const cappedMaxEpisodes = Math.min(maxEpisodes, MAX_CROSS_EPISODE_SAMPLE);
+  const maxEpisodes = Math.min(
+    options.maxEpisodes ?? MAX_CROSS_EPISODE_SAMPLE,
+    MAX_CROSS_EPISODE_SAMPLE,
+  );
   const actionEntry = Object.entries(info.features).find(
     ([key, f]) => key === "action" && f.shape.length === 1,
   );
@@ -1622,659 +1751,129 @@ export async function loadCrossEpisodeActionVariance(
 
   const [actionKey, actionMeta] = actionEntry;
   const actionDim = actionMeta.shape[0];
-
-  let names: unknown = actionMeta.names;
-  while (typeof names === "object" && names !== null && !Array.isArray(names)) {
-    names = Object.values(names)[0];
-  }
   /// Some datasets list fewer names than the action has components (libero declares ["actions"]
   /// for a 7-wide action); index those instead of leaving components unnamed.
-  const actionNames =
-    Array.isArray(names) && names.length === actionDim
-      ? (names as string[]).map(
-          (n) => `${actionKey}${SERIES_NAME_DELIMITER}${n}`,
-        )
-      : Array.from(
-          { length: actionDim },
-          (_, i) => `${actionKey}${SERIES_NAME_DELIMITER}${i}`,
-        );
+  const actionNames = (
+    featureNames(actionMeta.names, actionDim) ??
+    Array.from({ length: actionDim }, (_, i) => `${i}`)
+  ).map((name) => `${actionKey}${SERIES_NAME_DELIMITER}${name}`);
 
   // State feature for alignment computation
   const stateEntry = Object.entries(info.features).find(
     ([key, f]) => key === "observation.state" && f.shape.length === 1,
   );
-  const stateKey = stateEntry?.[0] ?? null;
   const stateDim = stateEntry?.[1].shape[0] ?? 0;
+  const state =
+    stateEntry && stateDim > 0 ? { key: stateEntry[0], dim: stateDim } : null;
+  /// Any list of names is taken as it is, as before: a state whose names do not line up with its
+  /// components is paired with the actions by position.
+  let stateNames: unknown = stateEntry?.[1].names;
+  while (
+    typeof stateNames === "object" &&
+    stateNames !== null &&
+    !Array.isArray(stateNames)
+  ) {
+    stateNames = Object.values(stateNames)[0];
+  }
 
-  // Collect episode metadata
-  type EpMeta = {
-    index: number;
-    /** v3 only; v2 derives its per-episode path from the index. */
-    dataUrl?: string;
-    from: number;
-    to: number;
+  // Which episodes to read, and from which files.
+  const byFile = new Map<string, EpisodeRows[]>();
+  const addToFile = (url: string, episode: EpisodeRows) => {
+    const list = byFile.get(url);
+    if (list) list.push(episode);
+    else byFile.set(url, [episode]);
   };
-  const allEps: EpMeta[] = [];
 
   if (version === "v3.0") {
-    for (const episode of await loadLeRobotEpisodes(
-      repoId,
-      info.total_episodes,
-    )) {
-      if (!episode.data) continue;
-      allEps.push({
+    const candidates = (await loadLeRobotEpisodes(repoId, info.total_episodes))
+      .filter((episode) => episode.data)
+      .map((episode) => ({
         index: episode.index,
-        dataUrl: episode.data.url,
-        from: episode.data.fromRow,
-        to: episode.data.toRow,
-      });
+        file: episode.data!.url,
+        fromRow: episode.data!.fromRow,
+        toRow: episode.data!.toRow,
+      }));
+    /// The budget is in bytes read. A row costs about 5 bytes a component: a float32, plus the
+    /// list encoding around it (floats barely compress).
+    const rowBudget = Math.floor(
+      MAX_CROSS_EPISODE_BYTES / (5 * (actionDim + stateDim)),
+    );
+    for (const episode of planEpisodeSample(
+      candidates,
+      maxEpisodes,
+      rowBudget,
+    )) {
+      addToFile(episode.file, episode);
     }
   } else {
-    for (let i = 0; i < info.total_episodes; i++) {
-      allEps.push({ index: i, from: 0, to: 0 });
-    }
-  }
-
-  if (allEps.length < 2) {
-    console.warn(
-      `[cross-ep] Only ${allEps.length} episode(s) found in metadata, need ≥2`,
-    );
-    return null;
-  }
-  console.log(
-    `[cross-ep] Found ${allEps.length} episodes in metadata, sampling up to ${cappedMaxEpisodes}`,
-  );
-
-  // Sample episodes evenly
-  const sampled =
-    allEps.length <= cappedMaxEpisodes
-      ? allEps
-      : Array.from(
-          { length: cappedMaxEpisodes },
-          (_, i) =>
-            allEps[
-              Math.round((i * (allEps.length - 1)) / (cappedMaxEpisodes - 1))
-            ],
-        );
-
-  // Load action (and state) data per episode
-  const episodeActions: { index: number; actions: number[][] }[] = [];
-  const episodeStates: (number[][] | null)[] = [];
-
-  if (version === "v3.0") {
-    const byFile = new Map<string, EpMeta[]>();
-    for (const ep of sampled) {
-      const key = ep.dataUrl ?? "";
-      if (!byFile.has(key)) byFile.set(key, []);
-      byFile.get(key)!.push(ep);
-    }
-
-    const fileResults = await Promise.all(
-      [...byFile.values()].map(async (eps) => {
-        const ep0 = eps[0];
-        const fileEpActions: { index: number; actions: number[][] }[] = [];
-        const fileEpStates: (number[][] | null)[] = [];
-        try {
-          const buf = await fetchParquetFile(ep0.dataUrl ?? "");
-          const rows = await readParquetAsObjects(
-            buf,
-            stateKey ? [actionKey, stateKey] : [actionKey],
-          );
-
-          for (const ep of eps) {
-            const localTo = Math.min(rows.length, ep.to);
-            const actions: number[][] = [];
-            const states: number[][] = [];
-            for (let r = ep.from; r < localTo; r++) {
-              const raw = rows[r]?.[actionKey];
-              if (Array.isArray(raw)) actions.push(raw.map(Number));
-              if (stateKey) {
-                const sRaw = rows[r]?.[stateKey];
-                if (Array.isArray(sRaw)) states.push(sRaw.map(Number));
-              }
-            }
-            if (actions.length > 0) {
-              const sampledIndices = evenlySampleIndices(
-                actions.length,
-                Math.min(actions.length, MAX_CROSS_EPISODE_FRAMES_PER_EPISODE),
-              );
-              const sampledActions = sampledIndices.map((i) => actions[i]);
-              const sampledStates =
-                stateKey && states.length === actions.length
-                  ? sampledIndices.map((i) => states[i])
-                  : null;
-              fileEpActions.push({ index: ep.index, actions: sampledActions });
-              fileEpStates.push(stateKey ? sampledStates : null);
-            }
-          }
-        } catch {
-          /* skip file */
-        }
-        return { fileEpActions, fileEpStates };
-      }),
-    );
-    for (const { fileEpActions, fileEpStates } of fileResults) {
-      episodeActions.push(...fileEpActions);
-      episodeStates.push(...fileEpStates);
-    }
-  } else {
+    // v2.x: one small file per episode, so the sample is simply spread over the episodes.
     const chunkSize = info.chunks_size || 1000;
-    const epResults = await Promise.all(
-      sampled.map(async (ep) => {
-        const chunk = Math.floor(ep.index / chunkSize);
-        const dataPath = formatStringWithVars(info.data_path, {
-          episode_chunk: chunk.toString().padStart(3, "0"),
-          episode_index: ep.index.toString().padStart(6, "0"),
-        });
-        try {
-          const buf = await fetchParquetFile(
-            buildVersionedUrl(repoId, version, dataPath),
-          );
-          const rows = await readParquetAsObjects(
-            buf,
-            stateKey ? [actionKey, stateKey] : [actionKey],
-          );
-          const actions: number[][] = [];
-          const states: number[][] = [];
-          for (const row of rows) {
-            const raw = row[actionKey];
-            if (Array.isArray(raw)) {
-              actions.push(raw.map(Number));
-            } else {
-              const vec: number[] = [];
-              for (let d = 0; d < actionDim; d++) {
-                const v = row[`${actionKey}.${d}`] ?? row[d];
-                vec.push(typeof v === "number" ? v : Number(v) || 0);
-              }
-              actions.push(vec);
-            }
-            if (stateKey) {
-              const sRaw = row[stateKey];
-              if (Array.isArray(sRaw)) states.push(sRaw.map(Number));
-            }
-          }
-          if (actions.length > 0) {
-            const sampledIndices = evenlySampleIndices(
-              actions.length,
-              Math.min(actions.length, MAX_CROSS_EPISODE_FRAMES_PER_EPISODE),
-            );
-            const sampledActions = sampledIndices.map((i) => actions[i]);
-            const sampledStates =
-              stateKey && states.length === actions.length
-                ? sampledIndices.map((i) => states[i])
-                : null;
-            return {
-              index: ep.index,
-              actions: sampledActions,
-              states: sampledStates,
-            };
-          }
-        } catch {
-          /* skip */
-        }
-        return null;
-      }),
-    );
-    for (const result of epResults) {
-      if (result !== null) {
-        episodeActions.push({ index: result.index, actions: result.actions });
-        episodeStates.push(stateKey ? result.states : null);
-      }
+    for (const index of evenlySampleIndices(info.total_episodes, maxEpisodes)) {
+      const dataPath = formatStringWithVars(info.data_path, {
+        episode_chunk: Math.floor(index / chunkSize)
+          .toString()
+          .padStart(3, "0"),
+        episode_index: index.toString().padStart(6, "0"),
+      });
+      addToFile(buildVersionedUrl(repoId, version, dataPath), {
+        index,
+        fromRow: 0,
+        toRow: null,
+      });
     }
   }
 
-  if (episodeActions.length < 2) {
+  const sampled = [...byFile.values()].reduce((n, eps) => n + eps.length, 0);
+  if (sampled < 2) {
+    console.warn(`[cross-ep] Only ${sampled} episode(s) to read, need ≥2`);
+    return null;
+  }
+
+  // Decoding a file, and each stage of the statistics, is one long stretch of work on the main
+  // thread: a pause between them lets the page paint and respond.
+  const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+  const files = [...byFile.entries()];
+  let done = 0;
+  options.onProgress?.({ done, total: files.length });
+  const perFile = await mapLimit(files, 4, async ([url, episodes]) => {
+    let series: EpisodeSeries[] = [];
+    try {
+      series = await readEpisodeSeries(
+        url,
+        episodes,
+        { key: actionKey, dim: actionDim },
+        state,
+      );
+    } catch {
+      /* skip file */
+    }
+    options.onProgress?.({ done: ++done, total: files.length });
+    await pause();
+    return series;
+  });
+  const episodes = perFile.flat().sort((x, y) => x.index - y.index);
+
+  if (episodes.length < 2) {
     console.warn(
-      `[cross-ep] Only ${episodeActions.length} episode(s) had loadable action data out of ${sampled.length} sampled`,
+      `[cross-ep] Only ${episodes.length} episode(s) had loadable action data out of ${sampled} sampled`,
     );
     return null;
   }
-  console.log(
-    `[cross-ep] Loaded action data for ${episodeActions.length}/${sampled.length} episodes`,
-  );
 
-  // Resample each episode to numTimeBins and compute variance
-  const timeBins = Array.from(
-    { length: numTimeBins },
-    (_, i) => i / (numTimeBins - 1),
-  );
-  const sums = Array.from(
-    { length: numTimeBins },
-    () => new Float64Array(actionDim),
-  );
-  const sumsSq = Array.from(
-    { length: numTimeBins },
-    () => new Float64Array(actionDim),
-  );
-  const counts = new Uint32Array(numTimeBins);
-
-  for (const { actions: epActions } of episodeActions) {
-    const T = epActions.length;
-    for (let b = 0; b < numTimeBins; b++) {
-      const srcIdx = Math.min(Math.round(timeBins[b] * (T - 1)), T - 1);
-      const row = epActions[srcIdx];
-      for (let d = 0; d < actionDim; d++) {
-        const v = row[d] ?? 0;
-        sums[b][d] += v;
-        sumsSq[b][d] += v * v;
-      }
-      counts[b]++;
-    }
-  }
-
-  const variance: number[][] = [];
-  for (let b = 0; b < numTimeBins; b++) {
-    const row: number[] = [];
-    const n = counts[b];
-    for (let d = 0; d < actionDim; d++) {
-      if (n < 2) {
-        row.push(0);
-        continue;
-      }
-      const mean = sums[b][d] / n;
-      row.push(sumsSq[b][d] / n - mean * mean);
-    }
-    variance.push(row);
-  }
-
-  // Per-episode average movement per frame: mean L2 norm of frame-to-frame action deltas
-  const movementScores: LowMovementEpisode[] = episodeActions.map(
-    ({ index, actions: ep }) => {
-      if (ep.length < 2) return { episodeIndex: index, totalMovement: 0 };
-      let total = 0;
-      for (let t = 1; t < ep.length; t++) {
-        let sumSq = 0;
-        for (let d = 0; d < actionDim; d++) {
-          const delta = (ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0);
-          sumSq += delta * delta;
-        }
-        total += Math.sqrt(sumSq);
-      }
-      const avgPerFrame = total / (ep.length - 1);
-      return {
-        episodeIndex: index,
-        totalMovement: Math.round(avgPerFrame * 10000) / 10000,
-      };
+  return computeCrossEpisodeStatsInSteps(
+    {
+      episodes,
+      actionDim,
+      stateDim,
+      actionNames,
+      stateNames: Array.isArray(stateNames)
+        ? (stateNames as string[])
+        : Array.from({ length: stateDim }, (_, i) => `${i}`),
+      fps,
+      numTimeBins: options.numTimeBins,
     },
+    pause,
   );
-
-  movementScores.sort((a, b) => a.totalMovement - b.totalMovement);
-  const lowMovementEpisodes = movementScores.slice(0, 10);
-
-  // Precompute per-dimension normalization: motor range (max − min) and unique value count
-  const motorRanges: number[] = new Array(actionDim);
-  const motorUniqueCount: number[] = new Array(actionDim);
-  const DISCRETE_THRESHOLD = 4; // ≤ this many unique values → discrete motor
-  for (let d = 0; d < actionDim; d++) {
-    let lo = Infinity,
-      hi = -Infinity;
-    const uniqueVals = new Set<number>();
-    for (const { actions: ep } of episodeActions) {
-      for (let t = 0; t < ep.length; t++) {
-        const v = ep[t][d] ?? 0;
-        if (v < lo) lo = v;
-        if (v > hi) hi = v;
-        if (uniqueVals.size <= DISCRETE_THRESHOLD) uniqueVals.add(v);
-      }
-    }
-    motorRanges[d] = hi - lo || 1;
-    motorUniqueCount[d] = uniqueVals.size;
-  }
-
-  // Per-episode, per-dimension activity: p95(|Δa|) >= 1% of motor range
-  const ACTIVITY_THRESHOLD = 0.001; // 0.1% of motor range
-  // activeMap[episodeIdx][dimIdx] = true if motor d is active in that episode
-  const activeMap: boolean[][] = episodeActions.map(({ actions: ep }) => {
-    const flags: boolean[] = new Array(actionDim);
-    for (let d = 0; d < actionDim; d++) {
-      if (ep.length < 2) {
-        flags[d] = false;
-        continue;
-      }
-      const absDeltas: number[] = [];
-      for (let t = 1; t < ep.length; t++) {
-        absDeltas.push(Math.abs((ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0)));
-      }
-      absDeltas.sort((a, b) => a - b);
-      const p95 = absDeltas[Math.floor(absDeltas.length * 0.95)];
-      flags[d] = p95 >= motorRanges[d] * ACTIVITY_THRESHOLD;
-    }
-    return flags;
-  });
-  // A motor is globally inactive only if inactive in all episodes
-  const globallyActive: boolean[] = new Array(actionDim);
-  for (let d = 0; d < actionDim; d++) {
-    globallyActive[d] = activeMap.some((flags) => flags[d]);
-  }
-
-  // Aggregated velocity stats: pool deltas from all episodes, normalized by motor range
-  const shortName = (k: string) => {
-    const p = k.split(SERIES_NAME_DELIMITER);
-    return p.length > 1 ? p[p.length - 1] : k;
-  };
-
-  const aggVelocity: AggVelocityStat[] = (() => {
-    const binCount = 30;
-    const results: AggVelocityStat[] = [];
-    for (let d = 0; d < actionDim; d++) {
-      const motorRange = motorRanges[d];
-      const inactive = !globallyActive[d];
-      // Collect all deltas (unfiltered) for histogram display
-      const allDeltas: number[] = [];
-      // Collect only deltas from active episodes for stats
-      const activeDeltas: number[] = [];
-      for (let ei = 0; ei < episodeActions.length; ei++) {
-        const ep = episodeActions[ei].actions;
-        for (let t = 1; t < ep.length; t++) {
-          const delta = (ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0);
-          allDeltas.push(delta);
-          if (activeMap[ei][d]) activeDeltas.push(delta);
-        }
-      }
-      const deltas = activeDeltas.length > 0 ? activeDeltas : allDeltas;
-      const nUnique = motorUniqueCount[d];
-      const discrete = nUnique <= DISCRETE_THRESHOLD;
-      if (deltas.length === 0) {
-        results.push({
-          name: shortName(actionNames[d]),
-          std: 0,
-          maxAbs: 0,
-          bins: new Array(binCount).fill(0),
-          lo: 0,
-          hi: 0,
-          motorRange,
-          inactive,
-          discrete,
-        });
-        continue;
-      }
-      let sum = 0,
-        maxAbsRaw = 0,
-        loRaw = Infinity,
-        hiRaw = -Infinity;
-      for (const v of deltas) {
-        sum += v;
-        const a = Math.abs(v);
-        if (a > maxAbsRaw) maxAbsRaw = a;
-        if (v < loRaw) loRaw = v;
-        if (v > hiRaw) hiRaw = v;
-      }
-      const mean = sum / deltas.length;
-      let varSum = 0;
-      for (const v of deltas) varSum += (v - mean) ** 2;
-      const rawStd = Math.sqrt(varSum / deltas.length);
-      const std = rawStd / motorRange;
-      const maxAbs = maxAbsRaw / motorRange;
-      const lo = loRaw / motorRange;
-      const hi = hiRaw / motorRange;
-      const range = hi - lo || 1;
-      const binW = range / binCount;
-      const bins = new Array(binCount).fill(0);
-      for (const v of deltas) {
-        const normV = v / motorRange;
-        let b = Math.floor((normV - lo) / binW);
-        if (b >= binCount) b = binCount - 1;
-        bins[b]++;
-      }
-      results.push({
-        name: shortName(actionNames[d]),
-        std,
-        maxAbs,
-        bins,
-        lo,
-        hi,
-        motorRange,
-        inactive,
-        discrete,
-      });
-    }
-    return results;
-  })();
-
-  // Aggregated autocorrelation: average per-episode ACFs
-  const aggAutocorrelation: AggAutocorrelation | null = (() => {
-    const maxLag = Math.min(
-      100,
-      Math.floor(
-        episodeActions.reduce(
-          (min, e) => Math.min(min, e.actions.length),
-          Infinity,
-        ) / 2,
-      ),
-    );
-    if (maxLag < 2) return null;
-
-    const avgAcf: number[][] = Array.from({ length: actionDim }, () =>
-      new Array(maxLag).fill(0),
-    );
-    let epCount = 0;
-
-    for (const { actions: ep } of episodeActions) {
-      if (ep.length < maxLag * 2) continue;
-      epCount++;
-      for (let d = 0; d < actionDim; d++) {
-        const vals = ep.map((row) => row[d] ?? 0);
-        const n = vals.length;
-        const m = vals.reduce((a, b) => a + b, 0) / n;
-        const centered = vals.map((v) => v - m);
-        const vari = centered.reduce((a, v) => a + v * v, 0);
-        if (vari === 0) continue;
-        for (let lag = 1; lag <= maxLag; lag++) {
-          let s = 0;
-          for (let t = 0; t < n - lag; t++)
-            s += centered[t] * centered[t + lag];
-          avgAcf[d][lag - 1] += s / vari;
-        }
-      }
-    }
-
-    if (epCount === 0) return null;
-    for (let d = 0; d < actionDim; d++)
-      for (let l = 0; l < maxLag; l++) avgAcf[d][l] /= epCount;
-
-    const shortKeys = actionNames.map(shortName);
-    const chartData = Array.from({ length: maxLag }, (_, lag) => {
-      const row: Record<string, number> = {
-        lag: lag + 1,
-        time: (lag + 1) / fps,
-      };
-      shortKeys.forEach((k, d) => {
-        row[k] = avgAcf[d][lag];
-      });
-      return row;
-    });
-
-    // Suggested chunk: median lag where ACF drops below 0.5
-    const lags = avgAcf
-      .map((acf) => {
-        const i = acf.findIndex((v) => v < 0.5);
-        return i >= 0 ? i + 1 : null;
-      })
-      .filter(Boolean) as number[];
-    const suggestedChunk =
-      lags.length > 0
-        ? lags.sort((a, b) => a - b)[Math.floor(lags.length / 2)]
-        : null;
-
-    return { chartData, suggestedChunk, shortKeys };
-  })();
-
-  // Per-episode jerkiness: mean |Δa| across dimensions active in that episode, normalized by motor range
-  const jerkyEpisodes: JerkyEpisode[] = episodeActions
-    .map(({ index, actions: ep }, ei) => {
-      let sum = 0,
-        count = 0;
-      for (let t = 1; t < ep.length; t++) {
-        for (let d = 0; d < actionDim; d++) {
-          if (!activeMap[ei][d]) continue; // skip motors inactive in this episode
-          sum +=
-            Math.abs((ep[t][d] ?? 0) - (ep[t - 1][d] ?? 0)) / motorRanges[d];
-          count++;
-        }
-      }
-      return { episodeIndex: index, meanAbsDelta: count > 0 ? sum / count : 0 };
-    })
-    .sort((a, b) => b.meanAbsDelta - a.meanAbsDelta);
-
-  // Speed distribution: all episode movement scores (not just lowest 10)
-  const speedDistribution: SpeedDistEntry[] = movementScores.map((s) => ({
-    episodeIndex: s.episodeIndex,
-    speed: s.totalMovement,
-  }));
-
-  // Aggregated state-action alignment across episodes
-  const aggAlignment: AggAlignment | null = (() => {
-    if (!stateKey || stateDim === 0) return null;
-
-    let sNms: unknown = stateEntry![1].names;
-    while (typeof sNms === "object" && sNms !== null && !Array.isArray(sNms))
-      sNms = Object.values(sNms)[0];
-    const stateNames = Array.isArray(sNms)
-      ? (sNms as string[])
-      : Array.from({ length: stateDim }, (_, i) => `${i}`);
-    const actionSuffixes = actionNames.map((n) => {
-      const p = n.split(SERIES_NAME_DELIMITER);
-      return p[p.length - 1];
-    });
-
-    // Match pairs by suffix, fall back to index
-    const pairs: [number, number][] = [];
-    for (let ai = 0; ai < actionDim; ai++) {
-      const si = stateNames.findIndex((s) => s === actionSuffixes[ai]);
-      if (si >= 0) pairs.push([ai, si]);
-    }
-    if (pairs.length === 0) {
-      const count = Math.min(actionDim, stateDim);
-      for (let i = 0; i < count; i++) pairs.push([i, i]);
-    }
-    if (pairs.length === 0) return null;
-
-    const maxLag = 30;
-    const numLags = 2 * maxLag + 1;
-    const corrSums = pairs.map(() => new Float64Array(numLags));
-    const corrCounts = pairs.map(() => new Uint32Array(numLags));
-
-    for (let ei = 0; ei < episodeActions.length; ei++) {
-      const states = episodeStates[ei];
-      if (!states) continue;
-      const { actions } = episodeActions[ei];
-      const n = Math.min(actions.length, states.length);
-      if (n < 10) continue;
-
-      for (let pi = 0; pi < pairs.length; pi++) {
-        const [ai, si] = pairs[pi];
-        const aDeltas = Array.from(
-          { length: n - 1 },
-          (_, t) => (actions[t + 1][ai] ?? 0) - (actions[t][ai] ?? 0),
-        );
-        const sDeltas = Array.from(
-          { length: n - 1 },
-          (_, t) => (states[t + 1][si] ?? 0) - (states[t][si] ?? 0),
-        );
-        const effN = aDeltas.length;
-        if (effN < 4) continue;
-        const aM = aDeltas.reduce((a, b) => a + b, 0) / effN;
-        const sM = sDeltas.reduce((a, b) => a + b, 0) / effN;
-
-        for (let li = 0; li < numLags; li++) {
-          const lag = -maxLag + li;
-          let sum = 0,
-            aV = 0,
-            sV = 0;
-          for (let t = 0; t < effN; t++) {
-            const sIdx = t + lag;
-            if (sIdx < 0 || sIdx >= effN) continue;
-            const a = aDeltas[t] - aM,
-              s = sDeltas[sIdx] - sM;
-            sum += a * s;
-            aV += a * a;
-            sV += s * s;
-          }
-          const d = Math.sqrt(aV * sV);
-          if (d > 0) {
-            corrSums[pi][li] += sum / d;
-            corrCounts[pi][li]++;
-          }
-        }
-      }
-    }
-
-    const avgCorrs = pairs.map((_, pi) =>
-      Array.from({ length: numLags }, (_, li) =>
-        corrCounts[pi][li] > 0 ? corrSums[pi][li] / corrCounts[pi][li] : 0,
-      ),
-    );
-
-    const ccData = Array.from({ length: numLags }, (_, li) => {
-      const lag = -maxLag + li;
-      const vals = avgCorrs.map((pc) => pc[li]);
-      return {
-        lag,
-        max: Math.max(...vals),
-        mean: vals.reduce((a, b) => a + b, 0) / vals.length,
-        min: Math.min(...vals),
-      };
-    });
-
-    let meanPeakLag = 0,
-      meanPeakCorr = -Infinity;
-    let maxPeakLag = 0,
-      maxPeakCorr = -Infinity;
-    let minPeakLag = 0,
-      minPeakCorr = -Infinity;
-    for (const row of ccData) {
-      if (row.max > maxPeakCorr) {
-        maxPeakCorr = row.max;
-        maxPeakLag = row.lag;
-      }
-      if (row.mean > meanPeakCorr) {
-        meanPeakCorr = row.mean;
-        meanPeakLag = row.lag;
-      }
-      if (row.min > minPeakCorr) {
-        minPeakCorr = row.min;
-        minPeakLag = row.lag;
-      }
-    }
-
-    const perPairPeakLags = avgCorrs.map((pc) => {
-      let best = -Infinity,
-        bestLag = 0;
-      for (let li = 0; li < pc.length; li++) {
-        if (pc[li] > best) {
-          best = pc[li];
-          bestLag = -maxLag + li;
-        }
-      }
-      return bestLag;
-    });
-
-    return {
-      ccData,
-      meanPeakLag,
-      meanPeakCorr,
-      maxPeakLag,
-      maxPeakCorr,
-      minPeakLag,
-      minPeakCorr,
-      lagRangeMin: Math.min(...perPairPeakLags),
-      lagRangeMax: Math.max(...perPairPeakLags),
-      numPairs: pairs.length,
-    };
-  })();
-
-  return {
-    actionNames,
-    timeBins,
-    variance,
-    numEpisodes: episodeActions.length,
-    lowMovementEpisodes,
-    aggVelocity,
-    aggAutocorrelation,
-    speedDistribution,
-    jerkyEpisodes,
-    aggAlignment,
-  };
 }
 
 // Load only flatChartData for a specific episode (used by the 3D Replay viewer's episode switching)

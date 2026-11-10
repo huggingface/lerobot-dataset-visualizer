@@ -19,6 +19,7 @@ import {
   FlagIcon,
   InlineLoading,
   PageHeader,
+  crossEpisodeLoadingLabel,
 } from "@/components/ui";
 
 // ─── Lowest-Movement Episodes ────────────────────────────────────
@@ -180,6 +181,7 @@ interface FilteringPanelProps {
   repoId: string;
   crossEpisodeData: CrossEpisodeVarianceData | null;
   crossEpisodeLoading: boolean;
+  crossEpisodeProgress?: { done: number; total: number } | null;
   episodeLengthStats: EpisodeLengthStats | null;
   flatChartData: Record<string, number>[];
   onViewFlaggedEpisodes?: () => void;
@@ -312,6 +314,7 @@ function FilteringPanel({
   repoId,
   crossEpisodeData,
   crossEpisodeLoading,
+  crossEpisodeProgress,
   episodeLengthStats,
   flatChartData,
   onViewFlaggedEpisodes,
@@ -334,7 +337,9 @@ function FilteringPanel({
 
       {crossEpisodeLoading && (
         <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line">
-          <InlineLoading label="Loading cross-episode data…" />
+          <InlineLoading
+            label={crossEpisodeLoadingLabel(crossEpisodeProgress)}
+          />
         </div>
       )}
 

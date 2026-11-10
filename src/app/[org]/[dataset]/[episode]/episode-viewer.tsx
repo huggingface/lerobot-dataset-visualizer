@@ -27,17 +27,17 @@ import { EpisodeHeader, ThemeToggle } from "@/components/ui";
 import { useTheme } from "@/utils/theme";
 import { hasRobotModel } from "@/lib/so101-robot";
 import {
-  computeColumnMinMax,
+  crossEpisodeCache,
+  datasetCacheKey,
+  episodeFramesCache,
+  episodeLengthsCache,
   getEpisodeDataSafe,
   loadAllEpisodeLengths,
   loadAllEpisodeFrameInfo,
   loadCrossEpisodeActionVariance,
   type EpisodeData,
-  type ColumnMinMax,
-  type EpisodeLengthStats,
-  type EpisodeFramesData,
-  type CrossEpisodeVarianceData,
 } from "./fetch-data";
+import { useCachedResource } from "@/utils/useCachedResource";
 import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
 import { CHART_CONFIG } from "@/utils/constants";
 import { searchWithTab } from "@/utils/tabUrl";
@@ -579,15 +579,6 @@ function EpisodeViewerInner({
       );
     }
   }, [isLoading, videosReady, chartsReady]);
-  const [, setColumnMinMax] = useState<ColumnMinMax[] | null>(null);
-  const [episodeLengthStats, setEpisodeLengthStats] =
-    useState<EpisodeLengthStats | null>(null);
-  const [statsLoading, setStatsLoading] = useState(false);
-  const statsLoadedRef = useRef(false);
-  const [episodeFramesData, setEpisodeFramesData] =
-    useState<EpisodeFramesData | null>(null);
-  const [framesLoading, setFramesLoading] = useState(false);
-  const framesLoadedRef = useRef(false);
   const [framesFlaggedOnly, setFramesFlaggedOnly] = useState(() =>
     typeof window !== "undefined"
       ? sessionStorage.getItem("framesFlaggedOnly") === "true"
@@ -598,27 +589,47 @@ function EpisodeViewerInner({
       ? sessionStorage.getItem("sidebarFlaggedOnly") === "true"
       : false,
   );
-  const [crossEpData, setCrossEpData] =
-    useState<CrossEpisodeVarianceData | null>(null);
-  const [insightsLoading, setInsightsLoading] = useState(false);
-  const insightsLoadedRef = useRef(false);
-  const mountedRef = useRef(true);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    statsLoadedRef.current = false;
-    framesLoadedRef.current = false;
-    insightsLoadedRef.current = false;
-    setEpisodeLengthStats(null);
-    setEpisodeFramesData(null);
-    setCrossEpData(null);
-  }, [datasetInfo.repoId]);
+  // Dataset-wide analyses, loaded when a tab first needs them and kept in a cache keyed by the
+  // dataset: this component remounts on every episode change, and none of them depends on the
+  // episode. Coming back to a tab, or opening another episode, finds them already there.
+  const repoId = datasetInfo.repoId;
+  const cacheKey = datasetCacheKey(repoId);
+  const lengths = useCachedResource(
+    episodeLengthsCache,
+    cacheKey,
+    activeTab === "statistics" || activeTab === "filtering",
+    () => loadAllEpisodeLengths(repoId, datasetInfo.fps),
+  );
+  const frames = useCachedResource(
+    episodeFramesCache,
+    cacheKey,
+    activeTab === "frames",
+    async () => {
+      const { version, info } = await getDatasetVersionAndInfo(repoId);
+      return loadAllEpisodeFrameInfo(
+        repoId,
+        version,
+        info as unknown as DatasetMetadata,
+      );
+    },
+  );
+  const crossEpisode = useCachedResource(
+    crossEpisodeCache,
+    cacheKey,
+    activeTab === "insights" || activeTab === "filtering",
+    async (onProgress) => {
+      const { version, info } = await getDatasetVersionAndInfo(repoId);
+      return loadCrossEpisodeActionVariance(
+        repoId,
+        version,
+        info as unknown as DatasetMetadata,
+        info.fps,
+        { onProgress },
+      );
+    },
+  );
+  const episodeLengthStats = lengths.data;
+  const crossEpData = crossEpisode.data;
 
   // Eagerly load the ReplayViewer bundle while the user is on the Episodes tab,
   // so the 3D Replay tab opens faster.
@@ -649,105 +660,7 @@ function EpisodeViewerInner({
     sessionStorage.setItem("framesFlaggedOnly", String(framesFlaggedOnly));
   }, [activeTab, sidebarFlaggedOnly, framesFlaggedOnly]);
 
-  const loadStats = () => {
-    if (statsLoadedRef.current) return;
-    statsLoadedRef.current = true;
-    setStatsLoading(true);
-    setColumnMinMax(computeColumnMinMax(data.chartDataGroups));
-    if (org && dataset) {
-      const repoId = `${org}/${dataset}`;
-      getDatasetVersionAndInfo(repoId)
-        .then(({ info }) => loadAllEpisodeLengths(repoId, info.fps))
-        .then((result) => {
-          if (!mountedRef.current) return;
-          setEpisodeLengthStats(result);
-        })
-        .catch(() => {})
-        .finally(() => {
-          if (mountedRef.current) setStatsLoading(false);
-        });
-    } else {
-      setStatsLoading(false);
-    }
-  };
-
-  const loadFrames = () => {
-    if (framesLoadedRef.current || !org || !dataset) return;
-    framesLoadedRef.current = true;
-    setFramesLoading(true);
-    const repoId = `${org}/${dataset}`;
-    getDatasetVersionAndInfo(repoId)
-      .then(({ version, info }) =>
-        loadAllEpisodeFrameInfo(
-          repoId,
-          version,
-          info as unknown as DatasetMetadata,
-        ),
-      )
-      .then((result) => {
-        if (!mountedRef.current) return;
-        setEpisodeFramesData(result);
-      })
-      .catch(() => {
-        if (!mountedRef.current) return;
-        setEpisodeFramesData({
-          cameras: [],
-          framesByCamera: {},
-          totalEpisodes: datasetInfo.total_episodes,
-          halfFrameSec: 0.5 / (datasetInfo.fps || 30),
-        });
-      })
-      .finally(() => {
-        if (mountedRef.current) setFramesLoading(false);
-      });
-  };
-
-  const loadInsights = () => {
-    if (insightsLoadedRef.current || !org || !dataset) return;
-    insightsLoadedRef.current = true;
-    setInsightsLoading(true);
-    const repoId = `${org}/${dataset}`;
-    getDatasetVersionAndInfo(repoId)
-      .then(({ version, info }) =>
-        loadCrossEpisodeActionVariance(
-          repoId,
-          version,
-          info as unknown as DatasetMetadata,
-          info.fps,
-        ),
-      )
-      .then((result) => {
-        if (!mountedRef.current) return;
-        setCrossEpData(result);
-      })
-      .catch((err) => console.error("[cross-ep] Failed:", err))
-      .finally(() => {
-        if (mountedRef.current) setInsightsLoading(false);
-      });
-  };
-
-  // Re-trigger data loading for the restored tab on mount
-  useEffect(() => {
-    if (activeTab === "statistics") loadStats();
-    if (activeTab === "frames") loadFrames();
-    if (activeTab === "insights") loadInsights();
-    if (activeTab === "filtering") {
-      loadStats();
-      loadInsights();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleTabChange = (tab: ActiveTab) => {
-    setActiveTab(tab);
-    if (tab === "statistics") loadStats();
-    if (tab === "frames") loadFrames();
-    if (tab === "insights") loadInsights();
-    if (tab === "filtering") {
-      loadStats();
-      loadInsights();
-    }
-  };
+  const handleTabChange = setActiveTab;
 
   // Not `useTime()`: any consumer of it re-renders on every playback tick,
   // which would redraw this whole component ~12×/s. <UrlTimeSync /> handles
@@ -1020,15 +933,25 @@ function EpisodeViewerInner({
             <StatsPanel
               datasetInfo={datasetInfo}
               episodeLengthStats={episodeLengthStats}
-              loading={statsLoading}
+              loading={lengths.loading}
             />
           )}
 
           {activeTab === "frames" && (
             <OverviewPanel
-              data={episodeFramesData}
+              data={
+                frames.data ??
+                (frames.failed
+                  ? {
+                      cameras: [],
+                      framesByCamera: {},
+                      totalEpisodes: datasetInfo.total_episodes,
+                      halfFrameSec: 0.5 / (datasetInfo.fps || 30),
+                    }
+                  : null)
+              }
               cameras={datasetInfo.cameras}
-              loading={framesLoading}
+              loading={frames.loading}
               flaggedOnly={framesFlaggedOnly}
               onFlaggedOnlyChange={setFramesFlaggedOnly}
             />
@@ -1040,7 +963,8 @@ function EpisodeViewerInner({
                 flatChartData={data.flatChartData}
                 fps={datasetInfo.fps}
                 crossEpisodeData={crossEpData}
-                crossEpisodeLoading={insightsLoading}
+                crossEpisodeLoading={crossEpisode.loading}
+                crossEpisodeProgress={crossEpisode.progress}
               />
             </Suspense>
           )}
@@ -1050,7 +974,8 @@ function EpisodeViewerInner({
               <FilteringPanel
                 repoId={datasetInfo.repoId}
                 crossEpisodeData={crossEpData}
-                crossEpisodeLoading={insightsLoading}
+                crossEpisodeLoading={crossEpisode.loading}
+                crossEpisodeProgress={crossEpisode.progress}
                 episodeLengthStats={episodeLengthStats}
                 flatChartData={data.flatChartData}
                 onViewFlaggedEpisodes={() => {
