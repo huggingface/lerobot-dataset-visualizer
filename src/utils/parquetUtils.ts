@@ -62,6 +62,50 @@ export async function fetchParquetFile(url: string): Promise<ParquetFile> {
   return wrapped;
 }
 
+/**
+ * Opens a parquet file for one pass over it. `fetchParquetFile` holds every byte it has fetched for
+ * the life of the page, which suits the episode on screen and not a sweep over many files whose
+ * result is all that is kept: what is read through this buffer goes when the buffer does.
+ */
+export async function openParquetFile(url: string): Promise<AsyncBuffer> {
+  const file = await asyncBufferFromUrl({
+    url,
+    requestInit: { cache: "no-store", headers: authHeaders() },
+  });
+  // Within the pass, a small file is still fetched once rather than footer first, then columns.
+  return cachedAsyncBuffer(file);
+}
+
+export type ParquetColumnChunk = {
+  columnName: string;
+  /** One entry per row: a number, or an array for a list column. */
+  columnData: ArrayLike<unknown>;
+  /** Rows of the file this chunk holds; it can reach outside the range asked for. */
+  rowStart: number;
+  rowEnd: number;
+};
+
+/**
+ * Reads columns as they are stored, a chunk at a time, instead of as one object per row. For a pass
+ * over hundreds of thousands of rows the row objects were most of the work.
+ */
+export async function readParquetColumnChunks(
+  file: ParquetFile,
+  columns: string[],
+  onChunk: (chunk: ParquetColumnChunk) => void,
+  options?: { rowStart?: number; rowEnd?: number; metadata?: FileMetaData },
+): Promise<void> {
+  await parquetRead({
+    file,
+    columns,
+    rowStart: options?.rowStart,
+    rowEnd: options?.rowEnd,
+    metadata: options?.metadata,
+    compressors,
+    onChunk,
+  });
+}
+
 // Read specific columns from the Parquet file
 export async function readParquetColumn(
   fileBuffer: ParquetFile,

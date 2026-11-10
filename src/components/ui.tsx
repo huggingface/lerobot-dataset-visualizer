@@ -188,6 +188,15 @@ export function Spinner({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+/** What the cross-episode analysis is doing: how many data files it has read, once it knows. */
+export function crossEpisodeLoadingLabel(
+  progress?: { done: number; total: number } | null,
+): string {
+  return progress && progress.total > 1
+    ? `Reading episode data… ${progress.done} of ${progress.total} files`
+    : "Reading episode data…";
+}
+
 /** A spinner with a label, for a section that is still loading. */
 export function InlineLoading({ label }: { label: string }) {
   return (

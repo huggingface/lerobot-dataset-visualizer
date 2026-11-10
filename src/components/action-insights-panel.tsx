@@ -26,6 +26,7 @@ import {
   InlineLoading,
   PageHeader,
   Switch,
+  crossEpisodeLoadingLabel,
 } from "@/components/ui";
 
 const FullscreenCtx = React.createContext(false);
@@ -809,9 +810,11 @@ function JerkyEpisodesList({ episodes }: { episodes: JerkyEpisode[] }) {
 function VarianceHeatmap({
   data,
   loading,
+  progress,
 }: {
   data: CrossEpisodeVarianceData | null;
   loading: boolean;
+  progress?: { done: number; total: number } | null;
 }) {
   const isFs = useIsFullscreen();
 
@@ -821,7 +824,7 @@ function VarianceHeatmap({
         <h3 className="text-sm font-semibold text-fg mb-2">
           Cross-Episode Action Variance
         </h3>
-        <InlineLoading label="Loading cross-episode data…" />
+        <InlineLoading label={crossEpisodeLoadingLabel(progress)} />
       </div>
     );
   }
@@ -1532,6 +1535,7 @@ interface ActionInsightsPanelProps {
   fps: number;
   crossEpisodeData: CrossEpisodeVarianceData | null;
   crossEpisodeLoading: boolean;
+  crossEpisodeProgress?: { done: number; total: number } | null;
 }
 
 function ActionInsightsPanel({
@@ -1539,6 +1543,7 @@ function ActionInsightsPanel({
   fps,
   crossEpisodeData,
   crossEpisodeLoading,
+  crossEpisodeProgress,
 }: ActionInsightsPanelProps) {
   const [mode, setMode] = useState<"episode" | "dataset">("dataset");
   const showAgg = mode === "dataset" && !!crossEpisodeData;
@@ -1588,6 +1593,7 @@ function ActionInsightsPanel({
         <VarianceHeatmap
           data={crossEpisodeData}
           loading={crossEpisodeLoading}
+          progress={crossEpisodeProgress}
         />
       </FullscreenWrapper>
     </div>
