@@ -7,6 +7,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
@@ -20,14 +21,25 @@ import type {
   AggAlignment,
 } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import {
+  Heatmap,
+  Histogram,
+  LineKey,
+  SeriesLegend,
+  roundBinIndex,
+  roundBins,
+  seriesStyle,
+} from "@/components/charts";
+import {
   EpisodeLink,
   FlagAllButton,
   FlagButton,
   InlineLoading,
   PageHeader,
+  StatCard,
   Switch,
   crossEpisodeLoadingLabel,
 } from "@/components/ui";
+import { useTheme } from "@/utils/theme";
 
 const FullscreenCtx = React.createContext(false);
 const useIsFullscreen = () => React.useContext(FullscreenCtx);
@@ -161,6 +173,85 @@ const COLORS = [
   "#84cc16",
 ];
 
+/// Axis and grid styling shared by the line charts: recessive, like the Episodes tab's.
+const AXIS_TICK = { fontSize: 12, fill: "var(--fg-muted)" };
+const AXIS_LABEL = { fontSize: 12, fill: "var(--fg-muted)" };
+const SECTION =
+  "bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line space-y-4";
+
+/** Tick positions from `from` to `to` in steps of `step`, without floating-point drift. */
+function steps(from: number, to: number, step: number): number[] {
+  const ticks: number[] = [];
+  for (let value = from; value <= to + step * 1e-6; value += step) {
+    ticks.push(Number(value.toFixed(6)));
+  }
+  return ticks;
+}
+
+/**
+ * A correlation axis reaching down to `lowest`: the domain stops at the quarter below the data, and
+ * the ticks sit on halves (quarters when everything is positive), so no label is an odd number.
+ */
+function correlationAxis(lowest: number): {
+  domain: [number, number];
+  ticks: number[];
+} {
+  const floor = Math.floor(Math.min(lowest, 0) / 0.25) * 0.25;
+  const step = floor < 0 ? 0.5 : 0.25;
+  return {
+    domain: [floor, 1],
+    ticks: steps(Math.ceil(floor / step) * step, 1, step),
+  };
+}
+
+/** Lag ticks at round numbers, a handful whatever the horizon. */
+function lagStep(span: number): number {
+  return span <= 30 ? 5 : span <= 60 ? 10 : 20;
+}
+
+/**
+ * The readout under the pointer: every series at that lag, its key beside its name, the value
+ * leading. Names stay in text colours; the key carries the series colour.
+ */
+function LineTooltip({
+  active,
+  payload,
+  label,
+  formatLabel,
+  series,
+}: {
+  active?: boolean;
+  payload?: { name?: string | number; value?: number | string }[];
+  label?: number | string;
+  formatLabel: (label: number) => string;
+  series: { name: string; color: string; dash?: string }[];
+}) {
+  if (!active || !payload?.length) return null;
+  const values = new Map(
+    payload.map((item) => [String(item.name), item.value]),
+  );
+  return (
+    <div className="rounded-md border border-line-strong bg-[var(--surface-2)] px-2.5 py-1.5 text-xs shadow-lg">
+      <p className="mb-1 text-fg-muted tabular">{formatLabel(Number(label))}</p>
+      <ul className="space-y-0.5">
+        {series.map(({ name, color, dash }) => {
+          const value = values.get(name);
+          if (typeof value !== "number") return null;
+          return (
+            <li key={name} className="flex items-center gap-2">
+              <LineKey color={color} dash={dash} />
+              <span className="text-fg-muted">{name}</span>
+              <span className="ml-auto pl-4 font-semibold text-fg tabular">
+                {value.toFixed(3)}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function shortName(key: string): string {
   const parts = key.split(CHART_CONFIG.SERIES_NAME_DELIMITER);
   return parts.length > 1 ? parts[parts.length - 1] : key;
@@ -209,11 +300,14 @@ function AutocorrelationSection({
   fps,
   agg,
   numEpisodes,
+  scopeLabel,
 }: {
   data: Record<string, number>[];
   fps: number;
   agg?: AggAutocorrelation | null;
   numEpisodes?: number;
+  /** What the chart covers when it is not the dataset: `episode 12`. */
+  scopeLabel: string;
 }) {
   const isFs = useIsFullscreen();
   const actionKeys = useMemo(
@@ -264,34 +358,38 @@ function AutocorrelationSection({
   const { chartData, suggestedChunk, shortKeys } = agg ??
     fallback ?? { chartData: [], suggestedChunk: null, shortKeys: [] };
   const isAgg = !!agg;
-  const numEpisodesLabel = isAgg
-    ? ` (${numEpisodes} episodes sampled)`
-    : " (current episode)";
+  const [highlighted, setHighlighted] = useState<string | null>(null);
 
-  const yDomain = useMemo(() => {
-    if (chartData.length === 0 || shortKeys.length === 0)
-      return [-0.2, 1] as [number, number];
-    let min = Infinity;
+  const series = useMemo(
+    () => shortKeys.map((name, i) => ({ name, ...seriesStyle(i) })),
+    [shortKeys],
+  );
+  const lagCount = chartData.length;
+  const yAxis = useMemo(() => {
+    let min = 0;
     for (const row of chartData)
       for (const k of shortKeys) {
         const v = row[k];
         if (typeof v === "number" && v < min) min = v;
       }
-    const lo = Math.floor(Math.min(min, 0) * 10) / 10;
-    return [lo, 1] as [number, number];
+    return correlationAxis(min);
   }, [chartData, shortKeys]);
+  const xTicks = useMemo(() => {
+    const step = lagStep(lagCount);
+    return [1, ...steps(step, lagCount, step)];
+  }, [lagCount]);
 
   if (shortKeys.length === 0)
     return <p className="text-fg-faint italic">No action columns found.</p>;
 
   return (
-    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line space-y-4">
+    <div className={SECTION}>
       <div>
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-fg">
             Action Autocorrelation
             <span className="text-xs text-fg-faint ml-2 font-normal">
-              {numEpisodesLabel}
+              {isAgg ? `${numEpisodes} episodes sampled` : scopeLabel}
             </span>
           </h3>
           <InfoToggle>
@@ -346,53 +444,81 @@ function AutocorrelationSection({
           <LineChart
             key={isAgg ? "agg" : "ep"}
             data={chartData}
-            margin={{ top: 8, right: 16, left: 0, bottom: 16 }}
+            margin={{ top: 18, right: 28, left: 0, bottom: 20 }}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+            <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
             <XAxis
               dataKey="lag"
-              stroke="var(--fg-muted)"
+              type="number"
+              domain={[1, Math.max(2, lagCount)]}
+              ticks={xTicks}
+              stroke="var(--chart-axis)"
+              tick={AXIS_TICK}
+              tickLine={false}
               label={{
-                value: "Lag (steps)",
+                value: "Lag (frames)",
                 position: "insideBottom",
-                offset: -8,
-                fill: "var(--fg-muted)",
-                fontSize: 13,
+                offset: -12,
+                ...AXIS_LABEL,
               }}
             />
             <YAxis
-              stroke="var(--fg-muted)"
-              domain={yDomain}
-              tickFormatter={(v) => Number(v.toFixed(2)).toString()}
+              domain={yAxis.domain}
+              ticks={yAxis.ticks}
+              interval={0}
+              stroke="var(--chart-axis)"
+              tick={AXIS_TICK}
+              tickLine={false}
+              width={44}
             />
             <Tooltip
-              contentStyle={{
-                background: "var(--surface-2)",
-                border: "1px solid var(--line-strong)",
-                borderRadius: 6,
-              }}
-              labelFormatter={(v) =>
-                `Lag ${v} (${(Number(v) / fps).toFixed(2)}s)`
-              }
-              formatter={(v: number) => v.toFixed(3)}
-            />
-            <Line
-              dataKey={() => 0.5}
-              stroke="var(--chart-axis)"
-              strokeDasharray="6 4"
-              dot={false}
-              name="0.5 threshold"
-              legendType="none"
               isAnimationActive={false}
+              cursor={{ stroke: "var(--chart-axis)" }}
+              content={
+                <LineTooltip
+                  series={series}
+                  formatLabel={(lag) =>
+                    `Lag ${lag} · ${(lag / fps).toFixed(2)}s`
+                  }
+                />
+              }
             />
-            {shortKeys.map((name, i) => (
+            {/* The threshold the suggestion is read off, labelled where it meets the edge. */}
+            <ReferenceLine
+              y={0.5}
+              stroke="var(--fg-faint)"
+              strokeDasharray="4 4"
+              label={{
+                value: "0.5",
+                position: "right",
+                fontSize: 11,
+                fill: "var(--fg-muted)",
+              }}
+            />
+            {suggestedChunk && (
+              <ReferenceLine
+                x={suggestedChunk}
+                stroke="var(--accent)"
+                label={{
+                  value: `chunk ${suggestedChunk}`,
+                  position: "top",
+                  fontSize: 11,
+                  fill: "var(--accent-fg)",
+                }}
+              />
+            )}
+            {series.map(({ name, color, dash }) => (
               <Line
                 key={name}
                 dataKey={name}
-                stroke={COLORS[i % COLORS.length]}
+                name={name}
+                stroke={color}
+                strokeDasharray={dash}
+                strokeWidth={
+                  highlighted === name ? 3 : series.length > 8 ? 1.5 : 2
+                }
+                strokeOpacity={highlighted && highlighted !== name ? 0.15 : 1}
                 dot={false}
-                strokeWidth={1.5}
-                legendType="none"
                 isAnimationActive={false}
               />
             ))}
@@ -400,18 +526,11 @@ function AutocorrelationSection({
         </ResponsiveContainer>
       </div>
 
-      {/* Custom legend */}
-      <div className="flex flex-wrap gap-x-4 gap-y-1 px-1">
-        {shortKeys.map((name, i) => (
-          <div key={name} className="flex items-center gap-1.5">
-            <span
-              className="w-3 h-[3px] rounded-full shrink-0"
-              style={{ background: COLORS[i % COLORS.length] }}
-            />
-            <span className="text-xs text-fg-muted">{name}</span>
-          </div>
-        ))}
-      </div>
+      <SeriesLegend
+        series={series}
+        highlighted={highlighted}
+        onHighlight={setHighlighted}
+      />
     </div>
   );
 }
@@ -816,12 +935,25 @@ function VarianceHeatmap({
   loading: boolean;
   progress?: { done: number; total: number } | null;
 }) {
-  const isFs = useIsFullscreen();
+  const theme = useTheme();
+
+  // Spread across episodes as a share of each motor's range, so a gripper in percent and a joint
+  // in radians are on one scale. The raw variance let the widest-ranging motor set the colours.
+  const rows = useMemo(() => {
+    if (!data) return [];
+    return data.actionNames.map((name, d) => {
+      const range = data.aggVelocity[d]?.motorRange || 1;
+      return {
+        label: shortName(name),
+        values: data.variance.map((bin) => Math.sqrt(bin[d]) / range),
+      };
+    });
+  }, [data]);
 
   if (loading) {
     return (
-      <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line">
-        <h3 className="text-sm font-semibold text-fg mb-2">
+      <div className={SECTION}>
+        <h3 className="text-sm font-semibold text-fg">
           Cross-Episode Action Variance
         </h3>
         <InlineLoading label={crossEpisodeLoadingLabel(progress)} />
@@ -831,8 +963,8 @@ function VarianceHeatmap({
 
   if (!data) {
     return (
-      <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line">
-        <h3 className="text-sm font-semibold text-fg mb-2">
+      <div className={SECTION}>
+        <h3 className="text-sm font-semibold text-fg">
           Cross-Episode Action Variance
         </h3>
         <p className="text-fg-faint italic text-sm">
@@ -841,57 +973,28 @@ function VarianceHeatmap({
       </div>
     );
   }
-  const { actionNames, timeBins, variance, numEpisodes } = data;
-  const numDims = actionNames.length;
-  const numBins = timeBins.length;
-
-  const maxVar = Math.max(...variance.flat(), 1e-10);
-
-  const baseW = isFs ? 1000 : 560;
-  const baseH = isFs ? 500 : 300;
-  const cellW = Math.max(
-    6,
-    Math.min(isFs ? 24 : 14, Math.floor(baseW / numBins)),
-  );
-  const cellH = Math.max(
-    20,
-    Math.min(isFs ? 56 : 36, Math.floor(baseH / numDims)),
-  );
-  const labelW = 100;
-  const svgW = labelW + numBins * cellW + 60;
-  const svgH = numDims * cellH + 40;
-
-  function varColor(v: number): string {
-    const t = Math.sqrt(v / maxVar); // sqrt for better visual spread
-    // Dark blue → teal → orange
-    const r = Math.round(t * 249);
-    const g = Math.round(t < 0.5 ? 80 + t * 200 : 180 - (t - 0.5) * 200);
-    const b = Math.round((1 - t) * 200 + 30);
-    return `rgb(${r},${g},${b})`;
-  }
+  const { timeBins, numEpisodes } = data;
 
   return (
-    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line space-y-4">
+    <div className={SECTION}>
       <div>
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-fg">
             Cross-Episode Action Variance
             <span className="text-xs text-fg-faint ml-2 font-normal">
-              ({numEpisodes} episodes sampled)
+              {numEpisodes} episodes sampled
             </span>
           </h3>
           <InfoToggle>
             <p className="text-xs text-fg-muted">
-              Shows how much each action dimension varies across episodes at
-              each point in time (normalized 0–100%).
-              <span className="text-accent-fg">
-                {" "}
-                High-variance regions
-              </span>{" "}
+              How much each action dimension differs between episodes at the
+              same point of their progress: the standard deviation across
+              episodes, as a share of that motor&apos;s range.{" "}
+              <span className="text-fg font-medium">High-variance regions</span>{" "}
               indicate multi-modal or inconsistent demonstrations — generative
               policies (diffusion, flow-matching) and action chunking help here
-              by modeling multiple modes.
-              <span className="text-blue-400"> Low-variance regions</span>{" "}
+              by modeling multiple modes.{" "}
+              <span className="text-fg font-medium">Low-variance regions</span>{" "}
               indicate consistent behavior across demonstrations.
               <br />
               <span className="text-fg-faint">
@@ -912,108 +1015,28 @@ function VarianceHeatmap({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <svg width={svgW} height={svgH} className="block">
-          {/* Heatmap cells */}
-          {variance.map((row, bi) =>
-            row.map((v, di) => (
-              <rect
-                key={`${bi}-${di}`}
-                x={labelW + bi * cellW}
-                y={di * cellH}
-                width={cellW}
-                height={cellH}
-                fill={varColor(v)}
-                stroke="var(--bg)"
-                strokeWidth={0.5}
-              >
-                <title>{`${shortName(actionNames[di])} @ ${(timeBins[bi] * 100).toFixed(0)}%: var=${v.toFixed(5)}`}</title>
-              </rect>
-            )),
-          )}
-
-          {/* Y-axis: action names */}
-          {actionNames.map((name, di) => (
-            <text
-              key={di}
-              x={labelW - 4}
-              y={di * cellH + cellH / 2}
-              textAnchor="end"
-              dominantBaseline="central"
-              className="fill-fg-muted"
-              fontSize={Math.min(11, cellH - 4)}
-            >
-              {shortName(name)}
-            </text>
-          ))}
-
-          {/* X-axis labels */}
-          {[0, 0.25, 0.5, 0.75, 1].map((frac) => {
-            const binIdx = Math.round(frac * (numBins - 1));
-            return (
-              <text
-                key={frac}
-                x={labelW + binIdx * cellW + cellW / 2}
-                y={numDims * cellH + 14}
-                textAnchor="middle"
-                className="fill-fg-muted"
-                fontSize={9}
-              >
-                {(frac * 100).toFixed(0)}%
-              </text>
-            );
-          })}
-          <text
-            x={labelW + (numBins * cellW) / 2}
-            y={numDims * cellH + 30}
-            textAnchor="middle"
-            className="fill-fg-faint"
-            fontSize={10}
-          >
-            Episode progress
-          </text>
-
-          {/* Color bar */}
-          {Array.from({ length: 10 }, (_, i) => {
-            const t = i / 9;
-            const barX = labelW + numBins * cellW + 16;
-            const barH = (numDims * cellH) / 10;
-            return (
-              <rect
-                key={i}
-                x={barX}
-                y={(9 - i) * barH}
-                width={12}
-                height={barH}
-                fill={varColor(t * maxVar)}
-              />
-            );
-          })}
-          <text
-            x={labelW + numBins * cellW + 34}
-            y={10}
-            className="fill-fg-faint"
-            fontSize={8}
-            dominantBaseline="central"
-          >
-            high
-          </text>
-          <text
-            x={labelW + numBins * cellW + 34}
-            y={numDims * cellH - 4}
-            className="fill-fg-faint"
-            fontSize={8}
-            dominantBaseline="central"
-          >
-            low
-          </text>
-        </svg>
-      </div>
+      <Heatmap
+        rows={rows}
+        theme={theme}
+        ariaLabel="Spread of each action dimension across episodes, by episode progress"
+        xLabel="Episode progress"
+        xTicks={[0, 0.25, 0.5, 0.75, 1].map((at) => ({
+          at,
+          label: `${at * 100}%`,
+        }))}
+        formatValue={(value) => `${(value * 100).toFixed(1)}%`}
+        describeColumn={(i) =>
+          `at ${Math.round(timeBins[i] * 100)}% of the episode`
+        }
+        legend="std across episodes, as a share of the motor's range"
+      />
     </div>
   );
 }
 
 // ─── Demonstrator Speed Variance ────────────────────────────────
+
+const SPEED_EPISODES_SHOWN = 80;
 
 function SpeedVarianceSection({
   distribution,
@@ -1022,73 +1045,64 @@ function SpeedVarianceSection({
   distribution: SpeedDistEntry[];
   numEpisodes: number;
 }) {
-  const isFs = useIsFullscreen();
-  const { speeds, mean, std, cv, median, bins, lo, binW, maxBin, verdict } =
-    useMemo(() => {
-      const sp = distribution.map((d) => d.speed).sort((a, b) => a - b);
-      const m = sp.reduce((a, b) => a + b, 0) / sp.length;
-      const s = Math.sqrt(sp.reduce((a, v) => a + (v - m) ** 2, 0) / sp.length);
-      const c = m > 0 ? s / m : 0;
-      const med = sp[Math.floor(sp.length / 2)];
+  const [selectedBin, setSelectedBin] = useState<number | null>(null);
+  const { mean, std, cv, median, bins, verdict } = useMemo(() => {
+    const sp = distribution.map((d) => d.speed).sort((a, b) => a - b);
+    const m = sp.reduce((a, b) => a + b, 0) / sp.length;
+    const s = Math.sqrt(sp.reduce((a, v) => a + (v - m) ** 2, 0) / sp.length);
+    const c = m > 0 ? s / m : 0;
 
-      const binCount = Math.min(30, Math.ceil(Math.sqrt(sp.length)));
-      const lo = sp[0],
-        hi = sp[sp.length - 1];
-      const bw = (hi - lo || 1) / binCount;
-      const b = new Array(binCount).fill(0);
-      for (const v of sp) {
-        let i = Math.floor((v - lo) / bw);
-        if (i >= binCount) i = binCount - 1;
-        b[i]++;
-      }
-
-      let v: { label: string; color: string; tip: string };
-      if (c < 0.2)
-        v = {
-          label: "Consistent",
-          color: "text-green-400",
-          tip: "Demonstrators execute at similar speeds — no velocity normalization needed.",
-        };
-      else if (c < 0.4)
-        v = {
-          label: "Moderate variance",
-          color: "text-yellow-400",
-          tip: "Some speed variation across demonstrators. Consider velocity normalization for best results.",
-        };
-      else
-        v = {
-          label: "High variance",
-          color: "text-red-400",
-          tip: "Large speed differences between demonstrations. Velocity normalization before training is strongly recommended.",
-        };
-
-      return {
-        speeds: sp,
-        mean: m,
-        std: s,
-        cv: c,
-        median: med,
-        bins: b,
-        lo,
-        binW: bw,
-        maxBin: Math.max(...b),
-        verdict: v,
+    let v: { label: string; color: string; tip: string };
+    if (c < 0.2)
+      v = {
+        label: "Consistent",
+        color: "text-good-fg",
+        tip: "Demonstrators execute at similar speeds — no velocity normalization needed.",
       };
-    }, [distribution]);
+    else if (c < 0.4)
+      v = {
+        label: "Moderate variance",
+        color: "text-warning-fg",
+        tip: "Some speed variation across demonstrators. Consider velocity normalization for best results.",
+      };
+    else
+      v = {
+        label: "High variance",
+        color: "text-critical-fg",
+        tip: "Large speed differences between demonstrations. Velocity normalization before training is strongly recommended.",
+      };
 
-  if (speeds.length < 3) return null;
+    return {
+      mean: m,
+      std: s,
+      cv: c,
+      median: sp[Math.floor(sp.length / 2)],
+      bins: roundBins(sp, Math.min(30, Math.ceil(Math.sqrt(sp.length)))),
+      verdict: v,
+    };
+  }, [distribution]);
 
-  const barH = isFs ? 250 : 100;
-  const barW = Math.max(8, Math.floor((isFs ? 900 : 500) / bins.length));
+  const inBin = useMemo(
+    () =>
+      selectedBin === null
+        ? []
+        : distribution
+            .filter((d) => roundBinIndex(d.speed, bins) === selectedBin)
+            .sort((a, b) => a.speed - b.speed),
+    [distribution, bins, selectedBin],
+  );
+
+  if (distribution.length < 3) return null;
+  const selected = selectedBin !== null ? bins[selectedBin] : null;
 
   return (
-    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line space-y-4">
+    <div className={SECTION}>
       <div>
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-fg">
             Demonstrator Speed Variance
             <span className="text-xs text-fg-faint ml-2 font-normal">
-              ({numEpisodes} episodes)
+              {numEpisodes} episodes
             </span>
           </h3>
           <InfoToggle>
@@ -1112,71 +1126,78 @@ function SpeedVarianceSection({
         </div>
       </div>
 
-      <div className="flex gap-4">
-        <div className="flex-1 overflow-x-auto">
-          <svg width={bins.length * barW} height={barH + 24} className="block">
-            {bins.map((count: number, i: number) => {
-              const h = maxBin > 0 ? (count / maxBin) * barH : 0;
-              const speed = lo + (i + 0.5) * binW;
-              const ratio = median > 0 ? speed / median : 1;
-              const dev = Math.abs(ratio - 1);
-              const color =
-                dev < 0.2 ? "#22c55e" : dev < 0.5 ? "#eab308" : "#ef4444";
-              return (
-                <rect
-                  key={i}
-                  x={i * barW}
-                  y={barH - h}
-                  width={barW - 1}
-                  height={Math.max(1, h)}
-                  fill={color}
-                  opacity={0.7}
-                  rx={1}
-                >
-                  <title>{`Speed ${(lo + i * binW).toFixed(3)}–${(lo + (i + 1) * binW).toFixed(3)}: ${count} ep (${ratio.toFixed(2)}× median)`}</title>
-                </rect>
-              );
-            })}
-            {[0, 0.25, 0.5, 0.75, 1].map((frac) => {
-              const idx = Math.round(frac * (bins.length - 1));
-              return (
-                <text
-                  key={frac}
-                  x={idx * barW + barW / 2}
-                  y={barH + 14}
-                  textAnchor="middle"
-                  className="fill-fg-muted"
-                  fontSize={9}
-                >
-                  {(lo + idx * binW).toFixed(2)}
-                </text>
-              );
-            })}
-          </svg>
-        </div>
-        <div className="flex flex-col gap-2 text-xs shrink-0 min-w-[120px]">
-          <div>
-            <span className="text-fg-faint">Mean</span>{" "}
-            <span className="text-fg tabular-nums ml-1">{mean.toFixed(4)}</span>
-          </div>
-          <div>
-            <span className="text-fg-faint">Median</span>{" "}
-            <span className="text-fg tabular-nums ml-1">
-              {median.toFixed(4)}
-            </span>
-          </div>
-          <div>
-            <span className="text-fg-faint">Std</span>{" "}
-            <span className="text-fg tabular-nums ml-1">{std.toFixed(4)}</span>
-          </div>
-          <div>
-            <span className="text-fg-faint">CV</span>
-            <span className={`tabular-nums ml-1 font-bold ${verdict.color}`}>
-              {cv.toFixed(3)}
-            </span>
-          </div>
-        </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatCard label="Mean" value={mean.toFixed(4)} />
+        <StatCard label="Median" value={median.toFixed(4)} />
+        <StatCard label="Std dev" value={std.toFixed(4)} />
+        <StatCard
+          label="CV (std ÷ mean)"
+          value={cv.toFixed(3)}
+          detail={<span className={verdict.color}>{verdict.label}</span>}
+        />
       </div>
+
+      <div>
+        <p className="mb-1 text-xs text-fg-muted">
+          Episodes by mean speed. Select a bar to list its episodes.
+        </p>
+        <Histogram
+          bins={bins}
+          ariaLabel="Episodes by mean speed"
+          formatValue={(value) => Number(value.toPrecision(3)).toString()}
+          describeCount={(count) =>
+            `${count.toLocaleString()} episode${count === 1 ? "" : "s"}`
+          }
+          marker={{
+            value: median,
+            label: `median ${Number(median.toPrecision(3))}`,
+          }}
+          selected={selectedBin}
+          onSelect={setSelectedBin}
+        />
+      </div>
+
+      {selected && (
+        <div className="rounded-md border border-accent/30 bg-accent/5 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-fg-soft tabular">
+              <span className="font-semibold text-fg">
+                {inBin.length.toLocaleString()} episode
+                {inBin.length === 1 ? "" : "s"}
+              </span>{" "}
+              at {(selected.lo / (median || 1)).toFixed(2)}× to{" "}
+              {(selected.hi / (median || 1)).toFixed(2)}× the median speed
+            </p>
+            <div className="flex items-center gap-3">
+              <FlagAllButton ids={inBin.map((e) => e.episodeIndex)} />
+              <button
+                type="button"
+                onClick={() => setSelectedBin(null)}
+                className="text-xs text-fg-faint transition-colors hover:text-fg"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          <ul className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">
+            {inBin.slice(0, SPEED_EPISODES_SHOWN).map((episode) => (
+              <li key={episode.episodeIndex}>
+                <EpisodeLink
+                  episode={episode.episodeIndex}
+                  className="block rounded border border-line bg-fill px-1.5 py-0.5 text-xs text-fg-soft"
+                >
+                  {episode.episodeIndex}
+                </EpisodeLink>
+              </li>
+            ))}
+            {inBin.length > SPEED_EPISODES_SHOWN && (
+              <li className="px-1.5 py-0.5 text-xs text-fg-faint">
+                +{(inBin.length - SPEED_EPISODES_SHOWN).toLocaleString()} more
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
 
       <div className="bg-[var(--surface-0)]/60 rounded-md px-4 py-3 border border-line space-y-1.5">
         <p className="text-sm font-medium text-fg">
@@ -1195,11 +1216,14 @@ function StateActionAlignmentSection({
   fps,
   agg,
   numEpisodes,
+  scopeLabel: episodeLabel,
 }: {
   data: Record<string, number>[];
   fps: number;
   agg?: AggAlignment | null;
   numEpisodes?: number;
+  /** What the chart covers when it is not the dataset: `episode 12`. */
+  scopeLabel: string;
 }) {
   const isFs = useIsFullscreen();
   const result = useMemo(() => {
@@ -1341,28 +1365,46 @@ function StateActionAlignmentSection({
     numPairs,
     fromAgg,
   } = result;
-  const scopeLabel = fromAgg
-    ? `${numEpisodes} episodes sampled`
-    : "current episode";
+  const scopeLabel = fromAgg ? `${numEpisodes} episodes sampled` : episodeLabel;
+
+  const lagSpan = ccData.length > 0 ? ccData[ccData.length - 1].lag : 0;
+  const step = lagStep(lagSpan * 2);
+  const xTicks = steps(-Math.floor(lagSpan / step) * step, lagSpan, step);
+  const yAxis = correlationAxis(Math.min(...ccData.map((row) => row.min)));
+  // The envelope across the matched pairs: the mean in the foreground, its bounds around it.
+  const series = [
+    {
+      name: "max",
+      color: "var(--series-2)",
+      note: `peak at lag ${maxPeakLag}, r = ${maxPeakCorr.toFixed(3)}`,
+    },
+    {
+      name: "mean",
+      color: "var(--fg-soft)",
+      note: `peak at lag ${meanPeakLag}, r = ${meanPeakCorr.toFixed(3)}`,
+    },
+    {
+      name: "min",
+      color: "var(--series-1)",
+      note: `peak at lag ${minPeakLag}, r = ${minPeakCorr.toFixed(3)}`,
+    },
+  ];
 
   return (
-    <div className="bg-[var(--surface-1)]/60 rounded-lg p-5 border border-line space-y-4">
+    <div className={SECTION}>
       <div>
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-fg">
             State–Action Temporal Alignment
             <span className="text-xs text-fg-faint ml-2 font-normal">
-              ({scopeLabel}, {numPairs} matched pair{numPairs !== 1 ? "s" : ""})
+              {scopeLabel}, {numPairs} matched pair{numPairs !== 1 ? "s" : ""}
             </span>
           </h3>
           <InfoToggle>
             <p className="text-xs text-fg-muted">
               Per-dimension cross-correlation between Δaction<sub>d</sub>(t) and
-              Δstate<sub>d</sub>(t+lag), aggregated as
-              <span className="text-accent-fg"> max</span>,{" "}
-              <span className="text-fg">mean</span>, and
-              <span className="text-blue-400"> min</span> across all matched
-              action–state pairs. The{" "}
+              Δstate<sub>d</sub>(t+lag), aggregated as max, mean and min across
+              all matched action–state pairs. The{" "}
               <span className="text-accent-fg">peak lag</span> reveals the
               effective control delay — the time between when an action is
               commanded and when the corresponding state changes.
@@ -1430,98 +1472,81 @@ function StateActionAlignmentSection({
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={ccData}
-            margin={{ top: 8, right: 16, left: 0, bottom: 16 }}
+            margin={{ top: 18, right: 16, left: 0, bottom: 20 }}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+            <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
             <XAxis
               dataKey="lag"
-              stroke="var(--fg-muted)"
+              type="number"
+              domain={[-lagSpan, lagSpan]}
+              ticks={xTicks}
+              stroke="var(--chart-axis)"
+              tick={AXIS_TICK}
+              tickLine={false}
               label={{
-                value: "Lag (steps)",
+                value: "Lag (frames): state after action →",
                 position: "insideBottom",
-                offset: -8,
-                fill: "var(--fg-muted)",
-                fontSize: 13,
+                offset: -12,
+                ...AXIS_LABEL,
               }}
             />
             <YAxis
-              stroke="var(--fg-muted)"
-              domain={[-0.5, 1]}
-              tickFormatter={(v) => Number(v.toFixed(2)).toString()}
+              domain={yAxis.domain}
+              ticks={yAxis.ticks}
+              interval={0}
+              stroke="var(--chart-axis)"
+              tick={AXIS_TICK}
+              tickLine={false}
+              width={44}
             />
             <Tooltip
-              contentStyle={{
-                background: "var(--surface-2)",
-                border: "1px solid var(--line-strong)",
-                borderRadius: 6,
-              }}
-              labelFormatter={(v) =>
-                `Lag ${v} (${(Number(v) / fps).toFixed(3)}s)`
+              isAnimationActive={false}
+              cursor={{ stroke: "var(--chart-axis)" }}
+              content={
+                <LineTooltip
+                  series={series}
+                  formatLabel={(lag) =>
+                    `Lag ${lag} · ${(lag / fps).toFixed(3)}s`
+                  }
+                />
               }
-              formatter={(v: number) => v.toFixed(3)}
             />
-            <Line
-              dataKey="max"
-              stroke="#f97316"
-              dot={false}
-              strokeWidth={2}
-              isAnimationActive={false}
-              name="max"
-            />
-            <Line
-              dataKey="mean"
-              stroke="var(--fg-muted)"
-              dot={false}
-              strokeWidth={2}
-              isAnimationActive={false}
-              name="mean"
-            />
-            <Line
-              dataKey="min"
-              stroke="#3b82f6"
-              dot={false}
-              strokeWidth={2}
-              isAnimationActive={false}
-              name="min"
-            />
-            <Line
-              dataKey={() => 0}
-              stroke="var(--chart-axis)"
-              strokeDasharray="6 4"
-              dot={false}
-              name="zero"
-              legendType="none"
-              isAnimationActive={false}
-            />
+            <ReferenceLine y={0} stroke="var(--chart-axis)" />
+            <ReferenceLine x={0} stroke="var(--chart-axis)" />
+            {meanPeakLag !== 0 && (
+              <ReferenceLine
+                x={meanPeakLag}
+                stroke="var(--accent)"
+                label={{
+                  value: `delay ${meanPeakLag}`,
+                  position: "top",
+                  fontSize: 11,
+                  fill: "var(--accent-fg)",
+                }}
+              />
+            )}
+            {series.map(({ name, color }) => (
+              <Line
+                key={name}
+                dataKey={name}
+                name={name}
+                stroke={color}
+                strokeWidth={name === "mean" ? 2.5 : 1.5}
+                dot={false}
+                isAnimationActive={false}
+              />
+            ))}
           </LineChart>
         </ResponsiveContainer>
       </div>
 
-      <div className="flex flex-wrap gap-x-4 gap-y-1 px-1">
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-[3px] rounded-full shrink-0 bg-accent" />
-          <span className="text-xs text-fg-muted">
-            max (peak: lag {maxPeakLag}, r={maxPeakCorr.toFixed(3)})
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-[3px] rounded-full shrink-0 bg-fg-muted" />
-          <span className="text-xs text-fg-muted">
-            mean (peak: lag {meanPeakLag}, r={meanPeakCorr.toFixed(3)})
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-3 h-[3px] rounded-full shrink-0 bg-blue-500" />
-          <span className="text-xs text-fg-muted">
-            min (peak: lag {minPeakLag}, r={minPeakCorr.toFixed(3)})
-          </span>
-        </div>
-      </div>
+      <SeriesLegend series={series} />
 
       {meanPeakLag === 0 && (
-        <p className="text-xs text-green-400">
+        <p className="text-xs text-good-fg">
           Mean peak correlation at lag 0 (r={meanPeakCorr.toFixed(3)}) — actions
-          and state changes are well-aligned in this episode.
+          and state changes are well-aligned
+          {fromAgg ? "" : " in this episode"}.
         </p>
       )}
     </div>
@@ -1533,6 +1558,8 @@ function StateActionAlignmentSection({
 interface ActionInsightsPanelProps {
   flatChartData: Record<string, number>[];
   fps: number;
+  /** The episode on screen, which "Current episode" analyses. */
+  episodeId: number;
   crossEpisodeData: CrossEpisodeVarianceData | null;
   crossEpisodeLoading: boolean;
   crossEpisodeProgress?: { done: number; total: number } | null;
@@ -1541,12 +1568,14 @@ interface ActionInsightsPanelProps {
 function ActionInsightsPanel({
   flatChartData,
   fps,
+  episodeId,
   crossEpisodeData,
   crossEpisodeLoading,
   crossEpisodeProgress,
 }: ActionInsightsPanelProps) {
   const [mode, setMode] = useState<"episode" | "dataset">("dataset");
   const showAgg = mode === "dataset" && !!crossEpisodeData;
+  const scopeLabel = `episode ${episodeId}`;
 
   return (
     <div className="w-full max-w-5xl mx-auto py-6 space-y-6">
@@ -1557,9 +1586,9 @@ function ActionInsightsPanel({
         <Switch
           checked={mode === "dataset"}
           onChange={(all) => setMode(all ? "dataset" : "episode")}
-          offLabel="Current Episode"
-          onLabel={`All Episodes${crossEpisodeData ? ` (${crossEpisodeData.numEpisodes})` : ""}`}
-          ariaLabel="Toggle episode/dataset scope"
+          offLabel={`Episode ${episodeId}`}
+          onLabel={`All episodes${crossEpisodeData ? ` (${crossEpisodeData.numEpisodes} sampled)` : ""}`}
+          ariaLabel="Analyse the dataset rather than this episode"
         />
       </PageHeader>
 
@@ -1569,6 +1598,7 @@ function ActionInsightsPanel({
           fps={fps}
           agg={showAgg ? crossEpisodeData?.aggAutocorrelation : null}
           numEpisodes={crossEpisodeData?.numEpisodes}
+          scopeLabel={scopeLabel}
         />
       </FullscreenWrapper>
       <FullscreenWrapper>
@@ -1577,6 +1607,7 @@ function ActionInsightsPanel({
           fps={fps}
           agg={showAgg ? crossEpisodeData?.aggAlignment : null}
           numEpisodes={crossEpisodeData?.numEpisodes}
+          scopeLabel={scopeLabel}
         />
       </FullscreenWrapper>
 

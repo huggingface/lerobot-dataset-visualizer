@@ -58,6 +58,16 @@
   --series-7: #6250d6;
   --series-8: #e34948;
 
+  /* Verdicts (smooth / moderate / jerky): a fill for marks and a text colour with readable
+     contrast on each theme. Always beside the word it colours, never the only signal, and never
+     used as a series colour. */
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-critical: #d03b3b;
+  --good-fg: #15803d; /* green-700 */
+  --warning-fg: #a16207; /* yellow-700 */
+  --critical-fg: #b91c1c; /* red-700 */
+
   --scrollbar: rgba(17, 24, 39, 0.14);
   --scrollbar-hover: rgba(17, 24, 39, 0.24);
 }
@@ -100,6 +110,10 @@
   --series-7: #9085e9;
   --series-8: #e66767;
 
+  --good-fg: #4ade80; /* green-400 */
+  --warning-fg: #facc15; /* yellow-400 */
+  --critical-fg: #f87171; /* red-400 */
+
   --scrollbar: rgba(255, 255, 255, 0.06);
   --scrollbar-hover: rgba(255, 255, 255, 0.12);
 }
@@ -121,6 +135,9 @@
   --color-fill-strong: var(--fill-strong);
   --color-accent-fg: var(--accent-fg);
   --color-flag-fg: var(--flag-fg);
+  --color-good-fg: var(--good-fg);
+  --color-warning-fg: var(--warning-fg);
+  --color-critical-fg: var(--critical-fg);
   --font-sans:
     var(--font-source-sans), "Source Sans Pro", ui-sans-serif, system-ui,
     sans-serif;

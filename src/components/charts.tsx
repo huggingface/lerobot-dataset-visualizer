@@ -387,3 +387,350 @@ export function RangeBar({
     </div>
   );
 }
+
+/**
+ * How series number `index` is drawn. Eight hues, in their fixed order; past the eighth the same
+ * hues come round dashed, so a ninth series is still told from the first by more than position.
+ * Past sixteen there is nothing left to tell them apart with: those are drawn muted.
+ */
+export function seriesStyle(index: number): {
+  color: string;
+  dash: string | undefined;
+} {
+  if (index >= 16) return { color: "var(--fg-faint)", dash: "2 3" };
+  return {
+    color: `var(--series-${(index % 8) + 1})`,
+    dash: index >= 8 ? "6 4" : undefined,
+  };
+}
+
+/** A legend entry's key: a short stroke drawn the way the series is. */
+export function LineKey({ color, dash }: { color: string; dash?: string }) {
+  return (
+    <svg width="18" height="6" aria-hidden="true" className="shrink-0">
+      <line
+        x1="1"
+        x2="17"
+        y1="3"
+        y2="3"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeDasharray={dash}
+      />
+    </svg>
+  );
+}
+
+/**
+ * The legend of a line chart. Pointing at (or focusing) an entry reports it through `onHighlight`,
+ * so the chart can lift that line out of the others.
+ */
+export function SeriesLegend({
+  series,
+  highlighted,
+  onHighlight,
+}: {
+  series: { name: string; color: string; dash?: string; note?: string }[];
+  highlighted?: string | null;
+  onHighlight?: (name: string | null) => void;
+}) {
+  return (
+    <ul className="flex flex-wrap gap-x-4 gap-y-1 px-1">
+      {series.map(({ name, color, dash, note }) => (
+        <li key={name}>
+          <button
+            type="button"
+            tabIndex={onHighlight ? 0 : -1}
+            onPointerEnter={() => onHighlight?.(name)}
+            onPointerLeave={() => onHighlight?.(null)}
+            onFocus={() => onHighlight?.(name)}
+            onBlur={() => onHighlight?.(null)}
+            className={`flex items-center gap-1.5 rounded text-xs transition-opacity ${
+              onHighlight ? "cursor-default" : "pointer-events-none"
+            } ${highlighted && highlighted !== name ? "opacity-40" : ""}`}
+          >
+            <LineKey color={color} dash={dash} />
+            <span className="text-fg-muted">
+              {name}
+              {note && <span className="ml-1 text-fg-faint">{note}</span>}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** One hue, light to dark: the steps a magnitude is coloured with. */
+const SEQUENTIAL = [
+  "#cde2fb",
+  "#b7d3f6",
+  "#9ec5f4",
+  "#86b6ef",
+  "#6da7ec",
+  "#5598e7",
+  "#3987e5",
+  "#2a78d6",
+  "#256abf",
+  "#1c5cab",
+  "#184f95",
+  "#104281",
+  "#0d366b",
+].map((hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)));
+
+/** The palest step the dark theme uses: the two beyond it glare against a dark page. */
+const DARK_PALEST = 2;
+
+/**
+ * The colour of magnitude `t` in [0, 1]. Zero is the step nearest the surface, so "nothing" recedes
+ * into the background in either theme: pale on light, deep on dark.
+ */
+export function sequentialColor(t: number, theme: "light" | "dark"): string {
+  const clamped = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0));
+  const last = SEQUENTIAL.length - 1;
+  const position =
+    theme === "dark" ? last - clamped * (last - DARK_PALEST) : clamped * last;
+  const lower = Math.floor(position);
+  const upper = Math.min(SEQUENTIAL.length - 1, lower + 1);
+  const mix = position - lower;
+  const channel = (c: number) =>
+    Math.round(
+      SEQUENTIAL[lower][c] +
+        (SEQUENTIAL[upper][c] - SEQUENTIAL[lower][c]) * mix,
+    );
+  return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`;
+}
+
+const HEATMAP_LABEL_WIDTH = 132;
+
+/**
+ * A grid of magnitudes: one row per label, one column per step along x, coloured from zero to the
+ * largest value. Pointing at a cell reads it out.
+ */
+export function Heatmap({
+  rows,
+  theme,
+  xTicks,
+  xLabel,
+  formatValue,
+  describeColumn,
+  legend,
+  ariaLabel,
+}: {
+  rows: { label: string; values: number[] }[];
+  theme: "light" | "dark";
+  /** Positions along x, as fractions of the width, with their labels. */
+  xTicks: { at: number; label: string }[];
+  xLabel: string;
+  formatValue: (value: number) => string;
+  /** What column `index` stands for, in the readout: `at 40% of the episode`. */
+  describeColumn: (index: number) => string;
+  /** What the colour measures, for the scale. */
+  legend: string;
+  ariaLabel: string;
+}) {
+  const [ref, width] = useMeasuredWidth<HTMLDivElement>();
+  const [hovered, setHovered] = useState<{ row: number; col: number } | null>(
+    null,
+  );
+  const columns = rows[0]?.values.length ?? 0;
+  const max = Math.max(...rows.flatMap((row) => row.values), 0);
+  const rowHeight = rows.length <= 8 ? 26 : rows.length <= 16 ? 20 : 14;
+  const plotWidth = Math.max(0, width - HEATMAP_LABEL_WIDTH - 4);
+  const cellWidth = columns > 0 ? plotWidth / columns : 0;
+  const plotHeight = rows.length * rowHeight;
+  const height = plotHeight + 34;
+  const colorOf = (value: number) =>
+    sequentialColor(max > 0 ? value / max : 0, theme);
+  const cell = hovered ? rows[hovered.row].values[hovered.col] : 0;
+
+  return (
+    <div className="space-y-2">
+      <div ref={ref} className="relative w-full" style={{ height }}>
+        {width > 0 && (
+          <svg
+            width={width}
+            height={height}
+            role="img"
+            aria-label={ariaLabel}
+            className="block"
+            onPointerLeave={() => setHovered(null)}
+          >
+            {rows.map((row, r) => (
+              <g key={row.label}>
+                <text
+                  x={HEATMAP_LABEL_WIDTH - 8}
+                  y={r * rowHeight + rowHeight / 2}
+                  textAnchor="end"
+                  dominantBaseline="central"
+                  fontSize={Math.min(12, rowHeight - 3)}
+                  className={hovered?.row === r ? "fill-fg" : "fill-fg-muted"}
+                >
+                  {row.label.length > 18
+                    ? `${row.label.slice(0, 17)}…`
+                    : row.label}
+                  <title>{row.label}</title>
+                </text>
+                {row.values.map((value, c) => (
+                  <rect
+                    key={c}
+                    x={HEATMAP_LABEL_WIDTH + c * cellWidth}
+                    y={r * rowHeight}
+                    // A hairline of surface between cells, rather than an outline around each.
+                    width={Math.max(0.5, cellWidth - 1)}
+                    height={rowHeight - 1}
+                    fill={colorOf(value)}
+                    onPointerEnter={() => setHovered({ row: r, col: c })}
+                  />
+                ))}
+              </g>
+            ))}
+            {hovered && (
+              <rect
+                x={HEATMAP_LABEL_WIDTH + hovered.col * cellWidth - 0.5}
+                y={hovered.row * rowHeight - 0.5}
+                width={cellWidth}
+                height={rowHeight}
+                fill="none"
+                stroke="var(--fg)"
+                strokeWidth={1.5}
+                pointerEvents="none"
+              />
+            )}
+            {xTicks.map(({ at, label }) => (
+              <text
+                key={label}
+                x={HEATMAP_LABEL_WIDTH + at * plotWidth}
+                y={plotHeight + 14}
+                textAnchor={at <= 0 ? "start" : at >= 1 ? "end" : "middle"}
+                fontSize={11}
+                className="fill-fg-muted tabular"
+              >
+                {label}
+              </text>
+            ))}
+            <text
+              x={HEATMAP_LABEL_WIDTH + plotWidth / 2}
+              y={plotHeight + 30}
+              textAnchor="middle"
+              fontSize={11}
+              className="fill-fg-faint"
+            >
+              {xLabel}
+            </text>
+          </svg>
+        )}
+        {hovered && (
+          <div
+            className="pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap rounded-md border border-line-strong bg-[var(--surface-2)] px-2 py-1 text-xs shadow-lg"
+            style={{
+              left: Math.min(
+                Math.max(
+                  HEATMAP_LABEL_WIDTH + (hovered.col + 0.5) * cellWidth,
+                  90,
+                ),
+                width - 90,
+              ),
+              top:
+                hovered.row * rowHeight > 46
+                  ? hovered.row * rowHeight - 46
+                  : (hovered.row + 1) * rowHeight + 4,
+            }}
+          >
+            <p className="font-semibold text-fg tabular">{formatValue(cell)}</p>
+            <p className="text-fg-muted">
+              {rows[hovered.row].label} · {describeColumn(hovered.col)}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* The scale: what the colour measures, from nothing to the largest value drawn. */}
+      <div
+        className="flex items-center gap-2 text-[11px] text-fg-muted"
+        style={{ paddingLeft: HEATMAP_LABEL_WIDTH }}
+      >
+        <span className="tabular">{formatValue(0)}</span>
+        <div
+          className="h-2 w-32 rounded-sm"
+          style={{
+            background: `linear-gradient(to right, ${[0, 0.25, 0.5, 0.75, 1]
+              .map((t) => sequentialColor(t, theme))
+              .join(", ")})`,
+          }}
+        />
+        <span className="tabular">{formatValue(max)}</span>
+        <span className="ml-1 text-fg-faint">{legend}</span>
+      </div>
+
+      <table className="sr-only">
+        <caption>{ariaLabel}</caption>
+        <thead>
+          <tr>
+            <th>Row</th>
+            <th>Lowest</th>
+            <th>Mean</th>
+            <th>Highest</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.label}>
+              <td>{row.label}</td>
+              <td>{formatValue(Math.min(...row.values))}</td>
+              <td>
+                {formatValue(
+                  row.values.reduce((a, b) => a + b, 0) /
+                    (row.values.length || 1),
+                )}
+              </td>
+              <td>{formatValue(Math.max(...row.values))}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * Bins covering `values` with round edges (a width of 1, 2, 2.5 or 5 × 10ⁿ), about `target` of
+ * them, for the shared Histogram.
+ */
+export function roundBins(values: number[], target: number): HistogramBin[] {
+  if (values.length === 0) return [];
+  let min = Infinity;
+  let max = -Infinity;
+  for (const value of values) {
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
+  if (max === min) return [{ lo: min, hi: max, count: values.length }];
+  const rough = (max - min) / Math.max(1, target);
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
+  const width =
+    [1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((w) => w >= rough) ??
+    rough;
+  const lo = Math.floor(min / width) * width;
+  // One more bin when the largest value sits exactly on an edge, so it has a bin to fall in.
+  const count = Math.max(1, Math.floor((max - lo) / width) + 1);
+  const edge = (i: number) => Number((lo + i * width).toPrecision(12));
+  const bins = Array.from({ length: count }, (_, i) => ({
+    lo: edge(i),
+    hi: edge(i + 1),
+    count: 0,
+  }));
+  for (const value of values) bins[roundBinIndex(value, bins)].count++;
+  return bins;
+}
+
+/** Which of `roundBins`' bins a value falls in. */
+export function roundBinIndex(value: number, bins: HistogramBin[]): number {
+  if (bins.length <= 1) return 0;
+  const width = bins[0].hi - bins[0].lo;
+  return Math.max(
+    0,
+    Math.min(bins.length - 1, Math.floor((value - bins[0].lo) / width)),
+  );
+}
