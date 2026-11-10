@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import Link from "next/link";
 import type {
   CameraInfo,
   EpisodeFrameInfo,
@@ -8,7 +9,14 @@ import type {
 } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import { useFlaggedEpisodes } from "@/context/flagged-episodes-context";
 import { proxyHfUrl } from "@/utils/auth";
-import { InlineLoading, PageHeader, Switch } from "@/components/ui";
+import {
+  EpisodeLink,
+  FlagIcon,
+  InlineLoading,
+  PageHeader,
+  Switch,
+  episodeHref,
+} from "@/components/ui";
 
 const PAGE_SIZE = 48;
 
@@ -71,48 +79,49 @@ function FrameThumbnail({
         className="w-full bg-[var(--surface-1)] rounded overflow-hidden relative group"
         style={{ aspectRatio }}
       >
-        {inView ? (
-          <video
-            ref={videoRef}
-            src={proxyHfUrl(info.videoUrl)}
-            preload="metadata"
-            muted
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <div className="w-full h-full animate-pulse bg-fill" />
-        )}
+        {/* The frame opens its episode; the flag button sits beside the link, not inside it. */}
+        <Link
+          href={episodeHref(info.episodeIndex)}
+          title={`Open episode ${info.episodeIndex}`}
+          className="block h-full w-full focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--accent)]"
+        >
+          {inView ? (
+            <video
+              ref={videoRef}
+              src={proxyHfUrl(info.videoUrl)}
+              preload="metadata"
+              muted
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full animate-pulse bg-fill" />
+          )}
+        </Link>
         <button
           onClick={() => toggle(info.episodeIndex)}
-          className={`absolute top-1 right-1 p-1 rounded transition-opacity ${
+          className={`absolute top-1 right-1 p-1 rounded transition-opacity focus-visible:opacity-100 ${
             isFlagged
               ? "opacity-100 text-rose-500 hover:text-flag-fg"
               : "opacity-0 group-hover:opacity-100 text-fg-muted hover:text-fg"
           }`}
           title={isFlagged ? "Unflag episode" : "Flag episode"}
+          aria-label={
+            isFlagged
+              ? `Unflag episode ${info.episodeIndex}`
+              : `Flag episode ${info.episodeIndex}`
+          }
+          aria-pressed={isFlagged}
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill={isFlagged ? "currentColor" : "none"}
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-            <line x1="4" y1="22" x2="4" y2="15" />
-          </svg>
+          <FlagIcon size={14} filled={isFlagged} />
         </button>
       </div>
-      <p
-        className={`text-xs mt-1 tabular-nums ${isFlagged ? "text-flag-fg" : "text-fg-muted"}`}
+      <EpisodeLink
+        episode={info.episodeIndex}
+        className={`mt-1 text-xs ${isFlagged ? "text-flag-fg" : "text-fg-muted"}`}
       >
         ep {info.episodeIndex}
         {isFlagged ? " ⚑" : ""}
-      </p>
+      </EpisodeLink>
     </div>
   );
 }
@@ -222,20 +231,7 @@ export default function OverviewPanel({
               }}
               className={`btn ${flaggedOnly ? "btn-flagged" : ""}`}
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill={flaggedOnly ? "currentColor" : "none"}
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-                <line x1="4" y1="22" x2="4" y2="15" />
-              </svg>
+              <FlagIcon filled={flaggedOnly} />
               Flagged only ({flagCount})
             </button>
           )}

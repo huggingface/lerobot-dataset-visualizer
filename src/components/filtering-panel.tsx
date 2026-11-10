@@ -12,62 +12,14 @@ import {
   ActionVelocitySection,
   FullscreenWrapper,
 } from "@/components/action-insights-panel";
-import { InlineLoading, PageHeader } from "@/components/ui";
-
-// ─── Shared small components ─────────────────────────────────────
-
-function FlagBtn({ id }: { id: number }) {
-  const { has, toggle } = useFlaggedEpisodes();
-  const flagged = has(id);
-  return (
-    <button
-      onClick={() => toggle(id)}
-      title={flagged ? "Unflag episode" : "Flag for review"}
-      className={`p-0.5 rounded transition-colors ${flagged ? "text-rose-500 hover:text-flag-fg" : "text-fg-faint hover:text-fg-muted"}`}
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill={flagged ? "currentColor" : "none"}
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-        <line x1="4" y1="22" x2="4" y2="15" />
-      </svg>
-    </button>
-  );
-}
-
-function FlagAllBtn({ ids, label }: { ids: number[]; label?: string }) {
-  const { addMany } = useFlaggedEpisodes();
-  return (
-    <button
-      onClick={() => addMany(ids)}
-      className="text-xs text-fg-faint hover:text-flag-fg transition-colors flex items-center gap-1"
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="10"
-        height="10"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-        <line x1="4" y1="22" x2="4" y2="15" />
-      </svg>
-      {label ?? "Flag all"}
-    </button>
-  );
-}
+import {
+  EpisodeLink,
+  FlagAllButton,
+  FlagButton,
+  FlagIcon,
+  InlineLoading,
+  PageHeader,
+} from "@/components/ui";
 
 // ─── Lowest-Movement Episodes ────────────────────────────────────
 
@@ -81,7 +33,7 @@ function LowMovementSection({ episodes }: { episodes: LowMovementEpisode[] }) {
         <h3 className="text-sm font-semibold text-fg">
           Lowest-Movement Episodes
         </h3>
-        <FlagAllBtn ids={episodes.map((e) => e.episodeIndex)} />
+        <FlagAllButton ids={episodes.map((e) => e.episodeIndex)} />
       </div>
       <p className="text-xs text-fg-muted">
         Episodes with the lowest average action change per frame. Very low
@@ -97,11 +49,12 @@ function LowMovementSection({ episodes }: { episodes: LowMovementEpisode[] }) {
             key={ep.episodeIndex}
             className="bg-[var(--surface-0)]/50 rounded-md px-3 py-2 flex items-center gap-3"
           >
-            <FlagBtn id={ep.episodeIndex} />
+            <FlagButton id={ep.episodeIndex} />
             {/* Fixed width so every bar starts at the same x, whatever the index's digit count. */}
-            <span className="w-14 text-xs text-fg-soft font-medium tabular-nums shrink-0">
-              ep {ep.episodeIndex}
-            </span>
+            <EpisodeLink
+              episode={ep.episodeIndex}
+              className="w-14 shrink-0 text-xs font-medium text-fg-soft"
+            />
             <div className="flex-1 min-w-0">
               <div className="h-1.5 bg-fill rounded-full overflow-hidden">
                 <div
@@ -239,7 +192,7 @@ function FlaggedIdsCopyBar({
   repoId: string;
   onViewEpisodes?: () => void;
 }) {
-  const { flagged, count, clear } = useFlaggedEpisodes();
+  const { flagged, count, clear, toggle } = useFlaggedEpisodes();
   const [copied, setCopied] = useState(false);
 
   const ids = useMemo(() => [...flagged].sort((a, b) => a - b), [flagged]);
@@ -295,7 +248,7 @@ function FlaggedIdsCopyBar({
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
             )}
-            Copy
+            {copied ? "Copied" : "Copy IDs"}
           </button>
           <button
             onClick={clear}
@@ -305,25 +258,34 @@ function FlaggedIdsCopyBar({
           </button>
         </div>
       </div>
-      <p className="text-xs text-fg-soft tabular-nums leading-relaxed max-h-20 overflow-y-auto">
-        {idStr}
-      </p>
+      {/* One chip per episode: open it to check, or drop the flag, without leaving the list. */}
+      <ul
+        className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto"
+        aria-label="Flagged episodes"
+      >
+        {ids.map((id) => (
+          <li
+            key={id}
+            className="flex items-center rounded border border-rose-500/25 bg-rose-500/10 text-xs text-fg-soft"
+          >
+            <EpisodeLink episode={id} className="py-0.5 pl-1.5 pr-1">
+              {id}
+            </EpisodeLink>
+            <button
+              type="button"
+              onClick={() => toggle(id)}
+              title={`Unflag episode ${id}`}
+              aria-label={`Unflag episode ${id}`}
+              className="rounded-r px-1 py-0.5 text-fg-faint transition-colors hover:bg-rose-500/20 hover:text-flag-fg"
+            >
+              ×
+            </button>
+          </li>
+        ))}
+      </ul>
       {onViewEpisodes && (
         <button onClick={onViewEpisodes} className="btn w-full py-1.5">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-            <line x1="4" y1="22" x2="4" y2="15" />
-          </svg>
+          <FlagIcon />
           View flagged episodes
         </button>
       )}
