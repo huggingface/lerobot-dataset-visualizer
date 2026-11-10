@@ -21,6 +21,12 @@ import {
   getDatasetStats,
 } from "@/utils/versionUtils";
 import { AsyncCache } from "@/utils/asyncCache";
+import {
+  dimensionStats,
+  summarizeEpisodes,
+  type DimensionStats,
+  type EpisodeLengthStats,
+} from "@/utils/episodeStats";
 import { CHART_CONFIG, EXCLUDED_COLUMNS } from "@/utils/constants";
 import {
   processChartDataGroups,
@@ -210,6 +216,7 @@ const allEpisodes = new WeakMap<LeRobotDataset, Promise<LeRobotEpisode[]>>();
  */
 export const episodeLengthsCache = new AsyncCache<EpisodeLengthStats | null>(4);
 export const episodeFramesCache = new AsyncCache<EpisodeFramesData>(4);
+export const datasetSchemaCache = new AsyncCache<DatasetSchema>(4);
 export const crossEpisodeCache =
   new AsyncCache<CrossEpisodeVarianceData | null>(4);
 
@@ -275,21 +282,13 @@ export type ColumnMinMax = {
   max: number;
 };
 
-export type EpisodeLengthInfo = {
-  episodeIndex: number;
-  lengthSeconds: number;
-  frames: number;
-};
-
-export type EpisodeLengthStats = {
-  shortestEpisodes: EpisodeLengthInfo[];
-  longestEpisodes: EpisodeLengthInfo[];
-  allEpisodeLengths: EpisodeLengthInfo[];
-  meanEpisodeLength: number;
-  medianEpisodeLength: number;
-  stdEpisodeLength: number;
-  episodeLengthHistogram: { binLabel: string; count: number }[];
-};
+export type {
+  EpisodeLengthInfo,
+  EpisodeLengthStats,
+  LengthBin,
+  TaskCount,
+  DimensionStats,
+} from "@/utils/episodeStats";
 
 export type EpisodeFrameInfo = {
   episodeIndex: number;
@@ -1401,115 +1400,84 @@ export function computeColumnMinMax(
 }
 
 /**
- * Load all episode lengths from the episodes metadata parquet files (v3.0).
- * Returns min/max/mean/median/std and a histogram, or null if unavailable.
+ * Episode lengths and task counts for the whole dataset, or null if the index cannot be read.
+ * Works for every version: the package reads v2's episodes.jsonl and v3's episode index alike.
  */
-/** Works for every version: the package reads v2's episodes.jsonl and v3's episode index alike. */
 export async function loadAllEpisodeLengths(
   repoId: string,
   fps: number,
 ): Promise<EpisodeLengthStats | null> {
   try {
     const { totalEpisodes } = await leRobotDataset(repoId).info();
-    const listing = (await loadLeRobotEpisodes(repoId, totalEpisodes)).map(
-      (episode) => ({ index: episode.index, length: episode.length }),
-    );
-
-    if (listing.length === 0) return null;
-
-    const withSeconds = listing.map((ep) => ({
-      episodeIndex: ep.index,
-      frames: ep.length,
-      lengthSeconds: Math.round((ep.length / fps) * 100) / 100,
-    }));
-
-    const sortedByLength = [...withSeconds].sort(
-      (a, b) => a.lengthSeconds - b.lengthSeconds,
-    );
-    const shortestEpisodes = sortedByLength.slice(0, 5);
-    const longestEpisodes = sortedByLength.slice(-5).reverse();
-
-    const lengths = withSeconds.map((e) => e.lengthSeconds);
-    const sum = lengths.reduce((a, b) => a + b, 0);
-    const mean = Math.round((sum / lengths.length) * 100) / 100;
-
-    const sorted = [...lengths].sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    const median =
-      sorted.length % 2 === 0
-        ? Math.round(((sorted[mid - 1] + sorted[mid]) / 2) * 100) / 100
-        : sorted[mid];
-
-    const variance =
-      lengths.reduce((acc, l) => acc + (l - mean) ** 2, 0) / lengths.length;
-    const std = Math.round(Math.sqrt(variance) * 100) / 100;
-
-    // Build histogram
-    const histMin = Math.min(...lengths);
-    const histMax = Math.max(...lengths);
-
-    if (histMax === histMin) {
-      return {
-        shortestEpisodes,
-        longestEpisodes,
-        allEpisodeLengths: withSeconds,
-        meanEpisodeLength: mean,
-        medianEpisodeLength: median,
-        stdEpisodeLength: std,
-        episodeLengthHistogram: [
-          { binLabel: `${histMin.toFixed(1)}s`, count: lengths.length },
-        ],
-      };
-    }
-
-    const p1 = sorted[Math.floor(sorted.length * 0.01)];
-    const p99 = sorted[Math.ceil(sorted.length * 0.99) - 1];
-    const range = p99 - p1 || 1;
-
-    const targetBins = Math.max(
-      10,
-      Math.min(50, Math.ceil(Math.log2(lengths.length) + 1)),
-    );
-    const rawBinWidth = range / targetBins;
-    const magnitude = Math.pow(10, Math.floor(Math.log10(rawBinWidth)));
-    const niceSteps = [1, 2, 2.5, 5, 10];
-    const niceBinWidth =
-      niceSteps.map((s) => s * magnitude).find((w) => w >= rawBinWidth) ??
-      rawBinWidth;
-
-    const niceMin = Math.floor(p1 / niceBinWidth) * niceBinWidth;
-    const niceMax = Math.ceil(p99 / niceBinWidth) * niceBinWidth;
-    const actualBinCount = Math.max(
-      1,
-      Math.round((niceMax - niceMin) / niceBinWidth),
-    );
-    const bins = Array.from({ length: actualBinCount }, () => 0);
-
-    for (const len of lengths) {
-      let binIdx = Math.floor((len - niceMin) / niceBinWidth);
-      if (binIdx < 0) binIdx = 0;
-      if (binIdx >= actualBinCount) binIdx = actualBinCount - 1;
-      bins[binIdx]++;
-    }
-
-    const histogram = bins.map((count, i) => {
-      const lo = niceMin + i * niceBinWidth;
-      const hi = lo + niceBinWidth;
-      return { binLabel: `${lo.toFixed(1)}–${hi.toFixed(1)}s`, count };
-    });
-
-    return {
-      shortestEpisodes,
-      longestEpisodes,
-      allEpisodeLengths: withSeconds,
-      meanEpisodeLength: mean,
-      medianEpisodeLength: median,
-      stdEpisodeLength: std,
-      episodeLengthHistogram: histogram,
-    };
+    const listing = await loadLeRobotEpisodes(repoId, totalEpisodes);
+    return summarizeEpisodes(listing, fps);
   } catch {
     return null;
   }
+}
+
+export type FeatureSummary = {
+  name: string;
+  dtype: string;
+  shape: number[];
+  /** Per-component statistics from meta/stats.json, for a vector feature that has them. */
+  stats: DimensionStats[] | null;
+};
+
+export type CameraSummary = CameraInfo & {
+  codec?: string;
+  fps?: number;
+  pixelFormat?: string;
+  isDepth: boolean;
+};
+
+export type DatasetSchema = {
+  features: FeatureSummary[];
+  cameras: CameraSummary[];
+};
+
+/** What the dataset records: every feature, with its statistics where meta/stats.json has them. */
+export async function loadDatasetSchema(
+  repoId: string,
+): Promise<DatasetSchema> {
+  const [{ info }, stats] = await Promise.all([
+    getDatasetVersionAndInfo(repoId),
+    getDatasetStats(repoId),
+  ]);
+  const parsed = parseInfo(JSON.stringify(info));
+
+  const features = Object.entries(info.features)
+    .filter(([, feature]) => feature.dtype !== "video")
+    .map(([name, feature]) => ({
+      name,
+      dtype: feature.dtype,
+      shape: feature.shape,
+      stats:
+        feature.shape.length === 1
+          ? dimensionStats(
+              stats?.[name],
+              featureNames(feature.names, feature.shape[0]),
+            )
+          : null,
+    }));
+
+  const cameras = parsed.cameras.map(({ key, width, height, codec }) => {
+    const video = info.features[key]?.info ?? {};
+    const text = (value: unknown) =>
+      typeof value === "string" && value ? value : undefined;
+    const fps = video["video.fps"];
+    return {
+      name: key,
+      width,
+      height,
+      codec: text(codec) ?? text(video["video.codec"]),
+      fps: typeof fps === "number" ? fps : undefined,
+      pixelFormat: text(video["video.pix_fmt"]),
+      isDepth: video["video.is_depth_map"] === true,
+    };
+  });
+
+  return { features, cameras };
 }
 
 /**

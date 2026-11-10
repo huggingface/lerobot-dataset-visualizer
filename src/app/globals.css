@@ -45,6 +45,19 @@
   --chart-grid: #e5e7eb;
   --chart-axis: #9ca3af;
 
+  /* Chart series, used in this order and never cycled past the eighth. The order is what keeps
+     neighbours apart under colour-vision deficiency; both themes pass the separation checks on
+     --bg and --surface-1 (aqua, yellow and magenta sit under 3:1 on light surfaces, so a chart
+     that uses them carries a legend or labels). */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #6250d6;
+  --series-8: #e34948;
+
   --scrollbar: rgba(17, 24, 39, 0.14);
   --scrollbar-hover: rgba(17, 24, 39, 0.24);
 }
@@ -77,6 +90,15 @@
 
   --chart-grid: #1f2937;
   --chart-axis: #4b5563;
+
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
 
   --scrollbar: rgba(255, 255, 255, 0.06);
   --scrollbar-hover: rgba(255, 255, 255, 0.12);
