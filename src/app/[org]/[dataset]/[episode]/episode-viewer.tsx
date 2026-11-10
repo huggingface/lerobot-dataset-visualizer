@@ -21,10 +21,10 @@ import { AnnotationsTimeline } from "@/components/annotations-timeline";
 import Sidebar from "@/components/side-nav";
 import StatsPanel from "@/components/stats-panel";
 import OverviewPanel from "@/components/overview-panel";
+import DoctorPanel from "@/components/doctor-panel";
 import Loading from "@/components/loading-component";
 import HfAuthButton from "@/components/hf-auth-button";
 import { EpisodeHeader, ThemeToggle } from "@/components/ui";
-import { useTheme } from "@/utils/theme";
 import { hasRobotModel } from "@/lib/so101-robot";
 import {
   crossEpisodeCache,
@@ -696,8 +696,6 @@ function EpisodeViewerInner({
   // which would redraw this whole component ~12×/s. <UrlTimeSync /> handles
   // the one thing here that needs `currentTime` (the ?t= URL writer).
   const { seek, setIsPlaying, stepFrames } = useTimeControls();
-  /// Passed to the embedded lerobot-doctor Space, which follows `__theme` like any HF Space.
-  const theme = useTheme();
 
   // ReplayViewer episode changer and play toggle — populated by ReplayViewer on mount
   const replayChangerRef = useRef<((ep: number) => void) | undefined>(
@@ -1050,35 +1048,7 @@ function EpisodeViewerInner({
           )}
 
           {activeTab === "doctor" && (
-            <div className="flex flex-col h-full">
-              <div className="flex items-center justify-between px-1 pb-2 text-xs text-fg-muted">
-                <span>
-                  Dataset quality diagnostics &mdash; powered by{" "}
-                  <a
-                    href="https://github.com/jashshah999/lerobot-doctor"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline hover:text-fg"
-                  >
-                    lerobot-doctor
-                  </a>
-                </span>
-                <a
-                  href={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${org}/${dataset}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline hover:text-fg"
-                >
-                  Open in new tab
-                </a>
-              </div>
-              <iframe
-                src={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${org}/${dataset}&__theme=${theme}`}
-                title="lerobot-doctor"
-                className="flex-1 w-full rounded-lg border border-line bg-[var(--surface-0)]"
-                sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-              />
-            </div>
+            <DoctorPanel repoId={datasetInfo.repoId} />
           )}
 
           {activeTab === "replay" && (

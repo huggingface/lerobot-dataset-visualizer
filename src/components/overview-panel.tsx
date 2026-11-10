@@ -133,6 +133,7 @@ function FrameTile({
       <Link
         href={episodeHref(episode)}
         title={`Open episode ${episode}`}
+        aria-label={`Open episode ${episode}`}
         className={`flex gap-px overflow-hidden rounded outline-offset-2 ring-1 transition-shadow focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
           isFlagged
             ? "ring-rose-500/70"
