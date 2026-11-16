@@ -208,6 +208,26 @@ const G1_SDK_TO_JOINT: Record<string, string> = {
   "krighthandindex0.q": "right_hand_index_0_joint",
   "krighthandindex1.q": "right_hand_index_1_joint",
 };
+/// The body's 29 joints, in Unitree's motor order.
+const G1_BODY_JOINTS = Object.values(G1_SDK_TO_JOINT).slice(0, 29);
+/// Unitree's whole-body (SMPL) datasets record each hand's six motors as `hand_state | finger_0` to
+/// `finger_5` (left), then `finger_6` to `finger_11` (right), in an order that depends on the hand.
+const INSPIRE_FINGERS = [
+  "index",
+  "middle",
+  "ring",
+  "little",
+  "thumb_oc",
+  "thumb_lat",
+];
+const BRAINCO_FINGERS = [
+  "thumb_oc",
+  "thumb_lat",
+  "index",
+  "middle",
+  "ring",
+  "little",
+];
 
 function autoMatchJoints(
   jointNames: string[],
@@ -229,8 +249,14 @@ function autoMatchJoints(
   // Build reverse lookup: joint name → column key (for G1 SDK-style columns)
   const g1Reverse = new Map<string, string>();
   for (let i = 0; i < suffixes.length; i++) {
-    const jointName =
-      G1_SDK_TO_JOINT[suffixes[i]] ?? G1_SDK_TO_JOINT[`${suffixes[i]}.q`];
+    /// Unitree's whole-body (SMPL) datasets: `robot_q_current | q_7` to `q_35` are the body's joints,
+    /// after the root's pose.
+    const q = columnKeys[i].includes("robot_q_current")
+      ? suffixes[i].match(/^q_(\d+)$/)
+      : null;
+    const jointName = q
+      ? G1_BODY_JOINTS[Number(q[1]) - 7]
+      : (G1_SDK_TO_JOINT[suffixes[i]] ?? G1_SDK_TO_JOINT[`${suffixes[i]}.q`]);
     if (jointName) g1Reverse.set(jointName, columnKeys[i]);
   }
 
@@ -312,8 +338,11 @@ function autoMatchJoints(
               ? "thumb_oc"
               : finger;
       const idx = sided.indexOf(`${side === "l" ? "left" : "right"}_${name}`);
-      if (idx >= 0) {
-        mapping[jointName] = columnKeys[idx];
+      const fingerIdx = suffixes.indexOf(
+        `finger_${(side === "l" ? 0 : 6) + INSPIRE_FINGERS.indexOf(name)}`,
+      );
+      if (idx >= 0 || fingerIdx >= 0) {
+        mapping[jointName] = columnKeys[idx >= 0 ? idx : fingerIdx];
         continue;
       }
     }
@@ -332,8 +361,11 @@ function autoMatchJoints(
               ? "thumb_oc"
               : finger;
       const idx = sided.indexOf(`${side}_${name}`);
-      if (idx >= 0) {
-        mapping[jointName] = columnKeys[idx];
+      const fingerIdx = suffixes.indexOf(
+        `finger_${(side === "left" ? 0 : 6) + BRAINCO_FINGERS.indexOf(name)}`,
+      );
+      if (idx >= 0 || fingerIdx >= 0) {
+        mapping[jointName] = columnKeys[idx >= 0 ? idx : fingerIdx];
         continue;
       }
     }
@@ -354,12 +386,17 @@ const Z_UP_TO_Y_UP = new THREE.Quaternion().setFromAxisAngle(
 /// The columns of a floating base's pose in the world (x, y, z, qx, qy, qz, qw), such as Unitree's
 /// `state_base_pose`.
 function findBasePoseColumns(columnKeys: string[]): string[] | null {
-  const feature = columnKeys
-    .map((k) => k.split(SERIES_DELIM)[0])
-    .find((f) => f.endsWith("base_pose"));
-  if (!feature) return null;
-  const columns = BASE_POSE_NAMES.map((n) => `${feature}${SERIES_DELIM}${n}`);
-  return columns.every((c) => columnKeys.includes(c)) ? columns : null;
+  const features = columnKeys.map((k) => k.split(SERIES_DELIM)[0]);
+  const feature = features.find((f) => f.endsWith("base_pose"));
+  /// Unitree's whole-body (SMPL) datasets start `robot_q_current` with the root's x, y, z, qw, qx,
+  /// qy, qz.
+  const qFeature = features.find((f) => f.endsWith("robot_q_current"));
+  const columns = feature
+    ? BASE_POSE_NAMES.map((n) => `${feature}${SERIES_DELIM}${n}`)
+    : qFeature
+      ? [0, 1, 2, 4, 5, 6, 3].map((i) => `${qFeature}${SERIES_DELIM}q_${i}`)
+      : null;
+  return columns?.every((c) => columnKeys.includes(c)) ? columns : null;
 }
 
 const SINGLE_ARM_TIP_NAMES = [
@@ -1074,7 +1111,11 @@ export default function ReplayViewer({
       } else if (INSPIRE_JOINT.test(jn)) {
         values[jn] = inspireJointValue(jn, raw);
       } else if (BRAINCO_JOINT.test(jn)) {
-        values[jn] = braincoJointValue(jn, raw);
+        /// The whole-body datasets' `finger_N` record the hand's closure, not one minus it.
+        values[jn] = braincoJointValue(
+          jn,
+          /finger_\d+$/.test(col) ? 1 - raw : raw,
+        );
       } else if (jn.includes("_dex1_finger_joint_")) {
         values[jn] =
           DEX1_FINGER_CLOSED +
@@ -1096,7 +1137,10 @@ export default function ReplayViewer({
     if (!basePoseColumns || totalFrames === 0)
       return [0, 0, restHeight, 0, 0, 0, 1];
     const row = chartData[Math.min(frame, totalFrames - 1)];
-    return basePoseColumns.map((c) => row[c]);
+    const pose = basePoseColumns.map((c) => row[c]);
+    /// Some whole-body episodes record no height: 0 throughout.
+    if (pose[2] === 0) pose[2] = restHeight;
+    return pose;
   }, [basePoseColumns, chartData, frame, restHeight, totalFrames]);
 
   if (data.flatChartData.length === 0) {
