@@ -17,12 +17,15 @@ import {
 } from "@react-three/drei";
 import * as THREE from "three";
 import { loadUsd, type LoadResult } from "@huggingface/usd-web-viewer";
-import { Line2 } from "three/examples/jsm/lines/Line2.js";
-import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import type { EpisodeData } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import { loadEpisodeFlatChartData } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 import ReplayPlaybackBar from "@/components/replay-playback-bar";
+import {
+  TipTrail,
+  trailStyle,
+  type TrailMode,
+} from "@/components/replay-trail";
+import { tipSide } from "@/lib/trail";
 import RobotLoader, { type LoaderRobot } from "@/components/robot-loader";
 import { CHART_CONFIG } from "@/utils/constants";
 import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
@@ -138,13 +141,36 @@ function getRobotConfig(
 }
 
 // Detect unit: servo ticks (0-4096), degrees (>6.28), or radians
-function detectAndConvert(values: number[]): number[] {
-  if (values.length === 0) return values;
-  const max = Math.max(...values.map(Math.abs));
-  if (max > 360) return values.map((v) => ((v - 2048) / 2048) * Math.PI); // servo ticks
-  if (max > 6.3) return values.map((v) => v * DEG2RAD); // degrees
-  return values; // already radians
+type AngleUnit = "ticks" | "degrees" | "radians";
+
+/**
+ * Decided once for the episode, from the largest value its joints take. Decided frame by frame, a
+ * frame whose joints all happened to sit near zero read degrees as radians, and the arm jumped.
+ */
+function detectAngleUnit(maxAbs: number): AngleUnit {
+  if (maxAbs > 360) return "ticks";
+  if (maxAbs > 6.3) return "degrees";
+  return "radians";
 }
+
+function toRadians(value: number, unit: AngleUnit): number {
+  if (unit === "ticks") return ((value - 2048) / 2048) * Math.PI;
+  if (unit === "degrees") return value * DEG2RAD;
+  return value;
+}
+
+/** Joints set by their own rules, not read as angles. */
+function isSpecialJoint(joint: string): boolean {
+  return (
+    joint.toLowerCase().includes("finger_joint1") ||
+    INSPIRE_JOINT.test(joint) ||
+    BRAINCO_JOINT.test(joint) ||
+    joint.includes("_dex1_finger_joint_")
+  );
+}
+
+/** Where the robot is at one frame: joint values by joint name, and the base pose (x y z qx qy qz qw). */
+type FramePose = { joints: Record<string, number>; base: number[] };
 
 function groupColumnsByPrefix(keys: string[]): Record<string, string[]> {
   const groups: Record<string, string[]> = {};
@@ -462,9 +488,42 @@ function isLocked(joint: LoadResult["joints"][number]): boolean {
     joint.lower === joint.upper
   );
 }
-const TRAIL_DURATION = 1.0;
-const TRAIL_COLORS = [new THREE.Color("#ff6600"), new THREE.Color("#00aaff")];
-const MAX_TRAIL_POINTS = 300;
+/** How much of the past the trail's bright tail covers, in seconds of the episode. */
+const TRAIL_SECONDS = 2;
+/** How far either side of now the whole episode's path shows in full, in seconds. */
+const TRAIL_CONTEXT_SECONDS = 12;
+/** Above this height, in meters, the trail casts no shadow on the floor. */
+const TRAIL_SHADOW_HEIGHT = 0.35;
+/** Time the episode's path may take from the page per slice of work, in milliseconds. */
+const PATH_SLICE_MS = 10;
+
+/** Drivable joints by name, as `RobotScene` keeps them. */
+type JointMap = Map<string, { path: string; revolute: boolean }>;
+
+const poseQuaternion = new THREE.Quaternion();
+
+/**
+ * Puts the model where a frame has it. The robot stays above the origin, where the camera looks,
+ * and the floor moves under it; the robots' USDs are Z-up, like the base pose.
+ */
+function applyPose(
+  model: LoadResult,
+  joints: JointMap,
+  pose: FramePose,
+  scale: number,
+): void {
+  const [, , z, qx, qy, qz, qw] = pose.base;
+  model.root.position.set(0, z * scale, 0);
+  model.root.quaternion
+    .copy(Z_UP_TO_Y_UP)
+    .multiply(poseQuaternion.set(qx, qy, qz, qw));
+  const positions: Record<string, number> = {};
+  for (const [name, value] of Object.entries(pose.joints)) {
+    const joint = joints.get(name);
+    if (joint) positions[joint.path] = joint.revolute ? value / DEG2RAD : value;
+  }
+  model.setJointPositions(positions);
+}
 
 /**
  * Frames the robot's world-space bounding box. Models can have a world→base offset (SO-arm does) that
@@ -474,9 +533,18 @@ function fitCameraToRobot(
   robot: THREE.Object3D,
   camera: THREE.Camera,
   controls: unknown,
+  /** The trails' paths: framed with the robot, so the workspace it moves through is in view. */
+  paths?: THREE.Box3,
 ) {
   const bbox = new THREE.Box3().setFromObject(robot);
   if (bbox.isEmpty()) return;
+  if (paths && !paths.isEmpty()) {
+    const both = bbox.clone().union(paths);
+    // A route walked across the room would shrink the robot to a speck: frame the robot alone.
+    const robotSize = bbox.getSize(new THREE.Vector3()).length();
+    if (both.getSize(new THREE.Vector3()).length() <= robotSize * 2.5)
+      bbox.copy(both);
+  }
   const center = bbox.getCenter(new THREE.Vector3());
   const sizeVec = bbox.getSize(new THREE.Vector3());
   const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z);
@@ -493,8 +561,24 @@ function fitCameraToRobot(
   }
 }
 
+const TRAIL_MODE_KEY = "lerobot-viz-replay-trail";
+
+/** The trail chosen on an earlier visit; the whole episode's path by default. */
+function readTrailMode(): TrailMode {
+  try {
+    const stored = localStorage.getItem(TRAIL_MODE_KEY);
+    if (stored === "off" || stored === "recent" || stored === "episode")
+      return stored;
+  } catch {
+    // Storage blocked: the default.
+  }
+  return "episode";
+}
+
 /** Frames to wait for joint values before fitting anyway (a robot with no mapped joints). */
 const MAX_FIT_WAIT_FRAMES = 30;
+/** How long the first fit waits for the trails' paths, to frame them too, in milliseconds. */
+const MAX_PATH_WAIT_MS = 2500;
 
 // ─── Robot scene (imperative, inside Canvas) ───
 function RobotScene({
@@ -503,8 +587,13 @@ function RobotScene({
   jointValues,
   basePose,
   onJointsLoaded,
-  trailEnabled,
-  trailResetKey,
+  onTrailSides,
+  poseAt,
+  totalFrames,
+  frame,
+  fps,
+  trailMode,
+  dark,
   scale,
 }: {
   robot: LoaderRobot;
@@ -512,103 +601,65 @@ function RobotScene({
   jointValues: Record<string, number>;
   basePose: number[];
   onJointsLoaded: (names: string[]) => void;
-  trailEnabled: boolean;
-  trailResetKey: number;
+  /** Which side each trail is on, once the model's tool points are known. */
+  onTrailSides: (sides: ("left" | "right" | null)[]) => void;
+  /** The pose at any frame of the episode, for its path. */
+  poseAt: (frame: number) => FramePose;
+  totalFrames: number;
+  frame: number;
+  fps: number;
+  trailMode: TrailMode;
+  dark: boolean;
   scale: number;
 }) {
-  const { scene, size, invalidate } = useThree();
+  const { scene, size, viewport, invalidate } = useThree();
   const modelRef = useRef<LoadResult | null>(null);
+  /// Bumped when a model loads, so the path is worked out for it.
+  const [modelVersion, setModelVersion] = useState(0);
   /// The joints the data drives, by name: a mimic joint follows its joint and a locked one doesn't
   /// move, so neither is one.
-  const jointsRef = useRef(
-    new Map<string, { path: string; revolute: boolean }>(),
-  );
+  const jointsRef = useRef<JointMap>(new Map());
   /// Prim paths whose positions the trails follow.
   const tipPathsRef = useRef<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  type TrailState = {
-    positions: Float32Array;
-    colors: Float32Array;
-    times: number[];
-    count: number;
-  };
-  const trailsRef = useRef<TrailState[]>([]);
-  const linesRef = useRef<Line2[]>([]);
-  const trailMatsRef = useRef<LineMaterial[]>([]);
-  const trailCountRef = useRef(0);
+  /// Fixed to the floor, which moves under the robot when the data has a base pose: the trails
+  /// live in it, so a path walked across the room stays where it was walked.
+  const floor = useMemo(() => new THREE.Group(), []);
+  const trailsRef = useRef<TipTrail[]>([]);
+  const darkRef = useRef(dark);
+  darkRef.current = dark;
   /// Set once the model loads; the frame loop fits the camera on the first frame that has the
   /// episode's pose applied, since the joint values arrive a render later.
   const pendingFitRef = useRef(false);
   const pendingFitFramesRef = useRef(0);
-  const framesSinceInputRef = useRef(0);
+  const pendingFitSinceRef = useRef(0);
+  /// Whether the trails have the current episode's path.
+  const pathReadyRef = useRef(false);
 
-  // Reset trails when episode changes
   useEffect(() => {
-    for (const t of trailsRef.current) {
-      t.count = 0;
-      t.times = [];
-    }
-    for (const l of linesRef.current) l.visible = false;
-  }, [trailResetKey]);
+    scene.add(floor);
+    return () => {
+      scene.remove(floor);
+    };
+  }, [scene, floor]);
 
-  /// useFrame applies these, so R3F can't tell they changed: request a frame and restart the trail
-  /// keep-alive in useFrame.
+  /// useFrame applies these, so R3F can't tell they changed: request a frame.
   useEffect(() => {
-    framesSinceInputRef.current = 0;
     invalidate();
-  }, [jointValues, basePose, trailEnabled, trailResetKey, invalidate]);
+  }, [jointValues, basePose, frame, trailMode, dark, invalidate]);
 
-  // Create/destroy trail Line2 objects when tip count changes
-  const ensureTrails = useCallback(
-    (count: number) => {
-      if (trailCountRef.current === count) return;
-      // Remove old
-      for (const l of linesRef.current) {
-        scene.remove(l);
-        l.geometry.dispose();
-      }
-      for (const m of trailMatsRef.current) m.dispose();
-      // Create new
-      const trails: TrailState[] = [];
-      const lines: Line2[] = [];
-      const mats: LineMaterial[] = [];
-      for (let i = 0; i < count; i++) {
-        trails.push({
-          positions: new Float32Array(MAX_TRAIL_POINTS * 3),
-          colors: new Float32Array(MAX_TRAIL_POINTS * 3),
-          times: [],
-          count: 0,
-        });
-        const mat = new LineMaterial({
-          color: 0xffffff,
-          linewidth: 4,
-          vertexColors: true,
-          transparent: true,
-          worldUnits: false,
-          // Like the background, so a faded point matches it.
-          toneMapped: false,
-        });
-        mat.resolution.set(window.innerWidth, window.innerHeight);
-        mats.push(mat);
-        const line = new Line2(new LineGeometry(), mat);
-        line.frustumCulled = false;
-        line.visible = false;
-        lines.push(line);
-        scene.add(line);
-      }
-      trailsRef.current = trails;
-      linesRef.current = lines;
-      trailMatsRef.current = mats;
-      trailCountRef.current = count;
-    },
-    [scene],
-  );
+  useEffect(() => {
+    trailsRef.current.forEach((trail, t) =>
+      trail.setStyle(trailStyle(tipSide(tipPathsRef.current[t] ?? ""), dark)),
+    );
+  }, [dark]);
 
   useEffect(() => {
     setError(null);
     let cancelled = false;
     let model: LoadResult | undefined;
+    let trails: TipTrail[] = [];
     /// Loaded from memory, so the session cache spares a download on every visit to the tab.
     const name = usdUrl.slice(usdUrl.lastIndexOf("/") + 1);
     loadUsdBlob(usdUrl)
@@ -643,7 +694,14 @@ function RobotScene({
           if (robot === "so101" && tips.length === 1) break;
         }
         tipPathsRef.current = tips;
-        ensureTrails(tips.length);
+        const sides = tips.map(tipSide);
+        trails = sides.map((side) => {
+          const trail = new TipTrail(trailStyle(side, darkRef.current));
+          floor.add(trail.group);
+          return trail;
+        });
+        trailsRef.current = trails;
+        onTrailSides(sides);
 
         jointsRef.current = new Map(
           joints
@@ -656,6 +714,8 @@ function RobotScene({
         onJointsLoaded([...jointsRef.current.keys()]);
         pendingFitRef.current = true;
         pendingFitFramesRef.current = 0;
+        pendingFitSinceRef.current = performance.now();
+        setModelVersion((v) => v + 1);
         invalidate();
       })
       .catch((err) => {
@@ -665,6 +725,8 @@ function RobotScene({
       });
     return () => {
       cancelled = true;
+      for (const trail of trails) trail.dispose();
+      trailsRef.current = [];
       if (model) {
         scene.remove(model.root);
         model.dispose();
@@ -672,121 +734,114 @@ function RobotScene({
       modelRef.current = null;
       tipPathsRef.current = [];
     };
-  }, [robot, usdUrl, scale, scene, onJointsLoaded, ensureTrails, invalidate]);
+  }, [
+    robot,
+    usdUrl,
+    scale,
+    scene,
+    floor,
+    onJointsLoaded,
+    onTrailSides,
+    invalidate,
+  ]);
 
-  const tipWorldPos = useMemo(() => new THREE.Vector3(), []);
-  const fadeFrom = useMemo(() => new THREE.Color(), []);
-  const fadeTo = useMemo(() => new THREE.Color(), []);
-  const fadedColor = useMemo(() => new THREE.Color(), []);
-  const baseQuat = useMemo(() => new THREE.Quaternion(), []);
+  /// The tool points' path through the whole episode: the model posed at every frame, in slices so
+  /// the page stays responsive. The frame loop puts the current pose back before every render.
+  useEffect(() => {
+    const model = modelRef.current;
+    const tips = tipPathsRef.current;
+    const trails = trailsRef.current;
+    const joints = jointsRef.current;
+    if (!model || tips.length === 0 || totalFrames === 0 || joints.size === 0)
+      return;
+    for (const trail of trails) trail.setSamples(null);
+    pathReadyRef.current = false;
+    const samples = tips.map(() =>
+      new Float32Array(totalFrames * 3).fill(Number.NaN),
+    );
+    const at = new THREE.Vector3();
+    let next = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const work = () => {
+      const started = performance.now();
+      for (; next < totalFrames; next++) {
+        if (performance.now() - started > PATH_SLICE_MS) {
+          timer = setTimeout(work, 0);
+          return;
+        }
+        const pose = poseAt(next);
+        try {
+          applyPose(model, joints, pose, scale);
+        } catch {
+          continue;
+        }
+        /// Into the floor's frame, which the frame loop moves to where the floor is now.
+        const [bx, by] = pose.base;
+        tips.forEach((tip, t) => {
+          const matrix = model.getWorldMatrix(tip);
+          if (!matrix) return;
+          at.setFromMatrixPosition(matrix);
+          samples[t].set(
+            [at.x + bx * scale, at.y, at.z - by * scale],
+            next * 3,
+          );
+        });
+      }
+      trails.forEach((trail, t) => trail.setSamples(samples[t]));
+      pathReadyRef.current = true;
+      invalidate();
+    };
+    timer = setTimeout(work, 0);
+    return () => clearTimeout(timer);
+  }, [modelVersion, poseAt, totalFrames, scale, invalidate]);
 
   useFrame((state) => {
     const model = modelRef.current;
     if (!model) return;
 
-    /// The robot stays above the origin, where the camera looks, and the floor moves under it. The
-    /// robots' USDs are Z-up, like the base pose.
-    const [, , z, qx, qy, qz, qw] = basePose;
-    model.root.position.set(0, z * scale, 0);
-    model.root.quaternion
-      .copy(Z_UP_TO_Y_UP)
-      .multiply(baseQuat.set(qx, qy, qz, qw));
-    const positions: Record<string, number> = {};
-    for (const [name, value] of Object.entries(jointValues)) {
-      const joint = jointsRef.current.get(name);
-      if (joint)
-        positions[joint.path] = joint.revolute ? value / DEG2RAD : value;
-    }
-    model.setJointPositions(positions);
+    applyPose(
+      model,
+      jointsRef.current,
+      { joints: jointValues, base: basePose },
+      scale,
+    );
+
+    /// Where the grid is: the floor, seen from the robot.
+    floor.position.set(-basePose[0] * scale, 0, basePose[1] * scale);
 
     if (pendingFitRef.current) {
       pendingFitFramesRef.current++;
-      if (
+      const posed =
         Object.keys(jointValues).length > 0 ||
-        pendingFitFramesRef.current > MAX_FIT_WAIT_FRAMES
-      ) {
+        pendingFitFramesRef.current > MAX_FIT_WAIT_FRAMES;
+      const pathsSettled =
+        pathReadyRef.current ||
+        trailsRef.current.length === 0 ||
+        performance.now() - pendingFitSinceRef.current > MAX_PATH_WAIT_MS;
+      if (posed && pathsSettled) {
         pendingFitRef.current = false;
-        fitCameraToRobot(model.root, state.camera, state.controls);
+        const paths = new THREE.Box3();
+        const box = new THREE.Box3();
+        for (const trail of trailsRef.current) paths.union(trail.bounds(box));
+        // Where the paths are now: the floor's frame, moved to where the floor is.
+        if (!paths.isEmpty()) paths.translate(floor.position);
+        fitCameraToRobot(model.root, state.camera, state.controls, paths);
       }
     }
+    /// The fit wait counts rendered frames and time: keep rendering until it is done.
+    if (pendingFitRef.current) state.invalidate();
 
-    /// The fit wait counts rendered frames and the trail appends a point per rendered frame: keep
-    /// rendering until the fit is done and for MAX_TRAIL_POINTS frames after the last change, so
-    /// the trail fades and collapses as it did when every display frame rendered.
-    if (
-      pendingFitRef.current ||
-      (trailEnabled && framesSinceInputRef.current++ < MAX_TRAIL_POINTS)
-    )
-      state.invalidate();
-
-    const tips = tipPathsRef.current;
-    if (!trailEnabled || tips.length === 0) {
-      for (const l of linesRef.current) l.visible = false;
-      return;
-    }
-
-    const now = performance.now() / 1000;
-    for (let ti = 0; ti < tips.length; ti++) {
-      const trail = trailsRef.current[ti];
-      const line = linesRef.current[ti];
-      const mat = trailMatsRef.current[ti];
-      if (!trail || !line || !mat) continue;
-
-      mat.resolution.set(size.width, size.height);
-      tipWorldPos.setFromMatrixPosition(model.getWorldMatrix(tips[ti])!);
-      const trailColor = TRAIL_COLORS[ti % TRAIL_COLORS.length];
-
-      if (trail.count < MAX_TRAIL_POINTS) {
-        trail.count++;
-      } else {
-        trail.positions.copyWithin(0, 3);
-        trail.colors.copyWithin(0, 3);
-        trail.times.shift();
-      }
-      const idx = trail.count - 1;
-      trail.positions[idx * 3] = tipWorldPos.x;
-      trail.positions[idx * 3 + 1] = tipWorldPos.y;
-      trail.positions[idx * 3 + 2] = tipWorldPos.z;
-      trail.times.push(now);
-
-      /// Line2 has no per-vertex alpha: points fade into the background color, mixed in sRGB as
-      /// alpha blending would, and are dropped once faded, so no dark tail is left behind the tip.
-      const expired = trail.times.findIndex((t) => now - t < TRAIL_DURATION);
-      if (expired > 0) {
-        trail.positions.copyWithin(0, expired * 3, trail.count * 3);
-        trail.times.splice(0, expired);
-        trail.count -= expired;
-      }
-      fadeFrom
-        .copy(state.scene.background as THREE.Color)
-        .convertLinearToSRGB();
-      fadeTo.copy(trailColor).convertLinearToSRGB();
-      for (let i = 0; i < trail.count; i++) {
-        fadedColor
-          .lerpColors(
-            fadeFrom,
-            fadeTo,
-            1 - (now - trail.times[i]) / TRAIL_DURATION,
-          )
-          .convertSRGBToLinear();
-        trail.colors[i * 3] = fadedColor.r;
-        trail.colors[i * 3 + 1] = fadedColor.g;
-        trail.colors[i * 3 + 2] = fadedColor.b;
-      }
-
-      if (trail.count < 2) {
-        line.visible = false;
-        continue;
-      }
-      const geo = new LineGeometry();
-      geo.setPositions(
-        Array.from(trail.positions.subarray(0, trail.count * 3)),
-      );
-      geo.setColors(Array.from(trail.colors.subarray(0, trail.count * 3)));
-      line.geometry.dispose();
-      line.geometry = geo;
-      line.computeLineDistances();
-      line.visible = true;
+    for (const trail of trailsRef.current) {
+      trail.update({
+        frame,
+        tailFrames: TRAIL_SECONDS * fps,
+        contextFrames: TRAIL_CONTEXT_SECONDS * fps,
+        shadowHeight: TRAIL_SHADOW_HEIGHT * scale,
+        mode: trailMode,
+        width: size.width,
+        height: size.height,
+        pixelRatio: viewport.dpr,
+      });
     }
   });
 
@@ -1026,7 +1081,16 @@ export default function ReplayViewer({
   );
 
   // Trail
-  const [trailEnabled, setTrailEnabled] = useState(true);
+  const [trailMode, setTrailModeState] = useState<TrailMode>(readTrailMode);
+  const setTrailMode = useCallback((mode: TrailMode) => {
+    setTrailModeState(mode);
+    try {
+      localStorage.setItem(TRAIL_MODE_KEY, mode);
+    } catch {
+      // Storage blocked: the choice lasts for this visit.
+    }
+  }, []);
+  const [trailSides, setTrailSides] = useState<("left" | "right" | null)[]>([]);
   const [showMapping, setShowMapping] = useState(false);
 
   // Playback
@@ -1085,63 +1149,83 @@ export default function ReplayViewer({
     return ranges;
   }, [chartData, mapping, jointNames]);
 
-  // Compute joint values for current frame
-  const jointValues = useMemo(() => {
-    if (totalFrames === 0 || jointNames.length === 0) return {};
-    const row = chartData[Math.min(frame, totalFrames - 1)];
-    const revoluteValues: number[] = [];
-    const revoluteNames: string[] = [];
-    const values: Record<string, number> = {};
-
+  /// The unit the episode's joint angles are in, from the largest value they take anywhere in it.
+  const angleUnit = useMemo<AngleUnit>(() => {
+    let maxAbs = 0;
     for (const jn of jointNames) {
       const col = mapping[jn];
-      /// The model refuses a value that isn't a finite number.
-      if (!col || !Number.isFinite(row[col])) continue;
-      const raw = row[col];
-
-      if (jn.toLowerCase().includes("finger_joint1")) {
-        // Map gripper range → 0-0.044m using auto-detected min/max
-        const range = gripperRanges[jn];
-        if (range) {
-          const t = (raw - range.min) / (range.max - range.min);
-          values[jn] = t * 0.044;
-        } else {
-          values[jn] = (raw / 100) * 0.044; // fallback: assume 0-100
-        }
-      } else if (INSPIRE_JOINT.test(jn)) {
-        values[jn] = inspireJointValue(jn, raw);
-      } else if (BRAINCO_JOINT.test(jn)) {
-        /// The whole-body datasets' `finger_N` record the hand's closure, not one minus it.
-        values[jn] = braincoJointValue(
-          jn,
-          /finger_\d+$/.test(col) ? 1 - raw : raw,
-        );
-      } else if (jn.includes("_dex1_finger_joint_")) {
-        values[jn] =
-          DEX1_FINGER_CLOSED +
-          (raw / DEX1_MOTOR_TRAVEL) * (DEX1_FINGER_OPEN - DEX1_FINGER_CLOSED);
-      } else {
-        revoluteValues.push(raw);
-        revoluteNames.push(jn);
+      if (!col || isSpecialJoint(jn)) continue;
+      for (const row of chartData) {
+        const v = Math.abs(row[col]);
+        if (Number.isFinite(v) && v > maxAbs) maxAbs = v;
       }
     }
+    return detectAngleUnit(maxAbs);
+  }, [chartData, jointNames, mapping]);
 
-    const converted = detectAndConvert(revoluteValues);
-    revoluteNames.forEach((n, i) => {
-      values[n] = converted[i];
-    });
-    return values;
-  }, [chartData, frame, gripperRanges, mapping, totalFrames, jointNames]);
+  /// The pose at any frame: the scene shows the current one, and works out the trail's path
+  /// from all of them.
+  const poseAt = useCallback(
+    (index: number): FramePose => {
+      const joints: Record<string, number> = {};
+      if (totalFrames === 0)
+        return { joints, base: [0, 0, restHeight, 0, 0, 0, 1] };
+      const row = chartData[Math.min(Math.max(0, index), totalFrames - 1)];
 
-  const basePose = useMemo(() => {
-    if (!basePoseColumns || totalFrames === 0)
-      return [0, 0, restHeight, 0, 0, 0, 1];
-    const row = chartData[Math.min(frame, totalFrames - 1)];
-    const pose = basePoseColumns.map((c) => row[c]);
-    /// Some whole-body episodes record no height: 0 throughout.
-    if (pose[2] === 0) pose[2] = restHeight;
-    return pose;
-  }, [basePoseColumns, chartData, frame, restHeight, totalFrames]);
+      for (const jn of jointNames) {
+        const col = mapping[jn];
+        /// The model refuses a value that isn't a finite number.
+        if (!col || !Number.isFinite(row[col])) continue;
+        const raw = row[col];
+
+        if (jn.toLowerCase().includes("finger_joint1")) {
+          // Map gripper range → 0-0.044m using auto-detected min/max
+          const range = gripperRanges[jn];
+          if (range) {
+            const t = (raw - range.min) / (range.max - range.min);
+            joints[jn] = t * 0.044;
+          } else {
+            joints[jn] = (raw / 100) * 0.044; // fallback: assume 0-100
+          }
+        } else if (INSPIRE_JOINT.test(jn)) {
+          joints[jn] = inspireJointValue(jn, raw);
+        } else if (BRAINCO_JOINT.test(jn)) {
+          /// The whole-body datasets' `finger_N` record the hand's closure, not one minus it.
+          joints[jn] = braincoJointValue(
+            jn,
+            /finger_\d+$/.test(col) ? 1 - raw : raw,
+          );
+        } else if (jn.includes("_dex1_finger_joint_")) {
+          joints[jn] =
+            DEX1_FINGER_CLOSED +
+            (raw / DEX1_MOTOR_TRAVEL) * (DEX1_FINGER_OPEN - DEX1_FINGER_CLOSED);
+        } else {
+          joints[jn] = toRadians(raw, angleUnit);
+        }
+      }
+
+      if (!basePoseColumns)
+        return { joints, base: [0, 0, restHeight, 0, 0, 0, 1] };
+      const base = basePoseColumns.map((c) => row[c]);
+      /// Some whole-body episodes record no height: 0 throughout.
+      if (base[2] === 0) base[2] = restHeight;
+      return { joints, base };
+    },
+    [
+      angleUnit,
+      basePoseColumns,
+      chartData,
+      gripperRanges,
+      jointNames,
+      mapping,
+      restHeight,
+      totalFrames,
+    ],
+  );
+
+  const pose = useMemo(() => poseAt(frame), [poseAt, frame]);
+  const jointValues = pose.joints;
+  const basePose = pose.base;
 
   if (data.flatChartData.length === 0) {
     return (
@@ -1168,6 +1252,27 @@ export default function ReplayViewer({
               </span>
             )}
           </div>
+        )}
+        {/* Which colour is which arm, when there are two. */}
+        {trailMode !== "off" && trailSides.filter(Boolean).length > 1 && (
+          <ul
+            className="pointer-events-none absolute left-3 top-3 z-[5] flex gap-3 rounded-md bg-[var(--surface-0)]/80 px-2 py-1 text-[11px] text-fg-muted backdrop-blur-sm"
+            aria-label="Trail colours"
+          >
+            {trailSides.map((side, i) =>
+              side ? (
+                <li key={i} className="flex items-center gap-1.5">
+                  <span
+                    className="h-0.5 w-3.5 rounded-full"
+                    style={{
+                      background: `#${trailStyle(side, dark).color.getHexString()}`,
+                    }}
+                  />
+                  {side === "left" ? "Left" : "Right"} {isG1 ? "hand" : "arm"}
+                </li>
+              ) : null,
+            )}
+          </ul>
         )}
         <Canvas
           shadows
@@ -1231,8 +1336,13 @@ export default function ReplayViewer({
             jointValues={jointValues}
             basePose={basePose}
             onJointsLoaded={onJointsLoaded}
-            trailEnabled={trailEnabled}
-            trailResetKey={selectedEpisode}
+            onTrailSides={setTrailSides}
+            poseAt={poseAt}
+            totalFrames={totalFrames}
+            frame={frame}
+            fps={fps}
+            trailMode={trailMode}
+            dark={dark}
             scale={scale}
           />
           <Grid
@@ -1269,8 +1379,8 @@ export default function ReplayViewer({
           fps={fps}
           playing={playing}
           onPlayPause={handlePlayPause}
-          trailEnabled={trailEnabled}
-          onTrailToggle={() => setTrailEnabled((v) => !v)}
+          trailMode={trailMode}
+          onTrailModeChange={setTrailMode}
           onFrameChange={handleFrameChange}
           disabled={modelLoading}
         />
