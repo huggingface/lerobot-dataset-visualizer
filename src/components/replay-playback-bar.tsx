@@ -2,6 +2,8 @@
 
 import React from "react";
 import { FaPlay, FaPause, FaArrowDown, FaArrowUp } from "react-icons/fa";
+import type { TrailMode } from "@/components/replay-trail";
+import { Segmented } from "@/components/ui";
 
 interface ReplayPlaybackBarProps {
   frame: number;
@@ -9,8 +11,8 @@ interface ReplayPlaybackBarProps {
   fps: number;
   playing: boolean;
   onPlayPause: () => void;
-  trailEnabled: boolean;
-  onTrailToggle: () => void;
+  trailMode: TrailMode;
+  onTrailModeChange: (mode: TrailMode) => void;
   onFrameChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   disabled?: boolean;
 }
@@ -21,8 +23,8 @@ export default function ReplayPlaybackBar({
   fps,
   playing,
   onPlayPause,
-  trailEnabled,
-  onTrailToggle,
+  trailMode,
+  onTrailModeChange,
   onFrameChange,
   disabled = false,
 }: ReplayPlaybackBarProps) {
@@ -44,15 +46,31 @@ export default function ReplayPlaybackBar({
         {playing ? <FaPause size={14} /> : <FaPlay size={14} />}
       </button>
 
-      {/* Trail toggle */}
-      <button
-        onClick={onTrailToggle}
-        disabled={disabled}
-        className={`btn h-8 shrink-0 ${trailEnabled ? "btn-active" : ""}`}
-        title={trailEnabled ? "Hide trail" : "Show trail"}
+      {/* Trail: the tool point's last two seconds, or that over its whole episode's path. */}
+      <div
+        className={`flex shrink-0 items-center gap-1.5 ${disabled ? "pointer-events-none" : ""}`}
       >
-        Trail
-      </button>
+        <span className="text-[11px] text-fg-muted">Trail</span>
+        <Segmented
+          ariaLabel="Trail"
+          value={trailMode}
+          onChange={onTrailModeChange}
+          options={[
+            { value: "off", label: "Off", title: "No trail" },
+            {
+              value: "recent",
+              label: "Recent",
+              title: "Where the gripper was in the last two seconds",
+            },
+            {
+              value: "episode",
+              label: "Episode",
+              title:
+                "The last two seconds, over the gripper's path through the whole episode",
+            },
+          ]}
+        />
+      </div>
 
       {/* Scrubber */}
       <input
