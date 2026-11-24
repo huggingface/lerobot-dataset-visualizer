@@ -12,6 +12,9 @@
  *    and stage a `pendingDraw` in the AnnotationsContext so the AnnotationsPanel
  *    can pick it up and persist it as a VQA atom.
  *
+ * It also mounts `ScoreOverlay`: the reward scores of the models that read this
+ * camera, in the Annotations tab.
+ *
  * Coordinates are stored in 0..1 image-relative space. Drawing is computed
  * against the actually-rendered video rect (i.e. taking `object-contain`
  * letterboxing into account).
@@ -24,6 +27,7 @@ import {
   type PendingPointDraw,
 } from "../context/annotations-context";
 import { useTime } from "../context/time-context";
+import { ScoreOverlay } from "./score-overlay";
 import {
   classifyVqa,
   parseVqaAnswer,
@@ -682,6 +686,7 @@ export const VideoOverlayCanvas: React.FC<Props> = ({ videoEl, cameraKey }) => {
                 : "crosshair",
         }}
       />
+      <ScoreOverlay video={videoEl} cameraKey={cameraKey} />
       {finalizing && (
         <QuickLabelPopup
           anchor={finalizing.anchor}

@@ -218,7 +218,7 @@ export function InlineLoading({ label }: { label: string }) {
   );
 }
 
-/** Two-state switch with a label on each side; the active side is highlighted. */
+/** Two-state switch with a label on each side (or only one); the active side is highlighted. */
 export function Switch({
   checked,
   onChange,
@@ -228,6 +228,7 @@ export function Switch({
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
+  /** Left out when null: a switch named by its `onLabel` alone. */
   offLabel: React.ReactNode;
   onLabel: React.ReactNode;
   ariaLabel: string;
@@ -236,7 +237,9 @@ export function Switch({
     `text-sm ${active ? "text-fg font-medium" : "text-fg-faint"}`;
   return (
     <div className="flex items-center gap-3">
-      <span className={labelClass(!checked)}>{offLabel}</span>
+      {offLabel !== null && (
+        <span className={labelClass(!checked)}>{offLabel}</span>
+      )}
       <button
         type="button"
         role="switch"
