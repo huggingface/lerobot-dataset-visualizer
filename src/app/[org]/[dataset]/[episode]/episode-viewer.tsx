@@ -18,6 +18,7 @@ import {
 } from "@/context/annotations-context";
 import { AnnotationsPanel } from "@/components/annotations-panel";
 import { AnnotationsTimeline } from "@/components/annotations-timeline";
+import { ScoresProvider } from "@/context/scores-context";
 import Sidebar from "@/components/side-nav";
 import StatsPanel from "@/components/stats-panel";
 import OverviewPanel from "@/components/overview-panel";
@@ -974,11 +975,22 @@ function EpisodeViewerInner({
                 )}
                 {videosInfo.length > 0 && (
                   <div className="annotation-videos">
-                    <SimpleVideosPlayer
-                      videosInfo={videosInfo}
-                      onVideosReady={() => setVideosReady(true)}
-                      handTracking={data.handTracking}
-                    />
+                    {/* Reward scores are an annotation tool: their controls and overlay live here only. */}
+                    <ScoresProvider
+                      repoId={datasetInfo.repoId}
+                      episodeId={episodeId}
+                      numFrames={data.frameTimestamps?.length ?? 0}
+                      fps={datasetInfo.fps}
+                      totalEpisodes={datasetInfo.total_episodes}
+                      totalFrames={datasetInfo.total_frames}
+                      cameras={videosInfo.map((v) => v.filename)}
+                    >
+                      <SimpleVideosPlayer
+                        videosInfo={videosInfo}
+                        onVideosReady={() => setVideosReady(true)}
+                        handTracking={data.handTracking}
+                      />
+                    </ScoresProvider>
                   </div>
                 )}
                 <AnnotationsTimeline duration={data.duration} />

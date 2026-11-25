@@ -6,6 +6,7 @@ import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
 import type { VideoInfo } from "@/types";
 import { proxyHfUrl } from "@/utils/auth";
 import { VideoOverlayCanvas } from "./video-overlay-canvas";
+import { ScoreControls, ScoredCameraTag } from "./scores";
 import { ColormappedVideo } from "./colormapped-video";
 import { HandOverlayCanvas } from "./hand-overlay-canvas";
 import type { HandTracking } from "@/lib/hand-tracking";
@@ -471,6 +472,7 @@ export const SimpleVideosPlayer = ({
 
   return (
     <>
+      <ScoreControls />
       {handTracking && (
         <div className="flex flex-wrap items-center gap-3 text-xs text-fg-muted">
           <label className="flex items-center gap-2 text-fg-soft">
@@ -559,7 +561,10 @@ export const SimpleVideosPlayer = ({
               {/* Shrink-wraps the enlarged video so the title bar matches its width. */}
               <div className={isEnlarged ? "w-fit" : undefined}>
                 <p className="truncate w-full rounded-t-md bg-[var(--surface-1)] border border-b-0 border-line-subtle px-2.5 py-1 text-[11px] text-fg-muted flex items-center justify-between gap-2">
-                  <span className="truncate">{info.filename}</span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate">{info.filename}</span>
+                    <ScoredCameraTag cameraKey={info.filename} />
+                  </span>
                   <span className="flex gap-0.5 shrink-0">
                     <button
                       title={isEnlarged ? "Minimize (Esc)" : "Enlarge"}

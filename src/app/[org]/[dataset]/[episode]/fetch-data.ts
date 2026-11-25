@@ -13,8 +13,17 @@ import {
   type CrossEpisodeVarianceData,
   type EpisodeSeries,
 } from "@/utils/crossEpisode";
-import { parquetMetadataAsync } from "hyparquet";
+import { parquetMetadataAsync, type FileMetaData } from "hyparquet";
 import { pick } from "@/utils/pick";
+import {
+  listScoreFiles,
+  parseScoreFile,
+  readEpisodeScores,
+  scoreFileMismatch,
+  scoreFileUrl,
+  type EpisodeScores,
+  type ScoreFile,
+} from "@/utils/scores";
 import {
   getDatasetVersionAndInfo,
   buildVersionedUrl,
@@ -222,6 +231,108 @@ export const crossEpisodeCache =
 
 export function datasetCacheKey(repoId: string): string {
   return `${repoId}\n${getAuthToken() ?? ""}`;
+}
+
+/**
+ * The viewer reads every dataset file at `main`. `lerobot-score` uploads scores to `main` and moves the
+ * codebase-version tag to that commit, so reading at either finds the same files.
+ */
+const SCORES_REVISION = "main";
+
+/**
+ * A score file in the dataset repo. One that cannot be shown (not a score file, another schema
+ * version, scored on another version of the dataset) has no `file`, and `error` says why.
+ */
+export type ScoreFileEntry =
+  | {
+      name: string;
+      file: ScoreFile;
+      /** Its footer, kept so an episode's read does not parse it again. */
+      metadata: FileMetaData;
+      warning: string | null;
+      error: null;
+    }
+  | { name: string; file: null; metadata: null; warning: null; error: string };
+
+export type ReadableScoreFile = Extract<ScoreFileEntry, { file: ScoreFile }>;
+
+/** The dataset's score files, keyed by `datasetCacheKey`. */
+export const scoreFilesCache = new AsyncCache<ScoreFileEntry[]>(4);
+/** One episode of one score file, keyed by `episodeScoresKey`. */
+export const episodeScoresCache = new AsyncCache<EpisodeScores>(32);
+
+export function episodeScoresKey(
+  repoId: string,
+  name: string,
+  episodeIndex: number,
+): string {
+  return `${datasetCacheKey(repoId)}\n${name}\n${episodeIndex}`;
+}
+
+function scoreUrl(repoId: string, name: string): string {
+  return scoreFileUrl(
+    `${HUB_ENDPOINT}/datasets`,
+    repoId,
+    SCORES_REVISION,
+    name,
+  );
+}
+
+/**
+ * Lists `scores/` in the dataset repo and reads each file's footer: its signals, their descriptors
+ * and the model that scored them. Only footers are read.
+ */
+export async function loadScoreFiles(
+  repoId: string,
+  dataset: { totalEpisodes: number; totalFrames: number },
+): Promise<ScoreFileEntry[]> {
+  const names = await listScoreFiles(
+    HUB_ENDPOINT,
+    repoId,
+    SCORES_REVISION,
+    authHeaders(),
+  );
+  return Promise.all(
+    names.map(async (name): Promise<ScoreFileEntry> => {
+      const unreadable = (error: string): ScoreFileEntry => ({
+        name,
+        file: null,
+        metadata: null,
+        warning: null,
+        error,
+      });
+      try {
+        const buffer = await fetchParquetFile(scoreUrl(repoId, name));
+        const metadata = await parquetMetadataAsync(buffer);
+        const file = parseScoreFile(name, metadata);
+        const mismatch = scoreFileMismatch(file, { repoId, ...dataset });
+        if (mismatch?.severity === "error") return unreadable(mismatch.message);
+        return {
+          name,
+          file,
+          metadata,
+          warning: mismatch?.message ?? null,
+          error: null,
+        };
+      } catch (error) {
+        return unreadable(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    }),
+  );
+}
+
+/** One episode's scores from one file: only its row group is read. */
+export async function loadEpisodeScores(
+  repoId: string,
+  { file, metadata }: ReadableScoreFile,
+  episodeIndex: number,
+  numFrames: number,
+): Promise<EpisodeScores> {
+  // The listing read the footer through the same cached buffer.
+  const buffer = await fetchParquetFile(scoreUrl(repoId, file.name));
+  return readEpisodeScores(buffer, metadata, file, episodeIndex, numFrames);
 }
 
 function toVideosInfo(
